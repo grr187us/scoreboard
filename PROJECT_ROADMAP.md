@@ -66,7 +66,7 @@ The system may eventually support sophisticated graphics, videos, sponsor conten
 | Phase | Name | Primary outcome | Current status |
 |---:|---|---|---|
 | 0 | Discovery and feasibility | Validate the project boundary and document the existing system. | 🟡 Substantially complete; one critical HDMI test remains |
-| 1 | Repository, requirements, and architecture | Establish a clean project foundation and an implementation-ready MVP design. | 🟡 In progress; foundation drafted, confirmations and synchronization verification remain |
+| 1 | Repository, requirements, and architecture | Establish a clean project foundation and an implementation-ready MVP design. | 🟡 In progress; repository/docs are established, owner confirmations and layout agreement remain |
 | 2 | Core scoreboard MVP | Produce a dependable local Windows scoreboard with correct football controls and fullscreen output. | ⏳ Pending |
 | 3 | Production graphics and OBS/media integration | Add controlled media, scenes, custom cutscenes, and polished presentation without compromising the core scoreboard. | ➖ Deferred |
 | 4 | External controls and expanded operation | Investigate and integrate the physical controller and other operator-control options. | ➖ Deferred |
@@ -124,14 +124,14 @@ Phase 0 is complete when the personal laptop successfully displays a stable, cor
 | Work item | Expected result | Status |
 |---|---|---|
 | Choose the repository name | A short, durable name that is not tied to a temporary implementation choice such as OBS | ✅ `scoreboard` |
-| Create a local Git repository | The working project has version history and a deliberate default branch | 🟡 Repository initialized on `main`; initial commit tracked by this Phase 1 task |
+| Create a local Git repository | The working project has version history and a deliberate default branch | ✅ Initialized on `main`; Phase 1 foundation committed |
 | Create the GitHub repository | Private or public visibility is explicitly selected | 🟡 Repository exists and advertised no commits; visibility still requires owner confirmation |
-| Connect local and GitHub repositories | Local commits can be pushed and pulled successfully | 🟡 Target verified as empty; add/push `origin` and clean-clone verification remain |
+| Connect local and GitHub repositories | Local commits can be pushed and pulled successfully | ✅ `origin/main` pushed normally and verified from a separate clean clone |
 | Add a practical `.gitignore` | Python environments, caches, logs, local settings, generated media, OBS profiles, and secrets are excluded as appropriate | ✅ Added and reviewed |
 | Add a human-readable `README.md` | Purpose, current status, setup instructions, run instructions, and MVP scope are clear | ✅ Added; explicitly pre-implementation |
 | Add a license or record that the repository is private/unlicensed | Reuse expectations are unambiguous | ✅ README records that no license is selected; visibility/license choice remains open |
 | Establish a simple branch policy | Prefer small branches and reviewed merges; avoid unnecessary workflow complexity | ✅ Recorded in README and agent instructions |
-| Verify a clean clone/setup | The project can be cloned into a new folder and prepared using documented steps | ⏳ Pending |
+| Verify a clean clone/setup | The project can be cloned into a new folder and prepared using documented steps | ✅ Fresh clone was clean at foundation commit `6f9fc18`; README correctly states no runtime exists yet |
 
 ### 1.2 MVP Requirements
 
@@ -241,7 +241,7 @@ Only create a technical proof when it answers a decision that documents alone ca
 
 | Deliverable | Definition | Status / evidence |
 |---|---|---|
-| Synchronized repository | Local and GitHub repositories are connected and a clean clone works. | 🟡 Initial commit, push, and clean-clone verification are the remaining repository checks. |
+| Synchronized repository | Local and GitHub repositories are connected and a clean clone works. | ✅ `main` tracks `origin/main`; foundation commit `6f9fc18` cloned cleanly. |
 | MVP requirements | Ambiguous behavior has been resolved and written down. | 🟡 Testable provisional baseline in `docs/MVP_REQUIREMENTS.md`; owner-only clock decisions remain. |
 | Display and operator wireframes | Layouts are understandable before visual polish begins. | ✅ `docs/UX_AND_LAYOUT.md`; owner/operator agreement still requested before UI build. |
 | Architecture decision record | Selected approach, rejected alternatives, tradeoffs, and extension boundaries are documented. | ✅ `docs/ARCHITECTURE.md`. |
@@ -411,6 +411,7 @@ Record decisions here so later implementation work does not silently reverse the
 | Before September 4, 2026 | Disconnected each RJ45-style output link from the processor | Each cable appeared to serve one half of the LED wall | Project knowledge base; photographs not yet recorded here | Supports the hypothesis that the processor distributes video to wall sections; no need to inspect the protocol yet. |
 | September 4, 2026 | Inspected six public candidate repositories from shallow clones | No suitable adoption base; useful architecture/timing/UX concepts recorded; two candidates lacked licenses and one had conflicting license evidence | `docs/OPEN_SOURCE_REVIEW.md` records commits and evidence | Select an independent Python-authority/managed-webview architecture and copy no candidate code. |
 | September 4, 2026 | Inspected target GitHub repository with `git ls-remote --symref` | No advertised branches or commits; repository appears empty from Git | Command output in Phase 1 session | Safe to establish `main` without integrating remote history; visibility remains unknown. |
+| September 4, 2026 | Pushed Phase 1 foundation and cloned `origin/main` into a separate temporary folder | Clean clone checked out `6f9fc18` on `main` with no modifications | Git output in Phase 1 session | Repository synchronization and clean-clone deliverable verified. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
 ## Current Status
@@ -421,7 +422,7 @@ Record decisions here so later implementation work does not silently reverse the
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
 | Implementation status | Phase 2 application code has not begun; architecture and twelve-task backlog are documented |
-| Repository status | Local Git initialized on `main`; target remote appears empty; initial commit/push and clean-clone verification remain |
+| Repository status | `main` tracks `origin/main`; Phase 1 foundation commit `6f9fc18` pushed and independently cloned cleanly |
 
 ## Next Action
 
