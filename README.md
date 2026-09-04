@@ -96,9 +96,7 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 
 ## Setup and run
 
-**Implementation has not begun. There is nothing to install or run yet.**
-
-The first Phase 2 task will pin the Python/runtime dependencies, add a minimal launcher, and document a Windows developer setup. Packaging instructions will be added only after a packaged build has been tested on Windows.
+Phase 2 Task 1 provides a narrow, installable Windows multi-window proof. It is not a scoreboard yet: it opens only operator/spectator placeholder pages and display-host controls. Setup, exact pins, offline behavior, and the manual proof checklist are in [the Task 1 runtime proof](docs/PHASE_2_TASK_1_RUNTIME_PROOF.md).
 
 ## Licensing
 

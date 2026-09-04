@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scoreboard operator proof</title>
+</head>
+<body>
+  <h1>Scoreboard operator window proof</h1>
+  <p>This placeholder verifies Windows window lifecycle only. It contains no game state or controls.</p>
+  <label for="display">Spectator display</label>
+  <select id="display"></select>
+  <button type="button" id="open">Open or reopen spectator</button>
+  <button type="button" id="fullscreen">Toggle spectator fullscreen</button>
+  <p id="status">STARTING</p>
+  <script>
+    const status = document.getElementById('status');
+    const display = document.getElementById('display');
+
+    window.setHostStatus = (message) => { status.textContent = message; };
+
+    async function refresh() {
+      const api = window.pywebview.api;
+      const displays = await api.get_displays();
+      display.replaceChildren(...displays.map((item) => {
+        const option = document.createElement('option');
+        option.value = item.index;
+        option.textContent = item.label;
+        return option;
+      }));
+      const result = await api.get_status();
+      window.setHostStatus(result.message);
+    }
+
+    window.addEventListener('pywebviewready', refresh);
+    document.getElementById('open').addEventListener('click', async () => {
+      const result = await window.pywebview.api.open_spectator(Number(display.value));
+      window.setHostStatus(result.message);
+    });
+    document.getElementById('fullscreen').addEventListener('click', async () => {
+      const result = await window.pywebview.api.toggle_spectator_fullscreen();
+      window.setHostStatus(result.message);
+    });
+  </script>
+</body>
+</html>

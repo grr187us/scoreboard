@@ -163,7 +163,7 @@ Atomic save sequence: serialize and validate in memory, write a same-directory t
 
 Development startup will be one documented PowerShell command after environment setup. Production startup will be a shortcut to a PyInstaller one-folder executable; it starts both windows and no terminal is required.
 
-At first launch, enumerate `pywebview.screens`, show name/geometry choices in the operator view, and save a best-effort identity. Open the spectator window on the chosen screen and toggle borderless fullscreen. If the screen is absent at startup, keep the operator available and show `DISPLAY NOT FOUND`; do not silently cover the operator screen.
+Task 1 enumerates `pywebview.screens`, shows the current name/geometry choices in the operator proof, and opens the spectator window on an explicitly chosen screen in borderless fullscreen. It deliberately stores no display preference. Task 10 will save a best-effort identity. If the selected screen is absent at startup, the proof keeps the operator available and shows `DISPLAY NOT FOUND`; it does not silently cover the operator screen.
 
 The first Phase 2 task must prove on Windows:
 
@@ -174,6 +174,14 @@ The first Phase 2 task must prove on Windows:
 5. application shutdown leaves no orphan process.
 
 If this proof fails, the fallback is a small PySide6/Qt WebEngine host using the same HTML views and pure core. The domain architecture remains unchanged.
+
+### Task 1 host evidence — September 4, 2026
+
+The host proof is implemented with `pywebview==6.2.1` and no local HTTP server. Its pages are in-memory HTML loaded from bundled placeholder files; no scoreboard state, persistence, SQLite, or hardware integration is present. The tested host used CPython 3.11.11 and Windows WebView2 Runtime `152.0.4191.62`.
+
+Focused display-selection tests passed (four tests): display labels are deterministic, a valid selected screen object is preserved, a missing selection never falls back to the primary display, and a late close event from a replaced spectator cannot clear the newly reopened window. The actual host launched an operator plus explicitly selected fullscreen spectator window with `--display-index 0 --auto-close-after-seconds 30`, then exited with no `scoreboard-proof` or Python process remaining. The host also returned `DISPLAY NOT FOUND: Display 100` for an unavailable index. This runtime launch was performed with the normal sandbox network restriction active; it did not fetch packages or contact a service.
+
+`pywebview.screens` reported only one available display on this host (`5120x1440 at 0,0`). Therefore, second-display placement, manual spectator close/reopen, fullscreen exit/re-entry, and offline manual operation remain reproducible acceptance checks on a normal two-display Windows setup; they are not claimed as completed local evidence. The Phase 0 stadium HDMI gate remains separate and open.
 
 ## 11. Failure handling
 

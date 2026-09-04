@@ -67,7 +67,7 @@ The system may eventually support sophisticated graphics, videos, sponsor conten
 |---:|---|---|---|
 | 0 | Discovery and feasibility | Validate the project boundary and document the existing system. | 🟡 Substantially complete; one critical HDMI test remains |
 | 1 | Repository, requirements, and architecture | Establish a clean project foundation and an implementation-ready MVP design. | 🟡 In progress; repository/docs are established, owner confirmations and layout agreement remain |
-| 2 | Core scoreboard MVP | Produce a dependable local Windows scoreboard with correct football controls and fullscreen output. | ⏳ Pending |
+| 2 | Core scoreboard MVP | Produce a dependable local Windows scoreboard with correct football controls and fullscreen output. | 🟡 In progress; Task 1 host proof is implemented, with normal two-display manual evidence pending |
 | 3 | Production graphics and OBS/media integration | Add controlled media, scenes, custom cutscenes, and polished presentation without compromising the core scoreboard. | ➖ Deferred |
 | 4 | External controls and expanded operation | Investigate and integrate the physical controller and other operator-control options. | ➖ Deferred |
 | 5 | Stadium production hardening | Validate full-game reliability, recovery, deployment, operating procedures, and fallback behavior. | ➖ Deferred |
@@ -412,18 +412,19 @@ Record decisions here so later implementation work does not silently reverse the
 | September 4, 2026 | Inspected six public candidate repositories from shallow clones | No suitable adoption base; useful architecture/timing/UX concepts recorded; two candidates lacked licenses and one had conflicting license evidence | `docs/OPEN_SOURCE_REVIEW.md` records commits and evidence | Select an independent Python-authority/managed-webview architecture and copy no candidate code. |
 | September 4, 2026 | Inspected target GitHub repository with `git ls-remote --symref` | No advertised branches or commits; repository appears empty from Git | Command output in Phase 1 session | Safe to establish `main` without integrating remote history; visibility remains unknown. |
 | September 4, 2026 | Pushed Phase 1 foundation and cloned `origin/main` into a separate temporary folder | Clean clone checked out `6f9fc18` on `main` with no modifications | Git output in Phase 1 session | Repository synchronization and clean-clone deliverable verified. |
+| September 4, 2026 | Phase 2 Task 1 runtime proof on this Windows host | CPython 3.11.11, `pywebview==6.2.1`, and WebView2 `152.0.4191.62` installed/verified. Four focused display/lifecycle tests, editable install, compilation, and dependency check passed. The host opened operator plus explicitly selected fullscreen spectator windows on the one available `5120x1440` display and auto-closed cleanly with no remaining proof/Python process. An unavailable selection returned `DISPLAY NOT FOUND: Display 100`. The runtime launch completed with the normal sandbox network restriction active and made no package/service request. | `docs/PHASE_2_TASK_1_RUNTIME_PROOF.md`; `docs/ARCHITECTURE.md` §10; command output from this session | The selected second-display and manual close/reopen/fullscreen checks remain pending because this host exposes only one display. No fallback host is warranted yet. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
 ## Current Status
 
 | Item | Current state |
 |---|---|
-| Active phase | Phase 1 documentation/repository foundation in progress; Phase 0 hardware gate remains open in parallel |
+| Active phase | Phase 2 Task 1 runtime proof implemented; Phase 0 hardware gate remains open in parallel |
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
-| Implementation status | Phase 2 application code has not begun; architecture and twelve-task backlog are documented |
+| Implementation status | Task 1 only: pinned one-process pywebview host, placeholder operator/spectator pages, display selection, missing-display status, reopen/fullscreen controls, focused tests, and setup instructions are present. No game-state, clocks, scoring, persistence, SQLite, OBS, server, or peripheral code has begun. |
 | Repository status | `main` tracks `origin/main`; Phase 1 foundation commit `6f9fc18` pushed and independently cloned cleanly |
 
 ## Next Action
 
-On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum evidence listed in the Phase 0 HDMI Test table. Update this document immediately with the result. In software, do not begin feature work before the Phase 2 Task 1 Windows multi-window/fullscreen host proof and owner review of the provisional clock decisions.
+Before beginning Task 2, run the documented Task 1 manual proof on a normal two-display Windows setup and record second-display placement, fullscreen exit/re-entry, spectator close/reopen, missing-display status, clean shutdown, and offline results. Separately, on Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence. Do not begin Task 2 in this session.
