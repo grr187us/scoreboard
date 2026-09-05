@@ -48,15 +48,15 @@ scoreboard/
 │  ├─ domain/
 │  │  ├─ state.py                  # immutable/value-oriented game snapshot
 │  │  ├─ commands.py               # validated score/quarter/lifecycle transitions
-│  │  └─ clocks.py                 # pure monotonic/deadline calculations
+│  │  ├─ clocks.py                 # pure monotonic/deadline calculations
+│  │  └─ formatting.py             # pure display rounding for every clock
 │  ├─ application/
 │  │  ├─ service.py                # serializes commands; revision authority
 │  │  ├─ snapshots.py              # versioned view/adapter contract
 │  │  └─ recovery.py               # startup choice and safe stopped restore
 │  ├─ infrastructure/
 │  │  ├─ paths.py                  # Windows per-user data locations
-│  │  ├─ persistence.py            # atomic JSON + backup
-│  │  ├─ event_log.py              # append-only JSONL events
+│  │  ├─ persistence.py            # SQLite transactions, backup, action history
 │  │  └─ diagnostics.py            # rotating application diagnostics
 │  ├─ host/
 │  │  ├─ app.py                    # webview lifecycle and shutdown
@@ -86,10 +86,10 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 | `domain/state.py` | Valid state values and invariants | Files, UI objects, timers, OBS |
 | `domain/commands.py` | Pure transitions and reversible-command data | Persistence or key bindings |
 | `domain/clocks.py` | Deadline/remaining calculations against injected monotonic time | UI refresh cadence or wall time |
+| `domain/formatting.py` | Pure upward display rounding for every clock readout | Stored time, state, or persistence policy |
 | `application/service.py` | Command order, state revision, snapshots, publication | Rendering or OS display APIs |
 | `application/recovery.py` | Validated startup restore as stopped, owner choice | Silent auto-resume |
-| `infrastructure/persistence.py` | Atomic file replacement, backup, schema I/O | Deciding game rules |
-| `infrastructure/event_log.py` | Structured append-only command/system events | High-frequency tick spam |
+| `infrastructure/persistence.py` | One SQLite transaction per accepted command, the last-known-good backup, the append-only action history, and the single-instance lock | Deciding game rules or producing a revision |
 | `host/bridge.py` | JSON-compatible command/snapshot boundary | Duplicate game state |
 | `host/displays.py` | Enumeration, display preference, reopen/fullscreen | HDMI switching or LED protocol |
 | operator view | Input intent, forms, feedback, ephemeral UI state | Authoritative scores/clocks |
@@ -108,15 +108,20 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 
 The application resolves a per-user Windows data directory and creates runtime subdirectories there. Repository source paths must never be used for live state.
 
+On Windows the root is `SHGetKnownFolderPath(FOLDERID_LocalAppData)` + `Scoreboard`, resolved through the platform API rather than a hard-coded or repository-relative path. A relative path is refused outright.
+
 ```text
 Scoreboard/
-├─ config.json
-├─ current-state.json
-├─ current-state.backup.json
+├─ config.json                     # created when Task 7+ needs it
+├─ scoreboard.db                   # recoverable state + append-only action history
+├─ scoreboard.backup.db            # automatically refreshed last-known-good copy
+├─ scoreboard.lock                 # single-instance lock (R-004)
+├─ scoreboard.invalid-*.db         # only when a corrupt file is preserved (P-006)
 └─ logs/
-   ├─ application.log
-   └─ game-*.jsonl
+   └─ application.log              # bounded rotating diagnostics (P-008)
 ```
+
+The game's durable action history lives in `scoreboard.db`, not in a separate JSONL file: one transaction must commit the new state and its history row together (P-002), which two files cannot guarantee. The rotating `application.log` records what the *program* did and is allowed to roll over; the action history records what happened in the *game* and never is.
 
 Tests use isolated temporary directories and never read or overwrite the operator's real state.
 

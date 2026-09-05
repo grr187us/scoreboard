@@ -28,7 +28,7 @@ Contract:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Final
 
 from scoreboard.application.snapshots import state_to_snapshot
@@ -150,6 +150,23 @@ class ScoreboardService:
         """The single time source shared by the service and both engines."""
 
         return self._monotonic
+
+    def materialized_state(self, now: float | None = None) -> GameState:
+        """The current state with both clocks materialized at ``now``.
+
+        This is a read-only view for display and for persistence checkpoints,
+        not a transition: the revision is unchanged, so ``dataclasses.replace``
+        is used rather than :meth:`GameState.evolve`. A running clock's stored
+        ``seconds`` is only refreshed by an accepted command, so a checkpoint
+        must ask for the derived value rather than reading the last commit.
+        """
+
+        current = float(self._monotonic()) if now is None else float(now)
+        return replace(
+            self._state,
+            game_clock=self._game_clock.to_clock_value(now=current),
+            play_clock=self._play_clock.to_clock_value(now=current),
+        )
 
     @property
     def undo_entry(self) -> UndoEntry | None:
