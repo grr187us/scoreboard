@@ -8,7 +8,11 @@ The operator bridge exposes deliberately few methods:
   result through Task 6, and return a JSON-compatible dictionary;
 * ``get_snapshot()`` -- return the same dictionary without changing anything;
 * ``reopen_display()`` -- ask the host to recreate the spectator window, which
-  changes no game state (D-005).
+  changes no game state (D-005);
+* ``data_folder()``, ``choose_data_folder()``, and ``use_default_folder()`` --
+  report and change where the game and its logs are saved. Like
+  ``reopen_display`` these are host actions, not game commands: they advance no
+  revision and write nothing to the database.
 
 The spectator bridge exposes ``get_snapshot()`` and nothing that mutates.
 
@@ -45,7 +49,13 @@ from scoreboard.domain.formatting import (
     format_play_clock,
 )
 from scoreboard.domain.state import GameState, QUARTER_LABELS, SCHEMA_VERSION
+from scoreboard.host.folders import (
+    FolderChoice,
+    choose_data_folder,
+    use_default_folder,
+)
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
+from scoreboard.infrastructure.paths import describe_resolution
 from scoreboard.infrastructure.persistence import GameStore, PersistenceStatus
 
 #: The two local input adapters share every command and retain their source.
@@ -374,6 +384,7 @@ class ScoreboardBridge:
         diagnostics: Diagnostics | None = None,
         lock: threading.RLock | None = None,
         on_accepted: Callable[[dict[str, Any]], None] | None = None,
+        folder_chooser: Callable[[], FolderChoice] | None = None,
     ) -> None:
         self._service = service
         self._store = store
@@ -383,6 +394,11 @@ class ScoreboardBridge:
         # checkpoint can never read a half-applied command.
         self._lock = threading.RLock() if lock is None else lock
         self._on_accepted = on_accepted
+        # Injected so a test can exercise the operator's side of the picker
+        # without a dialog appearing on someone's screen and waiting forever.
+        self._folder_chooser = (
+            choose_data_folder if folder_chooser is None else folder_chooser
+        )
         # The previous tick's (revision, per-clock running/remaining), used to
         # notice a clock that ran itself down to zero. See _record_expirations.
         self._observed: tuple[int, dict[str, tuple[bool, float]]] | None = None
@@ -427,6 +443,43 @@ class ScoreboardBridge:
                 confirmation_required=result.confirmation_required,
                 result=result,
             )
+
+    def choose_data_folder(self) -> dict[str, Any]:
+        """Open the folder picker and remember the answer for the next launch.
+
+        Like :meth:`reopen_display`, this is a host action rather than a game
+        command: it advances no revision, writes nothing to the database, and
+        cannot be undone through the command history because there is nothing
+        in the game to undo. The running game keeps saving where it already
+        was, and the payload says so in words the operator can act on.
+        """
+
+        with self._lock:
+            choice = self._folder_chooser()
+            payload = choice.to_dict()
+            self._diagnostics.data_folder_choice(
+                outcome=choice.outcome, root=choice.root or "unchanged"
+            )
+            payload["view"] = self._view()
+            return payload
+
+    def use_default_folder(self) -> dict[str, Any]:
+        """Forget a chosen folder and return to the standard per-user location."""
+
+        with self._lock:
+            choice = use_default_folder()
+            payload = choice.to_dict()
+            self._diagnostics.data_folder_choice(
+                outcome="default", root=choice.root or "unchanged"
+            )
+            payload["view"] = self._view()
+            return payload
+
+    def data_folder(self) -> dict[str, Any]:
+        """Where the game is being saved, and why there (U-005)."""
+
+        with self._lock:
+            return describe_resolution()
 
     def reopen_display(self) -> dict[str, Any]:
         """Recreate the spectator window. This changes no game state (D-005)."""

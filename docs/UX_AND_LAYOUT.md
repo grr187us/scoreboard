@@ -217,3 +217,13 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 - Rebalance type scale for real viewing distance and pixel pitch.
 - Verify fullscreen placement and recovery when the processor input is reselected.
 - Decide whether the logical 16:9 canvas is correct or whether a custom aspect-ratio profile is required.
+
+## Where the game is saved
+
+The corrections drawer carries one row that is not a game correction: **Saved to**, showing the current data folder with **Choose folder…** and **Use standard folder**.
+
+It lives there rather than on the board for a layout reason and a safety reason. The drawer overlays the page and scrolls inside itself, so adding to it cannot push a live control off a 1366x768 screen and does not invalidate the U-001 measurement. And a control that changes where a game is written does not belong beside the scoring buttons.
+
+The placement is the least-bad option available today, not a considered information architecture: the drawer is titled CORRECTIONS, and this is not a correction. If the operator layout is ever revisited, an explicit Settings surface is the better home. Raised here so it is reviewed with the rest of the layout rather than settling by default.
+
+The row states that the running game keeps saving where it is and that a new folder applies at the next start. That sentence is the whole safety story for this control and must not be dropped in a redesign.

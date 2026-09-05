@@ -303,9 +303,62 @@
     submit(name, args, { title: button.dataset.confirmTitle, source: source });
   });
 
+  /* --- Where the game is saved ------------------------------------------ */
+
+  /**
+   * Show the current data folder. Read on demand, never from the view model:
+   * resolving it touches the filesystem, and the view model is rebuilt four
+   * times a second.
+   */
+  function refreshDataFolder() {
+    if (!api || !api.data_folder) {
+      return;
+    }
+    Promise.resolve(api.data_folder()).then(function (location) {
+      R.setText(document.getElementById('data-folder-path'), location.root);
+      var note = document.getElementById('data-folder-note');
+      if (note) {
+        note.textContent = location.explanation +
+          ' The game running now keeps saving where it is; a new folder is' +
+          ' used the next time the scoreboard starts.';
+      }
+    }).catch(function (error) {
+      R.setText(document.getElementById('data-folder-path'),
+        'could not be read: ' + error);
+    });
+  }
+
+  function applyFolderChoice(result) {
+    if (!result) {
+      return;
+    }
+    // Cancelling is not an error and must say so plainly, so an operator is
+    // never left wondering whether they changed something.
+    showAlert(result.message);
+    if (result.view) {
+      render(result.view);
+    }
+    refreshDataFolder();
+  }
+
   function handleAction(action) {
+    if (action === 'choose_data_folder') {
+      Promise.resolve(api.choose_data_folder()).then(applyFolderChoice)
+        .catch(function (error) {
+          showAlert('The folder picker could not be opened: ' + error);
+        });
+      return;
+    }
+    if (action === 'use_default_folder') {
+      Promise.resolve(api.use_default_folder()).then(applyFolderChoice)
+        .catch(function (error) {
+          showAlert('The standard folder could not be restored: ' + error);
+        });
+      return;
+    }
     if (action === 'open_corrections') {
       openDrawer('corrections');
+      refreshDataFolder();
     } else if (action === 'open_event') {
       openDrawer('event-drawer');
     } else if (action === 'open_help') {

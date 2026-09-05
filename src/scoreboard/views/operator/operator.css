@@ -317,6 +317,21 @@ button.danger:hover:not(:disabled) {
   justify-content: flex-end;
 }
 
+/* Where the game is saved is not a game correction, so it is set apart from
+   the rows above it rather than reading as one more thing to adjust. */
+.row.section {
+  margin-top: 14px;
+  border-top: 2px solid var(--edge);
+}
+
+.folder-path {
+  flex: 1 1 240px;
+  min-width: 0;
+  /* A long path must wrap inside the drawer rather than widen it. */
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
 .row-label {
   min-width: 190px;
   color: var(--ink-dim);

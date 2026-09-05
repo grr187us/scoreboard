@@ -130,6 +130,18 @@ class Diagnostics:
     def display_closed(self, *, reason: str, **fields: Any) -> None:
         self._logger.info(_render("DISPLAY_CLOSED", {"reason": reason, **fields}))
 
+    def data_folder_choice(self, *, outcome: str, root: str, **fields: Any) -> None:
+        """An operator opened the data-folder picker (P-008).
+
+        Where a game is saved is exactly the kind of thing nobody remembers
+        changing three weeks later, so the change and its outcome are recorded
+        even when the operator cancelled.
+        """
+
+        self._logger.info(
+            _render("DATA_FOLDER_CHOICE", {"outcome": outcome, "root": root, **fields})
+        )
+
     def clock_expired(self, *, clock: str, **fields: Any) -> None:
         """A clock counted itself down to 0:00 (F-037, F-046).
 

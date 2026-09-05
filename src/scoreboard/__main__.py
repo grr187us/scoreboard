@@ -59,6 +59,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="With --check, also show the report in a dialog for a shortcut.",
     )
     parser.add_argument(
+        "--choose-data-folder",
+        action="store_true",
+        help="Pick where the game and its logs are saved, then exit.",
+    )
+    parser.add_argument(
         "--auto-close-after-seconds",
         type=float,
         help="Test only: close the operator after this positive duration.",
@@ -106,8 +111,28 @@ def run_check(show: bool = False) -> int:
     return 0 if problems == 0 else 1
 
 
+def run_choose_data_folder() -> int:
+    """Open the folder picker with no game running, then exit.
+
+    This is the setup path: a technician runs it once before a season, from a
+    terminal or from a second shortcut, and never has to touch an environment
+    variable. It starts no service, takes no instance lock, and opens no
+    database, so it is safe to run at any time.
+    """
+
+    from scoreboard.host.folders import choose_data_folder
+
+    choice = choose_data_folder()
+    # report() prints when there is a console and opens a dialog when there is
+    # not, which is exactly right here: the operator asked for a dialog anyway.
+    preflight.report("Scoreboard data folder", choice.message)
+    return 0 if choice.outcome in ("chosen", "cancelled") else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.choose_data_folder:
+        return run_choose_data_folder()
     if args.check:
         return run_check(show=args.show)
 

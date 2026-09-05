@@ -85,14 +85,33 @@ Runtime data is outside the application folder, under `%LOCALAPPDATA%\Scoreboard
 
 This is why an update is safe mid-season: replacing the whole `Scoreboard` folder does not touch a game (W-005). Verified on September 5, 2026 by seeding a game, deleting the application folder entirely, rebuilding it, and launching the new build, which recovered the same game — Tigers 7, Eagles 3, second quarter — with its history continuing in one log.
 
-`SCOREBOARD_DATA_DIR` overrides the location. It exists for tests and rehearsals; do not set it on the production laptop.
+## Choosing where the game is saved
+
+The default above is correct but buried several folders deep. An operator who wants the game and its logs somewhere they can find after a game — a folder on the desktop, a shared drive, a USB stick — can choose one:
+
+- **In the application:** open **Corrections**, and use **Choose folder…** in the *Saved to* row at the bottom. **Use standard folder** puts it back.
+- **Before a season, without starting a game:** run `Scoreboard.exe --choose-data-folder`, or make a second shortcut with that argument. It opens the same picker, starts no game, takes no instance lock, and opens no database.
+
+The choice takes effect **the next time the scoreboard starts**. The running game keeps saving where it already was, because its database connection, its instance lock, and its log handler are all open on that folder; moving them under a live game is a much larger operation than this feature is, and one no operator should trigger by accident mid-quarter. Every dialog says this.
+
+The choice is remembered in `%LOCALAPPDATA%\Scoreboard\data-location.json`, which deliberately stays in the *standard* location even when the game data does not — a pointer stored inside the folder it points at could never be found again.
+
+If the chosen folder is gone at the next launch — the USB stick is not plugged in, the share is not mapped — the scoreboard reports the standard folder and starts normally rather than refusing to run. Losing a preference is recoverable; not starting before kickoff is not.
+
+Resolution order, highest first:
+
+| Source | When it applies |
+|---|---|
+| `SCOREBOARD_DATA_DIR` | Tests and rehearsals. It outranks a chosen folder on purpose, so a rehearsal can never write into the real game folder by accident. Do not set it on the production laptop. |
+| The chosen folder | Whenever one is saved and still reachable |
+| The standard per-user location | Otherwise |
 
 ## Exit codes
 
 | Code | Meaning |
 |---:|---|
 | 0 | Normal run and clean shutdown |
-| 1 | `--check` found a problem |
+| 1 | `--check` found a problem, or `--choose-data-folder` could not save the choice |
 | 2 | Another copy is already running; the first one keeps the game |
 | 3 | A recovery choice was needed and the window flow could not make it |
 | 4 | The WebView2 runtime is missing |

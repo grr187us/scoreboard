@@ -36,6 +36,14 @@ LOG_FILENAME: Final[str] = "application.log"
 #: data. It is read only when no explicit override is supplied.
 DATA_DIRECTORY_ENVIRONMENT_VARIABLE: Final[str] = "SCOREBOARD_DATA_DIR"
 
+#: Where an operator's chosen data folder is remembered.
+#:
+#: This one file deliberately stays in the *platform default* root rather than
+#: in the chosen folder. A pointer stored inside the folder it points at could
+#: never be found again, so the default location is always readable and holds
+#: nothing but the redirection.
+LOCATION_POINTER_FILENAME: Final[str] = "data-location.json"
+
 #: ``{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}`` -- FOLDERID_LocalAppData.
 _LOCAL_APP_DATA_GUID: Final[tuple[int, int, int, tuple[int, ...]]] = (
     0xF1B32785,
@@ -189,25 +197,144 @@ class ScoreboardPaths:
         }
 
 
+def default_root() -> Path:
+    """The platform-reported location, ignoring any operator choice.
+
+    This is where the location pointer lives, so it must be resolvable even
+    when the operator has sent the game data somewhere else entirely.
+    """
+
+    return user_data_root() / APPLICATION_DIRECTORY_NAME
+
+
+def location_pointer() -> Path:
+    """The file remembering an operator's chosen data folder."""
+
+    return default_root() / LOCATION_POINTER_FILENAME
+
+
+def validate_root(candidate: Path | str, *, create: bool = True) -> Path:
+    """Return ``candidate`` as a usable data root, or explain why it is not.
+
+    ``create=True`` is the picker's check: the folder is made and written to
+    for real, so an unusable choice is refused while the operator is standing
+    at the screen rather than discovered at the next launch, possibly during a
+    game.
+
+    ``create=False`` is the startup check, and it deliberately creates nothing.
+    Resolving a path must not have side effects, and a saved folder on a USB
+    stick that is not plugged in today should fall back quietly rather than
+    causing an empty directory to appear somewhere unexpected.
+    """
+
+    path = Path(candidate).expanduser()
+    if not path.is_absolute():
+        raise PathResolutionError(
+            "runtime data must use an absolute path, never a relative one; "
+            f"got {path!s}"
+        )
+    if path.exists() and not path.is_dir():
+        raise PathResolutionError(f"{path} is a file, not a folder")
+
+    if not create:
+        if path.is_dir():
+            if not os.access(path, os.W_OK):
+                raise PathResolutionError(f"{path} cannot be written to")
+            return path
+        # Not there yet, but its parent is: ScoreboardPaths.ensure() will make
+        # it at startup, exactly as it does for the default location.
+        if path.parent.is_dir():
+            return path
+        raise PathResolutionError(f"{path} is not reachable: {path.parent} is missing")
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".scoreboard-write-test"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError as exc:
+        raise PathResolutionError(f"{path} cannot be written to: {exc}") from exc
+    return path
+
+
+def read_chosen_root() -> Path | None:
+    """The operator's remembered data folder, or ``None`` if none is set.
+
+    A pointer that is missing, unreadable, malformed, or names a folder that is
+    no longer reachable yields ``None``: the application falls back to the
+    default location and keeps running. Refusing to start because a saved
+    preference went stale would be the worst possible trade on a game night.
+    """
+
+    import json
+
+    pointer = location_pointer()
+    try:
+        payload = json.loads(pointer.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = payload.get("root") if isinstance(payload, dict) else None
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return validate_root(value, create=False)
+    except PathResolutionError:
+        return None
+
+
+def write_chosen_root(root: Path | str) -> Path:
+    """Remember ``root`` as the data folder for the next launch.
+
+    The choice deliberately takes effect at the next launch rather than
+    immediately: the database connection, the instance lock, and the log
+    handler are all open on the current folder, and moving them under a running
+    game is a far larger and riskier operation than this feature is.
+    """
+
+    import json
+
+    validated = validate_root(root)
+    pointer = location_pointer()
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(
+        json.dumps({"root": str(validated)}, indent=2) + "\n", encoding="utf-8"
+    )
+    return validated
+
+
+def clear_chosen_root() -> None:
+    """Forget any chosen folder and return to the platform default."""
+
+    try:
+        location_pointer().unlink()
+    except OSError:
+        pass
+
+
 def resolve_paths(override: Path | str | None = None) -> ScoreboardPaths:
     """Return the runtime locations, preferring an explicit override.
 
     Resolution order: an explicit ``override`` (used by every test), then
-    :data:`DATA_DIRECTORY_ENVIRONMENT_VARIABLE`, then the platform-reported
-    per-user application-data root. A relative path is refused rather than
-    silently resolved against the current working directory, which could place
-    live state inside the repository.
+    :data:`DATA_DIRECTORY_ENVIRONMENT_VARIABLE`, then the folder an operator
+    chose through the picker, then the platform-reported per-user
+    application-data root. A relative path is refused rather than silently
+    resolved against the current working directory, which could place live
+    state inside the repository.
+
+    The environment variable outranks the operator's choice on purpose: it is
+    how tests and rehearsals isolate themselves, and a rehearsal must never be
+    able to write into the real game folder by accident.
     """
 
     if override is not None:
         candidate = Path(override)
     else:
         env_value = os.environ.get(DATA_DIRECTORY_ENVIRONMENT_VARIABLE)
-        candidate = (
-            Path(env_value)
-            if env_value
-            else user_data_root() / APPLICATION_DIRECTORY_NAME
-        )
+        if env_value:
+            candidate = Path(env_value)
+        else:
+            chosen = read_chosen_root()
+            candidate = default_root() if chosen is None else chosen
     if not candidate.is_absolute():
         raise PathResolutionError(
             "runtime data must use an absolute per-user path, never a "
@@ -216,17 +343,52 @@ def resolve_paths(override: Path | str | None = None) -> ScoreboardPaths:
     return ScoreboardPaths(candidate)
 
 
+def describe_resolution() -> dict[str, str | None]:
+    """Where the data folder came from, in plain terms, for the operator view."""
+
+    env_value = os.environ.get(DATA_DIRECTORY_ENVIRONMENT_VARIABLE)
+    chosen = read_chosen_root()
+    if env_value:
+        source = "environment"
+        explanation = (
+            f"{DATA_DIRECTORY_ENVIRONMENT_VARIABLE} is set, so it overrides any "
+            "chosen folder. This is for tests and rehearsals."
+        )
+    elif chosen is not None:
+        source = "chosen"
+        explanation = "You chose this folder. Change it with Choose folder."
+    else:
+        source = "default"
+        explanation = "This is the standard per-user location for this laptop."
+    return {
+        "source": source,
+        "explanation": explanation,
+        "root": str(resolve_paths().root),
+        "default_root": str(default_root()),
+        "chosen_root": None if chosen is None else str(chosen),
+        "environment_root": env_value or None,
+    }
+
+
 __all__ = [
     "APPLICATION_DIRECTORY_NAME",
     "BACKUP_FILENAME",
     "CONFIG_FILENAME",
     "DATABASE_FILENAME",
     "DATA_DIRECTORY_ENVIRONMENT_VARIABLE",
+    "LOCATION_POINTER_FILENAME",
     "LOCK_FILENAME",
     "LOG_DIRECTORY_NAME",
     "LOG_FILENAME",
     "PathResolutionError",
     "ScoreboardPaths",
+    "clear_chosen_root",
+    "default_root",
+    "describe_resolution",
+    "location_pointer",
+    "read_chosen_root",
     "resolve_paths",
     "user_data_root",
+    "validate_root",
+    "write_chosen_root",
 ]

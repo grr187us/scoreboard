@@ -172,6 +172,18 @@
                 data-arg-name="name" data-confirm="local" data-confirm-title="Change the AWAY team name?">Apply&hellip;</button>
       </div>
 
+      <!-- Where the game and its logs are written. Deliberately inside this
+           overlay rather than on the board: the drawer scrolls inside itself,
+           so nothing here can push a live control off screen (U-001). -->
+      <div class="row section" id="data-folder-row">
+        <span class="row-label">Saved to</span>
+        <span class="folder-path" id="data-folder-path">&hellip;</span>
+        <button type="button" data-action="choose_data_folder">Choose folder&hellip;</button>
+        <button type="button" data-action="use_default_folder">Use standard folder</button>
+      </div>
+      <p class="hint" id="data-folder-note">The game running now keeps saving where it is. A new
+        folder is used the next time the scoreboard starts.</p>
+
       <div class="row end">
         <button type="button" data-action="close_drawer">Close</button>
       </div>

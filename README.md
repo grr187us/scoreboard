@@ -60,6 +60,7 @@ The Phase 2 MVP provides, or will provide:
 | Mouse and keyboard operation with generated shortcut help | Built |
 | Separate operator and fullscreen spectator views | Built |
 | Offline operation, local recovery state, and a durable action history | Built |
+| A folder picker for choosing where the game and logs are saved | Built |
 | Display selection, persisted identity, and disconnect recovery | Task 10, not started |
 | A repeatable offline Windows package and one-action launch | Built; see [Packaging](docs/PACKAGING.md). Rebuild required after Task 10. |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
