@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-11 implemented and verified locally; Tasks 1-9 audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started.
+**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started.
 **Last updated:** September 5, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).

@@ -1,6 +1,6 @@
 # MVP Requirements
 
-**Status:** Phase 1 baseline, updated by the September 5, 2026 Phase 2 audit; Tasks 1-9 of the implementation backlog are built.
+**Status:** Phase 1 baseline, updated by the September 5, 2026 Phase 2 audit; implementation Tasks 1-11 are substantially built. Focused Bundle A verification passes, while the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Task 10's real two-display/stadium evidence and Task 12 rehearsal remain open.
 **Last updated:** September 5, 2026
 
 ## 1. Purpose and requirement language

@@ -1,8 +1,8 @@
-# Handoff — Phase 2 Task 10: display selection, fullscreen, and failure recovery
+# Historical Handoff — Phase 2 Task 10: display selection, fullscreen, and failure recovery
 
 **Written:** September 5, 2026
-**For:** the next implementation session
-**Branch:** `phase-2-audit`, at `7e04aa1`, three commits ahead of `main`
+**Status:** Superseded by the completed Task 10 implementation and subsequent commits
+**For:** historical context only; use `PROJECT_ROADMAP.md` and `docs/DISPLAY_CHECKLIST.md` for current work
 
 ---
 

@@ -1,19 +1,19 @@
 # High School Football LED Scoreboard
 
-This repository is the pre-implementation foundation for a reliable, offline-capable football scoreboard and future stadium video-production system. The immediate product is intentionally small: a Windows application that a student or volunteer can operate under game pressure and display fullscreen through the stadium's existing HDMI video processor.
+This repository contains the Phase 2 implementation of a reliable, offline-capable football scoreboard and future stadium video-production system. The immediate product is intentionally small: a Windows application that a student or volunteer can operate under game pressure and display fullscreen through the stadium's existing HDMI video processor.
 
-A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, and the fullscreen spectator window. It also builds into an offline Windows package. It is **not** yet a release: display selection and the sustained rehearsal are unbuilt, and no result on the stadium wall has been recorded.
+A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, and the fullscreen spectator window. It also builds into an offline Windows package. It is **not** yet a release: display selection is implemented but lacks real two-display evidence, the sustained rehearsal is open, and no result on the stadium wall has been recorded.
 
 ## Current status
 
 - **Phase 0 — discovery and feasibility:** substantially complete, with the critical stadium HDMI test still open.
 - **Phase 1 — repository, requirements, layout, and architecture:** documentation foundation created; owner decisions and field evidence remain open.
-- **Phase 2 — core MVP:** in progress. Backlog Tasks 1–9 and 11 are implemented and verified locally; Task 10 (display selection and failure recovery) and Task 12 (sustained rehearsal) are not started.
+- **Phase 2 — core MVP:** implementation tasks 1–11 are substantially implemented. The current Bundle A workflow passes focused verification, but the full discovered suite still needs its legacy pregame/quarter expectations reconciled; Task 10's two-display and stadium acceptance evidence, plus Task 12 sustained rehearsal, remain open.
 - **Production media, OBS, networking, and hardware-controller work:** deferred.
 
 `PROJECT_ROADMAP.md` is the authority on status and evidence. Nothing here may be treated as release-ready on the strength of a passing automated suite; the open hardware and rehearsal evidence is listed there.
 
-The local repository uses `main` and is intended to synchronize with `https://github.com/grr187us/scoreboard.git`.
+The local repository uses `main` as the protected integration branch. Current implementation work is on `phase-2-audit` and synchronizes with `https://github.com/grr187us/scoreboard.git`.
 
 ## Confirmed versus unverified
 
@@ -61,8 +61,8 @@ The Phase 2 MVP provides, or will provide:
 | Separate operator and fullscreen spectator views | Built |
 | Offline operation, local recovery state, and a durable action history | Built |
 | A folder picker for choosing where the game and logs are saved | Built |
-| Display selection, persisted identity, and disconnect recovery | Task 10, not started |
-| A repeatable offline Windows package and one-action launch | Built; see [Packaging](docs/PACKAGING.md). Rebuild required after Task 10. |
+| Display selection, persisted identity, and disconnect recovery | Built and tested against injected screen lists; real two-display evidence remains open |
+| A repeatable offline Windows package and one-action launch | Built at version 0.1.0 after Task 10; clean-machine and target-laptop checks remain open |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
 
 Detailed, testable behavior is in [MVP requirements](docs/MVP_REQUIREMENTS.md).
@@ -91,7 +91,7 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/PROJECT_STRUCTURE.md` | Minimal Phase 2 boundaries and proposed tree |
 | `docs/PHASE_2_BACKLOG.md` | Ordered, bounded implementation tasks |
 | `docs/PACKAGING.md` | How the offline Windows package is built, installed, and verified |
-| `docs/HANDOFF_TASK_10.md` | Session handoff for the next implementation task |
+| `docs/HANDOFF_TASK_10.md` | Historical Task 10 handoff; superseded by the roadmap and display checklist |
 | `tools/` | Build and measurement scripts; nothing here ships in the package |
 | `src/scoreboard/` | The application: `domain/`, `application/`, `infrastructure/`, `host/`, and the `views/` pages |
 | `tests/` | `unit/` domain and clock behaviour, `integration/` persistence, recovery, bridge and rehearsal, `ui/` optional browser checks |

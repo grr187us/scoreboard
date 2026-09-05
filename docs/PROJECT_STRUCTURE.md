@@ -1,11 +1,11 @@
 # Proposed Phase 2 Project Structure
 
-**Status:** Approved structure proposal; only boundary README files exist today
-**Last updated:** September 4, 2026
+**Status:** Approved structure; implementation now fills the Phase 2 boundaries
+**Last updated:** September 5, 2026
 
 ## 1. Principle
 
-Create folders when a task puts real code or assets in them. Do not pre-create a large empty tree. The current repository contains only `src/scoreboard/`, `tests/`, and `assets/` boundary notes because application implementation has not begun.
+Create folders when a task puts real code or assets in them. Do not pre-create a large empty tree. The current repository contains the implemented Phase 2 domain, application, infrastructure, host, view, and test boundaries; deferred integrations remain uncreated.
 
 The proposed structure follows the dependency rule:
 

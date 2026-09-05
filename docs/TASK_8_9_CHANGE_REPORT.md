@@ -1,9 +1,9 @@
 # Tasks 8 and 9 change report
 
-Implemented in the requested order: recovery prerequisite (`c3fd05a`),
+Historical report. Implemented in the requested order: recovery prerequisite (`c3fd05a`),
 Task 8 spectator foundation (`6691c13`), then Task 9 keyboard/input safety.
 Task 9 uses the commit title `Add keyboard controls with shared confirmation and input safety`.
-No remote push was requested. No unrelated working-tree changes existed at startup.
+The report describes the original Task 8/9 implementation session; later Task 10, packaging, audit, and presentation commits supersede its repository-status statements.
 
 Validation: 261 unittest tests passed, including 36 spectator viewport cases and
 keyboard browser tests against the real bridge and temporary SQLite store.

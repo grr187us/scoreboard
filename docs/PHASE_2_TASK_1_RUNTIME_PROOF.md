@@ -1,8 +1,8 @@
 # Phase 2 Task 1 — Runtime and Windows Multi-Window Proof
 
-**Status:** Implemented; one-display Windows smoke evidence is recorded in `PROJECT_ROADMAP.md`. The normal two-display manual checks remain pending.
+**Status:** Historical Task 1 proof completed. The production implementation has since replaced the placeholder pages and fixed-index-only behavior; normal two-display manual checks remain pending and are tracked in [`DISPLAY_CHECKLIST.md`](DISPLAY_CHECKLIST.md).
 
-This task proves only the managed-window host. The HTML pages intentionally contain placeholder text and display-host controls only. They do not implement scoreboard state, scoring, clocks, persistence, SQLite, styling, OBS, a server, hardware protocols, or peripheral integration.
+This document records the original managed-window host proof. At that point the HTML pages intentionally contained placeholder text and display-host controls only. The production scoreboard now uses the proven host boundary; current behavior is documented in [`ARCHITECTURE.md`](ARCHITECTURE.md), [`PACKAGING.md`](PACKAGING.md), and [`DISPLAY_CHECKLIST.md`](DISPLAY_CHECKLIST.md).
 
 ## Verified host versions
 
@@ -24,7 +24,7 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\scoreboard.exe
 ```
 
-The final command starts one Python process. By default it chooses display index `1` (Windows `Display 2`) for the fullscreen spectator window. To deliberately exercise the missing-display behavior, run:
+The final command starts one Python process. These commands describe the original Task 1 proof; the current application uses remembered display identity and the production launch path documented in [`PACKAGING.md`](PACKAGING.md).
 
 ```powershell
 .\.venv\Scripts\scoreboard.exe --display-index 99
@@ -52,4 +52,4 @@ On a normal Windows two-display setup:
 6. Close the operator. In Task Manager, confirm the `scoreboard` Python process exits and no child process remains.
 7. Disconnect network adapters after the editable install, repeat steps 1–6, and record the outcome. This task does not test HDMI/LED hardware or alter any hardware configuration.
 
-The stadium HDMI test remains a separate Phase 0 gate. Task 10 will add persisted display identity and disconnect/reconnect handling against the real scoreboard views.
+The stadium HDMI test remains a separate Phase 0 gate. Task 10's persisted display identity and disconnect/reconnect implementation is complete, but its real two-display and stadium acceptance checks remain open.

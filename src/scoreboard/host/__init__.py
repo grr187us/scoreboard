@@ -1,1 +1,1 @@
-"""Windows webview-host boundary for the Task 1 runtime proof."""
+"""Windows webview host boundary for the scoreboard application."""

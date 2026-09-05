@@ -18,7 +18,7 @@ Build the MVP as a **single local Python application process** with:
 - a narrow JavaScript-to-Python command bridge and Python-to-view snapshot notifications;
 - a PyInstaller one-folder Windows package after development behavior is proven.
 
-This is a hybrid of option 1 (Python engine plus web presentation) and a small native window host. It deliberately omits a local HTTP/WebSocket server from the MVP. OBS and other integrations can later consume a read-only local transport adapter without taking ownership of state. The owner requires durable offline recovery data and an action history; the selected embedded local storage format remains a Phase 2 decision.
+This is a hybrid of option 1 (Python engine plus web presentation) and a small native window host. It deliberately omits a local HTTP/WebSocket server from the MVP. OBS and other integrations can later consume a read-only local transport adapter without taking ownership of state. The embedded SQLite store and automatic backup are confirmed implementation decisions, not a pending architecture choice.
 
 ## 2. Decision drivers
 
@@ -212,11 +212,11 @@ For every accepted state-changing command, validate in memory, update recoverabl
 
 Development startup will be one documented PowerShell command after environment setup. Production startup will be a shortcut to a PyInstaller one-folder executable; it starts both windows and no terminal is required.
 
-Task 1 enumerates `pywebview.screens`, shows the current name/geometry choices in the operator proof, and opens the spectator window on an explicitly chosen screen in borderless fullscreen. It deliberately stores no display preference. Task 10 will save a best-effort identity. If the selected screen is absent at startup, the proof keeps the operator available and shows `DISPLAY NOT FOUND`; it does not silently cover the operator screen.
+The original Task 1 proof enumerated `pywebview.screens`, showed name/geometry choices, and opened a placeholder spectator window on an explicitly chosen screen in borderless fullscreen. It deliberately stored no display preference. That behavior is retained here as historical evidence only; the production host now uses the Task 10 display policy below.
 
 **Task 10, September 5, 2026.** The identity is now saved, in the `display` section of `config.json` — the first use of the file section 9 reserved for it. It holds the Windows device name plus geometry, never a list position. `host/displays.py` stays pure: it takes a screen list and a stored preference and returns a decision, so the whole policy is testable on a one-display machine. `host/app.py` owns the Windows calls — `pywebview.screens` for geometry and `WinForms.Screen.AllScreens` for device names, both injectable — and a bounded periodic check that reports a display appearing or disappearing without ever moving a window. Resolution order is an explicit operator choice, then `--display-index`, then the saved display, then the first non-primary display; there is no fallback past that, so an unrecognised preference reports `DISPLAY NOT FOUND` rather than covering the controls (D-002, D-006). Selecting, reopening, losing, and forgetting a display are host actions: they advance no revision and write nothing to the game database, the same contract as `reopen_display()` and the data-folder picker.
 
-The first Phase 2 task must prove on Windows:
+The original Task 1 proof had to prove on Windows:
 
 1. two windows open in one process;
 2. the spectator window can target a selected second display and toggle fullscreen;
@@ -224,11 +224,11 @@ The first Phase 2 task must prove on Windows:
 4. WebView2 availability and packaged behavior are understandable;
 5. application shutdown leaves no orphan process.
 
-If this proof fails, the fallback is a small PySide6/Qt WebEngine host using the same HTML views and pure core. The domain architecture remains unchanged.
+That proof passed on the development host. If WebView2 later fails materially on the target laptop, the fallback remains a small PySide6/Qt WebEngine host using the same HTML views and pure core. The domain architecture remains unchanged.
 
 ### Task 1 host evidence — September 4, 2026
 
-The host proof is implemented with `pywebview==6.2.1` and no local HTTP server. Its pages are in-memory HTML loaded from bundled placeholder files; no scoreboard state, persistence, SQLite, or hardware integration is present. The tested host used CPython 3.11.11 and Windows WebView2 Runtime `152.0.4191.62`.
+The historical host proof used `pywebview==6.2.1` and no local HTTP server. Its pages were in-memory HTML loaded from bundled placeholder files; it intentionally did not include scoreboard state or persistence. The production implementation now uses the same managed-webview boundary for the authoritative scoreboard, SQLite recovery, operator view, spectator view, and startup recovery choice. The tested host used CPython 3.11.11 and Windows WebView2 Runtime `152.0.4191.62`.
 
 Focused display-selection tests passed (four tests): display labels are deterministic, a valid selected screen object is preserved, a missing selection never falls back to the primary display, and a late close event from a replaced spectator cannot clear the newly reopened window. The actual host launched an operator plus explicitly selected fullscreen spectator window with `--display-index 0 --auto-close-after-seconds 30`, then exited with no `scoreboard-proof` or Python process remaining. The host also returned `DISPLAY NOT FOUND: Display 100` for an unavailable index. This runtime launch was performed with the normal sandbox network restriction active; it did not fetch packages or contact a service.
 
