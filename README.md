@@ -91,6 +91,7 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/PROJECT_STRUCTURE.md` | Minimal Phase 2 boundaries and proposed tree |
 | `docs/PHASE_2_BACKLOG.md` | Ordered, bounded implementation tasks |
 | `docs/PACKAGING.md` | How the offline Windows package is built, installed, and verified |
+| `docs/HANDOFF_TASK_10.md` | Session handoff for the next implementation task |
 | `tools/` | Build and measurement scripts; nothing here ships in the package |
 | `src/scoreboard/` | The application: `domain/`, `application/`, `infrastructure/`, `host/`, and the `views/` pages |
 | `tests/` | `unit/` domain and clock behaviour, `integration/` persistence, recovery, bridge and rehearsal, `ui/` optional browser checks |
