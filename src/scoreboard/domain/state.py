@@ -152,7 +152,11 @@ class GameState:
     )
     event_phase: str = "PREGAME"
 
+    play_clock_cleared: bool = True
+
     def __post_init__(self) -> None:
+        if not isinstance(self.play_clock_cleared, bool):
+            raise StateValidationError("play_clock_cleared must be boolean")
         _require_version(self.schema_version, self.app_version)
         _require_revision(self.revision)
         object.__setattr__(self, "home_name", _require_name(self.home_name, "home_name"))

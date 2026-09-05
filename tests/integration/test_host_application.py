@@ -135,6 +135,7 @@ class RefreshTests(ApplicationTestCase):
         application.set_publisher(lambda name, view: published.append((name, view)))
         bridge.command("game_clock_start", {}, 0)
 
+        published.clear()  # Accepted Start already published immediately.
         self.monotonic.advance(3.0)
         application.tick()
 

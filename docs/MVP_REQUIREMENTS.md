@@ -78,6 +78,12 @@ These values make implementation and testing concrete without claiming to settle
 | F-027 | Pregame and interval countdown starts, stops, corrections, expirations, and phase changes MUST be validated commands and logged; their display updates MUST use the same monotonic timing model as game and play clocks. | Fake-time, logging, and delayed-callback tests. |
 | F-028 | Pregame and interval countdowns MUST each provide Start, Stop, Reset, and Edit Current Time controls. Edit Current Time MUST validate minutes/seconds and present a `Start after applying?` radio choice; `Remain stopped` is the default. | UI, boundary, and command tests. |
 
+Lifecycle is advanced by existing accepted commands: quarter forward/back/direct
+selection and quarter Undo map PRE to PRE_GAME, HALF to HALFTIME, FINAL to FINAL,
+and playing labels to IN_PROGRESS. A game-clock Start that runs from pregame or
+halftime enters IN_PROGRESS. End Game sets FINAL; New Game restores PRE_GAME.
+No expiry advances lifecycle. Team names are editable only in PRE_GAME.
+
 ### 4.4 Game clock
 
 | ID | Requirement | Verification |

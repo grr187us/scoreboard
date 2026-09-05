@@ -299,8 +299,7 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
                 # A cleared play clock is a blank area, not a zero (F-048).
                 format_play_clock(
                     state.play_clock.seconds,
-                    blank_at_zero=not state.play_clock.running
-                    and state.play_clock.seconds == 0.0,
+                    blank_at_zero=state.play_clock_cleared,
                 ),
             ),
             "event": {
@@ -371,6 +370,7 @@ class ScoreboardBridge:
         display: DisplayLink | None = None,
         diagnostics: Diagnostics | None = None,
         lock: threading.RLock | None = None,
+        on_accepted: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._service = service
         self._store = store
@@ -379,6 +379,7 @@ class ScoreboardBridge:
         # One lock serialises commands against the display-refresh tick, so a
         # checkpoint can never read a half-applied command.
         self._lock = threading.RLock() if lock is None else lock
+        self._on_accepted = on_accepted
 
     # --- The JavaScript API ------------------------------------------------
 
@@ -409,6 +410,8 @@ class ScoreboardBridge:
 
             result = self._service.submit(built)
             self._store.record_command(built, result)
+            if result.accepted and self._on_accepted is not None:
+                self._on_accepted(self._view())
             return self._result_payload(
                 accepted=result.accepted,
                 error=result.error,

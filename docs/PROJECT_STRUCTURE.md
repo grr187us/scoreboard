@@ -60,12 +60,14 @@ scoreboard/
 │  │  └─ diagnostics.py            # rotating application diagnostics
 │  ├─ host/
 │  │  ├─ app.py                    # webview lifecycle and shutdown
+│  │  ├─ startup.py                # separate report/resume/new startup surface
 │  │  ├─ bridge.py                 # narrow JS/Python contract
 │  │  └─ displays.py               # enumeration, selection, reopen/fullscreen
 │  ├─ views/
 │  │  ├─ shared/                   # base.css tokens/reset, render.js helpers
 │  │  ├─ operator/                 # index.html, operator.css, operator.js
-│  │  └─ spectator/                # display-only page; layout is Task 8
+│  │  ├─ startup/                  # recovery preview and explicit choices
+│  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer
 │  └─ integrations/                # empty/uncreated until a later phase needs it
 │     ├─ obs.py                    # future output adapter, not MVP
 │     └─ controller.py             # future optional input adapter, not MVP

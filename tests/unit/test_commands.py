@@ -521,7 +521,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(result.state.home_score, 21)
         self.assertEqual(result.state.away_score, 14)
         self.assertEqual(result.state.quarter, "4th")
-        self.assertEqual(result.event.old_value, "PRE_GAME")
+        self.assertEqual(result.event.old_value, "IN_PROGRESS")
         self.assertEqual(result.event.new_value, "FINAL")
 
         fake.advance(60.0)

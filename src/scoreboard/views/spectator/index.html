@@ -2,59 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scoreboard display</title>
-  <link rel="stylesheet" href="../shared/base.css">
-  <style>
-    /* Deliberately unstyled beyond legibility. The spectator layout, type
-       scale, safe margins, and responsive canvas are Task 8; this page exists
-       only to prove that the read-only bridge delivers a complete snapshot. */
-    body { display: grid; place-content: center; gap: 12px; text-align: center; }
-    .teams { display: flex; gap: 48px; justify-content: center; }
-    .value { font-size: 64px; font-weight: 700; }
-    .label { color: var(--ink-dim); letter-spacing: 0.12em; }
-    .clock { font-size: 48px; font-weight: 700; }
-    .note { color: var(--ink-dim); }
-  </style>
+  <link rel="stylesheet" href="spectator.css">
 </head>
 <body>
-  <div class="teams">
-    <div>
-      <p class="label" data-field="teams.home.name">HOME</p>
-      <p class="value numeric" data-field="teams.home.score">0</p>
+  <main id="canvas" aria-label="Scoreboard">
+    <div id="safe-area">
+      <section id="game-board" hidden>
+        <div class="team home">
+          <p class="name" data-field="teams.home.name"></p>
+          <p class="score" data-field="teams.home.score"></p>
+        </div>
+        <div class="team away">
+          <p class="name" data-field="teams.away.name"></p>
+          <p class="score" data-field="teams.away.score"></p>
+        </div>
+        <p class="game-clock" data-field="clocks.game.display"></p>
+        <p class="quarter" data-field="quarter"></p>
+        <p class="play"><span class="label" id="play-label">PLAY </span><span
+          class="play-clock" data-field="clocks.play.display"></span></p>
+      </section>
+      <section id="event-board" hidden>
+        <p class="phase" id="event-phase" data-field="clocks.event.phase"></p>
+        <p class="event-title" data-field="clocks.event.title"></p>
+        <p class="event-clock" data-field="clocks.event.display"></p>
+        <p class="warmup" id="warmup">Warmup follows: <span data-field="clocks.event.warmup_follows"></span></p>
+      </section>
     </div>
-    <div>
-      <p class="label" data-field="teams.away.name">AWAY</p>
-      <p class="value numeric" data-field="teams.away.score">0</p>
-    </div>
-  </div>
-  <p class="clock" data-field="clocks.game.display">12:00</p>
-  <p class="label"><span data-field="quarter">PRE</span> &middot; PLAY <span
-      class="clock" data-field="clocks.play.display"></span></p>
-  <p class="label"><span data-field="clocks.event.title">KICKOFF IN</span>
-    <span class="clock" data-field="clocks.event.display">30:00</span></p>
-  <p class="note" id="note"></p>
-
+  </main>
   <script src="../shared/render.js"></script>
-  <script>
-    (function () {
-      'use strict';
-      var R = window.ScoreboardRender;
-
-      // Python pushes each new snapshot. A rendering failure here is caught and
-      // reported, never allowed to reach the state engine (R-002).
-      window.applyView = function (model) {
-        try {
-          R.bindFields(document, model);
-          R.setText(document.getElementById('note'), '');
-        } catch (error) {
-          R.setText(document.getElementById('note'), 'Display error: ' + error);
-        }
-      };
-
-      R.whenReady(function (api) {
-        Promise.resolve(api.get_snapshot()).then(window.applyView);
-      });
-    })();
-  </script>
+  <script src="spectator.js"></script>
 </body>
 </html>

@@ -38,6 +38,7 @@ def state_to_snapshot(state: GameState) -> dict[str, Any]:
             },
         },
         "event_phase": state.event_phase,
+        "play_clock_cleared": state.play_clock_cleared,
     }
 
 
@@ -74,6 +75,8 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
             play_clock=ClockValue(play["seconds"], play["running"], 40),
             event_countdown=ClockValue(event["seconds"], event["running"], 30 * 60),
             event_phase=snapshot["event_phase"],
+            play_clock_cleared=snapshot.get("play_clock_cleared",
+                                            play["seconds"] == 0 and not play["running"]),
         )
     except (KeyError, TypeError) as exc:
         raise StateValidationError(f"invalid snapshot shape: {exc}") from exc

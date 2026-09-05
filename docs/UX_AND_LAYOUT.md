@@ -49,7 +49,7 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Scale through CSS variables, viewport units, `clamp()`, and grid/flex layout rather than fixed pixels.
 - Letterbox or pillarbox deliberately when aspect ratios differ; never stretch text.
 - Keep a configurable safe-area inset, provisionally 4% on all sides.
-- Use bundled fonts with tabular numerals and high-contrast fallback fonts.
+- Use local system fonts (Arial/sans-serif) with tabular numerals and white-on-black contrast; no font download.
 - Test at 1280×720, 1366×768, 1920×1080, and one portrait/narrow mode before stadium dimensions are known.
 - After the HDMI test, add the confirmed resolution/refresh/overscan mode to the test matrix rather than hard-coding a new layout.
 
@@ -115,6 +115,7 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 
 ### 6.1a Pregame, halftime, and warmup presentation
 
+- Quarter selection controls presentation: PRE shows the event countdown, HALF shows the interval, and playing quarters show the game board. Starting the game clock leaves pregame/interval presentation. Entering PRE/HALF loads its stopped preset only when switching countdown kind; an already selected countdown retains its value. No extra lifecycle control is required.
 - Before kickoff, the spectator display shows a labeled `KICKOFF IN` 30:00 countdown. This is separate from the stopped 12:00 game clock.
 - At halftime, the spectator display shows one `UNTIL SECOND HALF` 15:00 countdown. While more than 3:00 remains it labels the current phase `HALFTIME` and visibly states `Warmup follows: 3:00`.
 - At 3:00, the same countdown continues without a reset and its current-phase label changes to `WARMUP`.
@@ -158,7 +159,7 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 
 - Use next/back on the main screen or direct selection in Corrections.
 - If either clock is running, the application warns that both will stop; cancel is safe.
-- On confirmation, stop both clocks and change only the quarter label. Do not automatically reset either clock until official behavior is confirmed.
+- On confirmation, stop both clocks and change the quarter plus its matching lifecycle/presentation. Do not automatically reset either clock until official behavior is confirmed.
 
 ### 6.7 Recover after application restart/crash
 

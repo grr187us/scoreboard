@@ -147,6 +147,7 @@ class ScoreboardApplication:
             display=self.display,
             diagnostics=self.diagnostics,
             lock=self._command_lock,
+            on_accepted=self._publish,
         )
         return self.bridge
 
@@ -157,9 +158,10 @@ class ScoreboardApplication:
 
         if self.bridge is None:
             return None
-        view = self.bridge.tick(now)
-        self._publish(view)
-        return view
+        with self._command_lock:
+            view = self.bridge.tick(now)
+            self._publish(view)
+            return view
 
     def start_refresh(self, interval: float = REFRESH_INTERVAL_SECONDS) -> None:
         if self._refresh is not None:

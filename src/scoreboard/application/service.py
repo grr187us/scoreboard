@@ -254,6 +254,31 @@ class ScoreboardService:
             next_state = transition.replacement_state
         else:
             changes = dict(transition.changes)
+            # Lifecycle is part of the same accepted command, never a UI label.
+            if "quarter" in changes:
+                quarter = changes["quarter"]
+                changes["lifecycle"] = {"PRE": "PRE_GAME", "HALF": "HALFTIME",
+                                        "FINAL": "FINAL"}.get(quarter, "IN_PROGRESS")
+                phase = {"PRE": "PREGAME", "HALF": "HALFTIME"}.get(quarter)
+                if phase is not None:
+                    previous = "PREGAME" if self._state.event_phase == "PREGAME" else "HALFTIME"
+                    if phase != previous:
+                        event_clock = event_clock.select(phase, now=now)
+                    changes["event_phase"] = phase
+            if (command.type is CommandType.GAME_CLOCK_START
+                    and game_clock.current_value(now).running
+                    and self._state.lifecycle in ("PRE_GAME", "HALFTIME")):
+                changes["lifecycle"] = "IN_PROGRESS"
+            if command.type is CommandType.GAME_CLOCK_START and (
+                    not self._game_clock.current_value(now).running
+                    and game_clock.current_value(now).running):
+                changes["play_clock_cleared"] = True
+            elif command.type is CommandType.PLAY_CLOCK_CLEAR:
+                changes["play_clock_cleared"] = True
+            elif command.type in (CommandType.PLAY_CLOCK_PRESET, CommandType.PLAY_CLOCK_CORRECT):
+                changes["play_clock_cleared"] = False
+            elif command.type is CommandType.PLAY_CLOCK_RESET:
+                changes["play_clock_cleared"] = play_clock.preset_seconds == 0
             # Every accepted command republishes both materialized clock values so
             # the snapshot is complete and current at the moment it was applied.
             changes.setdefault("game_clock", game_clock.to_clock_value(now=now))

@@ -574,8 +574,9 @@ class SpectatorBridgeTests(BridgeTestCase):
     def test_a_spectator_rendering_error_is_caught_in_the_page(self) -> None:
         # R-002: the page reports its own failure rather than throwing into
         # the host, which is what would put the state engine at risk.
-        self.assertIn("catch (error)", SPECTATOR_HTML)
-        self.assertIn("Display error", SPECTATOR_HTML)
+        script = (VIEWS / "spectator" / "spectator.js").read_text()
+        self.assertIn("catch (error)", script)
+        self.assertIn("Spectator rendering failed", script)
 
 
 class TickTests(BridgeTestCase):

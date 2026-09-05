@@ -104,6 +104,23 @@ The Python command service is the only writer. JavaScript stores only ephemeral 
 
 Publishing complete small snapshots is simpler and safer than applying a chain of UI-side deltas. A newly opened spectator view can render the latest snapshot immediately.
 
+### Lifecycle and spectator visibility (Task 8)
+
+Accepted quarter changes, including quarter Undo, set lifecycle from the manual
+label: PRE/PRE_GAME, HALF/HALFTIME, FINAL/FINAL, otherwise IN_PROGRESS.
+A game-clock Start that actually runs while pregame/halftime enters IN_PROGRESS.
+New Game restores PRE_GAME; End Game sets FINAL. Expiry never advances it.
+Entering PRE or HALF selects the corresponding event preset only when the event
+kind differs; an already selected countdown retains its current value. This
+uses EventCountdown.select and does not reset the game/play clocks.
+
+The state and persisted snapshot carry an additive boolean `play_clock_cleared`.
+Preset/correction makes it false; manual clear and a stopped-to-running game
+Start make it true; reset follows whether an engine preset exists. Expiration,
+Stop, other commands, checkpoints and recovery preserve it. Legacy snapshots
+without the field retain the previous stopped-zero-is-blank interpretation;
+the old format cannot distinguish an expired zero from a cleared zero.
+
 ## 7. Clock model
 
 Use an injected `MonotonicClock` interface backed in production by `time.monotonic_ns()`. Wall-clock time is used only for human-readable log timestamps, never to calculate remaining game time.
@@ -138,7 +155,7 @@ Startup recovery uses a separate `StartupBridge` with report/resume/new methods.
 
 - One Python process creates both webview windows and starts the application event loop.
 - The operator JavaScript invokes a deliberately small Python API such as `command(name, args, expected_revision)` and `get_snapshot()`.
-- Python notifies both windows after an accepted command or clock-display boundary. The JavaScript renderer replaces displayed values from the snapshot.
+- The bridge calls a host-only accepted-command callback after persistence under the shared lock; the host immediately notifies both windows. Ticks retain timed refresh/checkpoint work. No new JavaScript API method is needed. Python notifies both windows after an accepted command or clock-display boundary. The JavaScript renderer replaces displayed values from the snapshot.
 - The spectator bridge exposes no mutating API.
 - All bridge payloads are JSON-compatible, versioned dictionaries; domain objects do not leak into JavaScript.
 - If a view notification fails, log it, keep the core running, mark display health, and allow recreation from the latest snapshot.
