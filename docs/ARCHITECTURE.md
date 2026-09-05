@@ -12,6 +12,7 @@ Build the MVP as a **single local Python application process** with:
 - local JSON configuration plus an embedded SQLite recovery database and automatic backup;
 - a durable append-only action history stored with recoverable state;
 - two primary HTML/CSS/JavaScript views hosted in managed `pywebview` windows: operator and spectator;
+- two independently lifecycled helper windows the operator opens on demand — the Field Assistant (`views/field_assistant/`) and the presentation-layout editor (`views/layout/`) — neither of which is a production-display target, a display-health state owner, or an authoritative state owner;
 - an optional, fixed-size 640×360 bordered spectator test window for local
   layout checks and operator practice; it is neither a production-display
   target nor a display-health state owner;
@@ -166,6 +167,51 @@ defaults a snapshot with no `"football"` key to the same values
 `default_state()` carries, so a game saved before this change stays
 recoverable without a schema-version bump (P-004, P-006).
 
+### Field Assistant (September 5, 2026)
+
+The Field Assistant composes the existing layers rather than adding a new
+authority. Pure rules (`domain/field_assistant.py`, no I/O, no clocks)
+calculate a proposed result from a draft action. The composite
+`finalize_field_action` command (`domain/commands.py`,
+`CommandType.FINALIZE_FIELD_ACTION`) validates that result against the
+current authoritative state inside `application/service.py`'s existing
+one-expected-revision-check, one-transaction, one-revision-increment,
+one-complete-snapshot discipline — the same discipline every other command
+already follows, not a second command path. `host/bridge.py`'s
+`FieldAssistantBridge` is the only surface JavaScript can call
+(`get_snapshot`, `preview_field_action`, `finalize_field_action`), and the
+helper window (`views/field_assistant/`) renders a draft and requests a
+finalize, on the same "Python calculates, JavaScript only renders and
+requests" rule as every other view. `preview_field_action` runs the same pure
+rules read-only and advances no revision — the same pattern
+`LayoutEditorBridge`'s preview/validate methods already use for presentation
+layouts.
+
+Two fields are additive on `GameState`, recovering safely from an older saved
+game the same way `play_clock_cleared` and the football fields above do:
+`assistant_first_quarter_home_direction` (`+1`/`-1`/`None`) and
+`assistant_line_to_gain` (`0`-`100`/`None`). `ball_on` may now also become
+`None` as the result of an assistant-driven scoring transition clearing field
+status; a manual `set_ball_on` command is unchanged. The persisted snapshot
+(`application/snapshots.py`) carries an additive `assistant` block holding
+these two fields; a snapshot without it recovers to safe "setup required"
+defaults, on the same additive-snapshot pattern as the football fields above.
+
+The rules engine's coordinate is label-based, not a rotating one: `0` is
+always the HOME goal line and `100` is always the AWAY goal line
+(`docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` section 3.1), so each team's
+direction in that coordinate is fixed — HOME always `+1`, AWAY always `-1` —
+rather than alternating by quarter. What alternates is presentation only: the
+operator's one-time first-quarter choice records which side of the on-screen
+field drawing HOME attacks toward, and the drawing mirrors at each quarter
+boundary (`home_goal_side` in the bridge view model); stored ball spots and
+line-to-gain never move at a quarter change. This corrects an inconsistency
+in the original design, which proposed flipping the label-based direction
+itself every quarter — a literal flip would have moved a 2nd-quarter HOME
+gain toward HOME's own goal line. See the Decision Log in
+`PROJECT_ROADMAP.md` and the Amendments note in
+`docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`.
+
 ## 7. Clock model
 
 Use an injected `MonotonicClock` interface backed in production by `time.monotonic_ns()`. Wall-clock time is used only for human-readable log timestamps, never to calculate remaining game time.
@@ -210,6 +256,8 @@ Startup recovery uses a separate `StartupBridge` with report/resume/new methods.
 - The operator JavaScript invokes a deliberately small Python API such as `command(name, args, expected_revision)` and `get_snapshot()`.
 - The bridge calls a host-only accepted-command callback after persistence under the shared lock; the host immediately notifies both windows. Ticks retain timed refresh/checkpoint work. No new JavaScript API method is needed. Python notifies both windows after an accepted command or clock-display boundary. The JavaScript renderer replaces displayed values from the snapshot.
 - The spectator bridge exposes no mutating API.
+- The presentation-layout editor bridge follows the same rule. `host/layout_bridge.py`'s `LayoutEditorBridge` can read a live snapshot and validate/preview/save/select/delete/reset a layout, but it has deliberately no `command()` method and no way to change a score, clock, quarter, or any other game value. Its window follows the same ownership pattern as the Field Assistant helper: `WindowHost.open_layout_editor` opens it independently of the operator and spectator windows, and its closed-callback clears only its own slot, so closing or losing the editor affects no other window and advances no state revision.
+- The Field Assistant bridge is narrow in a different direction: `host/bridge.py`'s `FieldAssistantBridge` exposes `get_snapshot`, `preview_field_action` (read-only, advances no revision), and `finalize_field_action` (the one composite command), all JSON-compatible. It has no other mutating method, and the helper window it serves is opened, closed, and reopened independently of the operator and spectator windows (`host/app.py`); a helper push failure destroys only the helper. `ScoreboardBridge` also defines those two methods so `FieldAssistantBridge` can delegate to it, so the isolation claim is about the *consumer*, not reachability: the Field Assistant page is the only caller, and the operator page never invokes them.
 - All bridge payloads are JSON-compatible, versioned dictionaries; domain objects do not leak into JavaScript.
 - If a view notification fails, log it, keep the core running, mark display health, and allow recreation from the latest snapshot.
 - The optional test spectator window consumes the same read-only spectator
@@ -251,6 +299,14 @@ local time (`America/New_York`) with correct daylight-saving handling. Windows
 does not ship the IANA time zone database that `zoneinfo` needs to resolve
 that name, so `tzdata` is a pinned runtime dependency rather than something
 the operating system is assumed to provide (R-001, W-006).
+
+### Presentation layout (`layouts.json`), added September 5, 2026
+
+Spectator-board placement, size, color, and visibility are a host/presentation concern, exactly like the display preference and the data-folder choice above: `PresentationLayouts` (`host/layout_bridge.py`) reads, validates, stores, and publishes layouts, and advances no state revision, submits no `Command`, and writes nothing to `scoreboard.db` or its backup.
+
+The layout library lives in its own file, `layouts.json`, in the same per-user Scoreboard data folder as `config.json` and `scoreboard.db` — **never as a section inside either of them**. A library can hold several named layouts and carries its own schema version; keeping it a separate file means a damaged layout library cannot cost the operator a saved game, and a damaged game cannot cost the operator a saved layout. It follows the same "a preference file may never stop the scoreboard" contract as `config.py`: an atomic temp-file-plus-`os.replace` write, and a read failure of any kind — a missing file, invalid JSON, a wrong or newer schema version, or an individually unrecoverable stored layout — falls back first to the last valid stored layout and then to the built-in default, never raising and never stopping launch.
+
+The active layout is deliberately not part of the 10 Hz view model. It changes rarely, so the host pushes it to the spectator, practice, and editor windows only when it actually changes (`window.applyLayout(...)`), the same push-on-change pattern already used for the display and data-folder preferences, rather than carrying it on every refresh tick.
 
 ## 10. Windows startup and display selection
 

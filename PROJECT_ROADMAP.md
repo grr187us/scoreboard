@@ -235,6 +235,87 @@ Implements item 2 of "Owner-requested next scoreboard work" below, and closes th
 
 **Not claimed.** Native WebView2 rendering of the new controls, real Windows keyboard/touch interaction with the Field drawer, and a two-hour rehearsal exercising the new fields are all still open, on the same basis as every other Task 7-10 UI claim in this document.
 
+### Phase 2 owner request 3 — presentation layout editor
+
+Implements item 3 of "Owner-requested next scoreboard work" below, delivered
+after items 1 and 2 (local time, expanded football state), and closes
+discovery issue 05 in `.scratch/testing-followups/issues/`. This is
+spectator-presentation work only: it changes nothing about Phase 2 acceptance,
+Task 12, the Phase 0 HDMI gate, or any hardware/stadium evidence, all of which
+remain exactly where they were before this request.
+
+- **What it is.** A new `presentation.layout` module defines a versioned,
+  pure (no I/O) schema for fifteen spectator-board widgets — every property a
+  widget carries (position, size, font scale, color, text/vertical alignment,
+  font weight, visibility, stacking order), the safe-area policy, and strict
+  validation with no silent repair. `infrastructure.layouts` persists named
+  layouts to a new `layouts.json`, and `host.layout_bridge.PresentationLayouts`
+  reads/validates/stores/publishes them as a host concern: saving, loading,
+  selecting, deleting, or resetting a layout advances no state revision,
+  submits no `Command`, writes no action-history row, and never touches
+  `scoreboard.db` or its backup. A new editor window, opened from the
+  operator's Advanced drawer (**Presentation layout…**), lets an operator
+  edit a layout through numeric fields against a live preview built from the
+  same renderer (`views/shared/board.js`) as the real spectator board; there
+  is no dragging. `docs/UX_AND_LAYOUT.md` §10 has the full operator-facing
+  description.
+- **The spectator board is now widget-rendered.** `views/shared/board.js`
+  replaces the previous fixed CSS grid with fifteen individually positioned
+  widgets, driven by the same layout document the editor produces. The
+  pregame/halftime event-countdown presentation keeps its existing markup and
+  CSS untouched and is **not editable in v1** — a documented, deliberate
+  limitation, not an oversight.
+- **Coordinates are normalized and canvas-relative**, not pixels: `x`/`y`/
+  `width`/`height` are fractions (0.0-1.0) of the logical 16:9 canvas, and
+  `font_scale` is a fraction of canvas *width* specifically, matching the
+  existing `calc(var(--canvas-width) * .12)` convention so current type sizes
+  carry over exactly. See the Decision Log for why.
+- **Possession moved from an inline mark beside the team name (owner request
+  2) to its own widget**, centered between the two names. Its text is still
+  produced in Python; only its placement changed.
+- **The default layout reproduces today's board exactly.** `game_clock_label`,
+  `home_timeouts`, and `away_timeouts` are positionable widgets that ship
+  **hidden by default**, because the current spectator board draws none of
+  them; an operator turns them on as a deliberate presentation choice, which
+  answers requirement D-001's default field inventory the same way as before
+  and does **not** resolve owner decision B-4 (whether timeouts should appear
+  on the spectator board), which remains open.
+- **Validation is strict, with a two-tier fallback.** A value out of range, an
+  invalid color, a widget outside the safe area, a widget below the minimum
+  size, or a serious overlap between two *visible* widgets is an error and the
+  whole layout is rejected — never partially applied or silently clamped. A
+  stored layout that fails to load falls back to the last known valid layout,
+  and if none exists, to the built-in default; a malformed `layouts.json`
+  never prevents the scoreboard from launching. Overlap is checked only among
+  visible widgets, because a hidden widget cannot visually collide, which is
+  why `game_clock_label`/`home_timeouts`/`away_timeouts` may sit in otherwise
+  occupied space while hidden.
+- **`layouts.json` is a separate file from `config.json` and
+  `scoreboard.db`.** A damaged layout library must not be able to cost the
+  operator a saved game, and vice versa; it follows the same atomic
+  temp-file-plus-`os.replace` write and the same "a preference file may never
+  stop the scoreboard" contract as `config.py`. See `docs/ARCHITECTURE.md` §9.
+- **No drag-and-drop or drag-resize in v1.** Every geometry property is a
+  numeric field with a documented minimum/maximum from `limits()`. This
+  answers discovery issue 05's level-2 recommendation (named-slot editing
+  within constrained zones) with numeric constrained editing rather than a
+  pointer-drag interaction; the issue file records why.
+- **No mutating game method exists on the editor's bridge.** The editor can
+  read a live read-only snapshot and validate/preview/save/select/delete/reset
+  a layout; it has no `command()` method and cannot reach a score, clock,
+  quarter, or any other game value.
+- Automated verification: **100 focused Python tests pass** — `tests/unit/test_layout_schema.py` (42), `tests/integration/test_layout_persistence.py` (18), `tests/integration/test_layout_bridge.py` (18), `tests/integration/test_spectator_layout_render.py` (8), and `tests/integration/test_layout_editor_contract.py` (14). The three browser checks that complete the picture — `tests/ui/test_spectator_browser.py` (2) and `tests/ui/test_layout_editor_browser.py` (1) — passed when they were written on a host with Node.js and Playwright, and **error rather than skip on a host without that tooling**, which is the state of this machine; they are not currently reproducible here and must not be counted as passing without a run that says so. The full discovered suite ran **597 tests with 15 failures and 3 errors**, every one of which reproduces the pre-existing baseline in "Automated suite failure inventory" below; **no failure is a regression from this work**. The browser viewport check that previously failed (`outside safe area: play`) now passes. `compileall`, `pip check`, and `git diff --check` all passed.
+
+**Not claimed.** No hardware, two-display, LED-wall, or WebView2 rendering of
+the editor or the widgetized board has been observed; every claim above is a
+source-level and (where noted) browser-automation claim on this development
+host, on the same basis as every other Phase 2 UI claim in this document.
+Stadium safe margins, brightness, and readability at the real viewing
+distance remain items to revisit after the HDMI test
+(`docs/UX_AND_LAYOUT.md` §9), unaffected by this work. Task 12, the Phase 0
+HDMI gate, and the two-display checklist are untouched and unadvanced by this
+request.
+
 ### Phase 2 Task 3 evidence
 
 - Added a monotonic-deadline game-clock engine in [`src/scoreboard/domain/clocks.py`](src/scoreboard/domain/clocks.py) and kept the clock state immutable and revision-safe using the existing `GameState`/`ClockValue` contract.
@@ -276,7 +357,7 @@ Task 6's "checkpoint once per displayed second" policy and every Task 7 readout 
 - Added a focused operator keyboard adapter and table-generated Shortcut Help. Map: Space game Start/Stop from rendered snapshot; 2/4 load stopped 25/40 presets; P/S play Start/Stop; Q/Shift+Q quarter forward/back; ZXCV home +1/+2/+3/+6; NM comma period away +1/+2/+3/+6; Ctrl+Z Undo; Esc close dialog/drawer. Requirements section 6 now matches the confirmed preset decision.
 - Every mapped game action reaches the existing `command()` signature with restricted `source` metadata in its args envelope. The same operator submission and confirmation functions serve both inputs, preserve the reviewed expected revision through confirmation, and retain source in durable accepted/rejected/prompt history. No toggle command or separate clock state exists in JavaScript.
 - Real-browser-to-real-bridge test verifies all 16 command bindings plus Esc, exact arguments/revisions, repeat and duplicate keydown suppression, focused-button Space/held Enter safety, all nine existing fields plus textarea/select/contenteditable, ignored modifiers/composition, confirmation suppression/cancel, identical mouse/keyboard running-clock quarter round trips, stale confirmation, recovery-screen isolation, table-generated help, and live control bounds at 1366x768 and 1093x614 CSS viewports. Two source contract tests reject invalid source metadata and check durable history.
-- Focused Task 9 tests 3/3; full suite 261/261. `compileall`, `pip check`, JavaScript syntax, diff whitespace, UTF-8 and relative Markdown file-link checks passed. No runtime database or log is in the repository. [Complete change inventory](docs/TASK_8_9_CHANGE_REPORT.md).
+- Focused Task 9 tests 3/3; full suite 261/261. `compileall`, `pip check`, JavaScript syntax, diff whitespace, UTF-8 and relative Markdown file-link checks passed. No runtime database or log is in the repository. The complete change inventory was a separate `docs/TASK_8_9_CHANGE_REPORT.md`, removed on September 5, 2026 because it duplicated information the commits already carry and its repository-status statements had been superseded four times over; the changes themselves are commits `c3fd05a` (recovery prerequisite), `6691c13` (Task 8 spectator foundation), and `d03066e` (Task 9 keyboard and input safety).
 - Numpad behavior, actual Windows repeat timing, novice rehearsal and physical WebView2 scaling remain release evidence. Browser automation cannot establish these results. No Task 10, packaging, OBS, controller or networking work was started.
 
 ### Persistence runtime follow-up
@@ -570,7 +651,7 @@ The MVP can be installed and launched on the target Windows laptop, operated wit
 | Media playback | Fullscreen videos, images, music-linked content if appropriate, and emergency stop | ➖ Deferred |
 | Sponsor content | Static sponsors, scheduled rotation, and proof-of-play logging if needed | ➖ Deferred |
 | Visual system | Team themes, logos, typography, safe zones, and reusable templates | ➖ Deferred |
-| Presentation layout editor | Safe offline editing of spectator-board placement and colors through validated visual-only layouts | ➖ Deferred; discovery issue 05 is recorded before any implementation |
+| Presentation layout editor | Safe offline editing of spectator-board placement and colors through validated visual-only layouts | ✅ v1 delivered early, inside Phase 2, on September 5, 2026 at the owner's direct request — see "Phase 2 owner request 3" above. Delivering it does not advance any other Phase 3 workstream in this table |
 | Source switching workflow | Scoreboard versus media/secondary HDMI source procedures | ➖ Deferred |
 
 ### Phase 3 Definition of Done
@@ -699,6 +780,13 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | Down, distance, possession, ball position, and timeouts are never changed automatically by another command (scoring, quarter, or clock). Timeouts default to 3 per team and are not auto-reset at halftime. | Automating a football rule (for example, resetting timeouts at halftime, or clearing down/distance on a change of possession) risks encoding a rule the owner or officials have not confirmed; an explicit operator action is always correct even if one click slower. | If rehearsal (Task 12) shows operators reliably forget one of these steps and officials confirm the automatic rule. |
 | September 5, 2026 | The durable history's generic JSON encoder (`infrastructure/persistence.py`) converts any dataclass value via `dataclasses.asdict` rather than falling back to `str()`. | Undo's generic old/new reporting reads a state field by name and can hold a compound value like `BallSpot`; a `str()` fallback recorded a Python repr in the audit trail and, at the bridge layer, briefly broke JSON serialization for that field until the corresponding service-layer fix. | If a future compound state field needs a different serialized shape than its own field names. |
 | September 5, 2026 | A genuine game-clock running-to-stopped transition clears a running play clock: explicit Stop does so in its command commit; natural expiry clears it through a bridge-locked observed tick without advancing the revision. | The stadium board must not keep showing a self-running play clock after the game clock has stopped. The observed expiry path mutates the play-clock engine and writes the game-expiry and system-caused clear records together, so a later tick cannot revive the old deadline and recovery retains why it disappeared. A redundant Stop remains a no-op for an independent play clock. | If officials require a different stopped-game-clock workflow. |
+| September 5, 2026 | Spectator-widget coordinates are normalized fractions (0.0-1.0) of the logical 16:9 canvas for `x`/`y`/`width`/`height`, and `font_scale` is a fraction of canvas **width** specifically, not height or a mix of both. | Matches the existing CSS convention (`calc(var(--canvas-width) * .12)`), so the widgetized board's default geometry reproduces today's type sizes exactly instead of inventing a new scale the whole board would need re-tuning against. | If the canvas is ever given a non-16:9 logical aspect ratio. |
+| September 5, 2026 | A layout is validated strictly: any out-of-range value, invalid color, out-of-safe-area widget, undersized widget, or serious overlap is an error and the whole layout is rejected. A stored layout that fails to load falls back to the last known valid layout, then to the built-in default, and never blocks launch. | Presentation state must obey the same "a preference file may never stop the scoreboard" rule as `config.json` and the data-folder pointer, while still refusing to render a layout that would put required scoreboard information off-screen or unreadable. | If a future property needs a graded warning instead of a hard error. |
+| September 5, 2026 | Spectator layouts are stored in their own `layouts.json`, never as a section inside `config.json`. | A layout library can hold several named layouts and carries its own schema version; keeping it a separate file means a damaged layout library cannot cost the operator a saved game, and a damaged game cannot cost the operator a saved layout — the same reasoning that already keeps the action history inside `scoreboard.db` rather than a shared file. | If layouts and operator preferences are ever shown to need one combined migration path. |
+| September 5, 2026 | Overlap validation considers only **visible** widgets. | A hidden widget cannot visually collide with anything, so this is what lets `game_clock_label`, `home_timeouts`, and `away_timeouts` sit in otherwise-occupied default positions while hidden, without the validator rejecting the built-in default layout. | If a future workflow needs to warn about a hidden widget that would collide once shown. |
+| September 5, 2026 | `game_clock_label`, `home_timeouts`, and `away_timeouts` ship as positionable widgets that default to **hidden**. | The current spectator board draws none of them, so hiding them by default makes the widgetized board's default layout reproduce today's board exactly; requirement D-001's default field inventory is answered the same way as before, and turning them on becomes a deliberate operator presentation choice rather than an automatic answer to open owner decision B-4. | If the owner decides timeouts should be visible by default rather than opt-in. |
+| September 5, 2026 | The presentation layout editor uses numeric fields with documented min/max for every geometry property; there is no drag-and-drop or drag-resize in v1. | Matches discovery issue 05's chosen level (constrained named-slot editing) while keeping the implementation to validated number entry rather than pointer-based hit-testing and drag math, which is a materially larger and riskier UI surface for a first version. | If rehearsal or the owner asks for direct manipulation and the added complexity is judged worthwhile. |
+| September 5, 2026 | The Field Assistant's rules direction is fixed per team in the label-based absolute coordinate (HOME always `+1` toward the AWAY goal line, AWAY always `-1`); the operator's one-time first-quarter choice only records which side of the on-screen drawing HOME attacks toward, and the drawing mirrors at every quarter boundary (`home_goal_side`). Stored ball spots and line-to-gain never move at a quarter change; OT stays manual-only. | The originally drafted rule flipped the label-based direction itself every quarter, which is internally inconsistent with a coordinate where `0` is always the HOME goal line: a literal flip would have moved a 2nd-quarter HOME gain toward HOME's own goal line. Found and corrected during implementation, before any rehearsal used the incorrect version. | If local overtime rules are approved and OT direction stops being manual-only. |
 | September 4, 2026 | Task 8 gap 1: lifecycle follows accepted quarter commands (including quarter Undo): PRE → PRE_GAME, HALF → HALFTIME, FINAL → FINAL, all playing labels → IN_PROGRESS. A successful game-clock Start leaving pregame/halftime enters IN_PROGRESS; End Game sets FINAL and New Game restores PRE_GAME. PRE/HALF entry selects its stopped event preset only when switching countdown kind; an already selected countdown retains its time. | No overlapping lifecycle control; team-name validation now leaves pregame. Expiry never advances lifecycle. | Operator rehearsal. |
 | September 4, 2026 | Persist an additive play_clock_cleared flag; retain old blank-zero interpretation for legacy snapshots lacking it. | The old model erased expiry versus clear intent; the renderer cannot recreate it safely. | Recovery compatibility/rehearsal. |
 | September 4, 2026 | Task 8 gap 2: publish after accepted commands under the existing serialization lock, retaining ticks for timed refresh/checkpoint work. | Removes the 250 ms scheduler wait; push-count tests prove delivery without a tick. Physical latency remains release evidence. | Target laptop measurement. |
@@ -771,6 +859,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | Package rebuilt after Task 10 and confirmed to carry it | 152 files, 27.4 MB, version 0.1.0, build-script verification passed. With nothing saved the frozen build opened no spectator window and logged the plain-language reason; with a display saved it logged `DISPLAY_SELECTED ... how=exact` and opened on it; with a corrupt `config.json` it started normally. Exit 0 each time, no orphan process. | `docs/PACKAGING.md`; session output | The pre-Task-10 package is superseded. The clean-machine, offline, SmartScreen, and second-display release checks are still open. |
 | September 5, 2026 | Encoding defect found by the pre-commit UTF-8 check, outside Task 10 | `views/startup/startup.js` held a cp1252 em dash (byte 0x97) rather than UTF-8, in the score separator of the recovery screen preview. A browser decoding the file as UTF-8 would have shown the operator `Tigers 7 <?> 3 Eagles` on the one screen that exists to help them decide whether to resume a game. Replaced with a real U+2014; all 81 checked files now decode as UTF-8. | `src/scoreboard/views/startup/startup.js` | Pre-existing since the Task 8 recovery prerequisite and unrelated to display work. Fixed rather than recorded and left, because it is one byte and it is visible to an operator under pressure. |
 | September 5, 2026 | Bundle B — clock/board visual clarity | Implemented green game-clock and red play-clock running treatments in both windows, always-visible `PLAY CLOCK` with `—` after a clear, and spectator-only live-quarter wording such as `2nd Quarter`. The compact authoritative quarter and the cleared-versus-expired `0.0` state distinction remain unchanged. Focused spectator and real-browser keyboard tests passed; the isolated full suite passed 405 tests in 46.010 seconds. `compileall`, `pip check`, and `git diff --check` passed. The one-folder package was rebuilt and frozen `--check` verified it at version 0.1.0 (195 files, 29.8 MB). | `src/scoreboard/host/bridge.py`; `src/scoreboard/views/`; `tests/integration/test_spectator.py`; `tests/ui/`; `dist/Scoreboard/` | Browser layout assertions cover the required viewports. Stadium colour/brightness and target-laptop WebView2 observation remain Task 12 evidence. |
+| September 5, 2026 | Presentation layout editor (v1) | Added the layout schema and validation (`presentation/layout.py`), `layouts.json` persistence, a non-mutating host bridge, the widgetized spectator renderer (`views/shared/board.js`/`board.css`), and a separate editor window. **100 focused Python tests pass**: schema 42, persistence 18, bridge/no-mutation 18, renderer contract 8, editor contract 14. The three browser checks (spectator matrix 2, editor drive 1) passed when written but error on this host, which has no Node.js or Playwright. The browser matrix covers 1280x720, 1366x768, 1920x1080 and 390x844 and **fixed a pre-existing safe-area overflow** in the play-clock block. `compileall`, `pip check`, and `git diff --check` passed. | `src/scoreboard/presentation/layout.py`; `src/scoreboard/infrastructure/layouts.py`; `src/scoreboard/host/layout_bridge.py`; `src/scoreboard/views/layout/`; `src/scoreboard/views/shared/board.js`; `tests/unit/test_layout_schema.py`; `tests/integration/test_layout_persistence.py`; `tests/integration/test_layout_bridge.py`; `tests/integration/test_spectator_layout_render.py`; `tests/integration/test_layout_editor_contract.py`; `tests/ui/` | Closes discovery issue 05 and owner-requested item 3. No hardware, two-display, or WebView2 rendering evidence is claimed; Task 12 and the hardware/stadium evidence gap are unaffected. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
 ### Practice-only spectator test window — September 5, 2026
@@ -817,9 +906,39 @@ cleans it up with the other owned windows.
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
 | Implementation status | Every Phase 2 implementation task is done. Tasks 1-9: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator layout, keyboard safety and generated shortcut help. The September 5 audit added expiration recording, application-version-safe recovery, and a whole-game rehearsal. Task 11 produced the offline one-folder package at 0.1.0, and Task 10 then replaced the Task 1 fixed display index with a remembered display identity, an explicit selector, and disconnect reporting — after which the package was rebuilt and confirmed to carry it. A separate fixed-size test spectator window now supports local layout checks and practice without participating in production display management. **Task 10's policy is verified against injected screen lists only; nothing has been placed on a second monitor.** Task 12 (rehearsal) remains unstarted. |
-| Automated suite | The last documented Bundle B run was 405 tests passed in 46.010 seconds with an isolated data-folder override. A current full discovery run is **not clean**: the focused Bundle A workflow passes 6/6, while legacy pregame/quarter expectations fail against the new behavior and the two browser checks error when Node.js/Playwright are unavailable. Reconcile those tests before treating the suite as a release gate. |
-| Repository status | Work is on `phase-2-audit`, four commits ahead of `main`. The Phase 1 foundation commit `6f9fc18` was pushed and independently cloned cleanly. An unrelated agent-skills change to `AGENTS.md` and a new untracked `docs/agents/` directory are present in the working tree and were **deliberately left uncommitted**, because they are not Task 10 work. |
-| Testing follow-ups | Five findings from local spectator-preview testing are recorded in [`.scratch/testing-followups`](.scratch/testing-followups/spec.md). The pregame/game-clock and quarter-safety requests change the current documented workflow and await owner decisions; the color/label changes are ready as one small presentation pass; the visual layout editor is deferred to Phase 3 discovery. |
+| Automated suite | **Not clean, and not a release gate until reconciled.** A full discovery run on September 5, 2026 (`.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, with `SCOREBOARD_DATA_DIR` pointed at an isolated folder) reported **597 tests, 15 failures, 3 errors** in 25.5 seconds. Every one reproduces the pre-existing baseline; none is a regression from the Field Assistant or the layout editor. The inventory is below. |
+| Repository status | Work is on `feature/field-status`, which currently points at the same commit as `main` (`2b29942`); everything committed is merged. The Phase 1 foundation commit `6f9fc18` was pushed and independently cloned cleanly. `phase-2-audit` and `feature/layout-editor` are earlier branches retained for history. The Field Assistant and the presentation layout editor exist **only as uncommitted working-tree changes** until the September 5 documentation-reconciliation commit lands. The `AGENTS.md` change and the `docs/agents/` directory are now in-scope, tracked modifications rather than the unrelated bystander files an earlier revision of this row described. |
+| Testing follow-ups | Five findings from local spectator-preview testing are recorded in [`.scratch/testing-followups`](.scratch/testing-followups/spec.md). The pregame/game-clock and quarter-safety requests change the current documented workflow and await owner decisions; the color/label changes are ready as one small presentation pass. All five findings are now resolved: the presentation layout editor that issue 05 filed as Phase 3 discovery was delivered on September 5, 2026 (see "Phase 2 owner request 3"), and the Field Assistant was delivered for rehearsal the same day (see "Owner-requested next scoreboard work" item 4). |
+
+### Automated suite failure inventory (September 5, 2026)
+
+Recorded so that a future session can tell a pre-existing failure from a real
+regression without stashing and re-running. Command:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Result: **597 tests, 15 failures, 3 errors.**
+
+| Count | Where | Why it fails | Owner |
+|---|---|---|---|
+| 4 | `tests/unit/test_commands.py` — `GameClockCommandTests.test_start_matches_the_engine_and_materializes_into_state`, `test_stop_matches_the_engine`, `ClockCouplingTests.test_game_clock_start_clears_a_running_play_clock`, `test_game_clock_stop_clears_a_running_play_clock_in_the_same_commit` | The tests still expect a 12:00 first-quarter clock in `PRE` and a play clock that a game-clock Start or Stop always blanks. The unified pregame clock (follow-up issue 01) makes Game Clock Start in `PRE` run the 30:00 countdown instead, so the engine reference is 1800.0 where the test wants 720.0. The play-clock coupling is question **A-1**, still open with the owner and the officials. | Follow-up 01; question A-1 |
+| 4 | `tests/integration/test_bridge.py` — the `quarter_forward`, `quarter_back`, and `set_quarter` subtests of `MousePathTests.test_every_command_reaches_the_service_through_the_bridge`, plus `ExpirationHistoryTests.test_game_clock_expiry_clears_a_running_play_clock_durably` | The quarter subtests submit a bare quarter command from `PRE` and assert acceptance; follow-up issue 02 made every quarter move require confirmation, so the bridge now correctly returns `CONFIRMATION_REQUIRED` (or `QUARTER_OUT_OF_RANGE` moving back from `PRE`). The expiry test is the same A-1 play-clock coupling. | Follow-up 02; question A-1 |
+| 5 | `tests/integration/test_recovery.py` (3), `tests/integration/test_spectator.py` (2) | All five assert `quarter == "2nd"` or `lifecycle == "IN_PROGRESS"` after a setup sequence that no longer leaves `PRE`, for the same reason as the quarter subtests above. | Follow-ups 01 and 02 |
+| 1 | `tests/integration/test_full_game_rehearsal.py` | Asserts the event countdown reads `0:00` where the unified pregame clock now reads `30:00`. | Follow-up 01 |
+| 1 | `tests/integration/test_host_application.py` | Asserts a published game clock of `11:57` where the pregame clock now publishes `29:57`. | Follow-up 01 |
+| 3 errors | `tests/ui/test_spectator_browser.py`, `test_keyboard_browser.py`, `test_layout_editor_browser.py` | Node.js and Playwright are not installed on this host. These fail explicitly rather than skipping, by design. Not a code defect. | Development tooling |
+
+One further failure appears when `SCOREBOARD_DATA_DIR` is **not** set:
+`tests/integration/test_persistence.py::DataLocationTests::test_the_default_root_is_an_absolute_per_user_location` asserts the default root directory is named `Scoreboard`, and resolves to `Scoreboard Logs` on this machine. That makes the honest total **16 failures without the override, 15 with it**; run the suite with the override, as `tests/README.md` instructs, so the run never touches a real operator data folder.
+
+**None of the 15 is a regression from the Field Assistant or the presentation
+layout editor.** Reconciling the legacy pregame and quarter expectations with
+the behavior that follow-ups 01 and 02 deliberately changed — which needs
+question A-1 answered first — is the work standing between here and treating
+the suite as a Task 12 release gate.
+
 
 ## Owner-requested next scoreboard work
 
@@ -866,12 +985,101 @@ See "Phase 2 owner request 2 — expanded football state and controls" above for
 evidence, and the B-1 through B-4 open decisions it records for officials/owner
 confirmation before live use.
 
-### 3. Presentation layout editor
+### 3. Presentation layout editor — ✅ v1 delivered September 5, 2026
 
-Only after items 1 and 2 are implemented and verified, begin the separate
-scoreboard editor work for safely changing text sizes, positions, colors, and
-related spectator-only presentation properties. The editor must not become an
-authority for game state or block the basic offline scoreboard.
+Requested as separate scoreboard editor work for safely changing text sizes,
+positions, colors, and related spectator-only presentation properties, on the
+condition that the editor never become an authority for game state and never
+block the basic offline scoreboard. Delivered after items 1 and 2, as scoped:
+the editor advances no state revision, submits no command, and writes no
+action-history row. Full evidence is under "Phase 2 owner request 3 —
+presentation layout editor" above; the operator-facing description is
+`docs/UX_AND_LAYOUT.md` section 10, and the schema is
+`src/scoreboard/presentation/layout.py`.
+
+Delivering it early does **not** advance Phase 3 as a whole. Every other
+Phase 3 workstream — OBS, cutscenes, media playback, sponsors, the visual
+system, and source switching — remains deferred.
+
+### 4. Field Assistant — delivered for rehearsal, September 5, 2026
+
+The owner requested a separate, similarly sized end-of-play Field Assistant to
+reduce the burden of manually operating clocks while also updating ball spot,
+down, distance, and possession. The existing operator screen and its manual
+field-status logic remain the fallback and are unchanged. The rules,
+workflow, and test matrix are documented in
+[`docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`](docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md),
+whose status line now reads implemented (with one recorded amendment) rather
+than "proposed design."
+
+**What was built.** A separate, optional `pywebview` window (1180×720,
+minimum 1024×600), opened deliberately from a **Field Assistant** button on
+the operator toolbar, never replacing the manual field-status drawer.
+`domain/field_assistant.py` holds pure rules only (coordinate conversion,
+series/line-to-gain, normal play, incomplete pass, penalty ±5/±10/±15
+shortcuts with repeat/count/automatic-first/no-play/decline, explicit
+turnover, touchdown/try/field-goal/safety/kickoff transitions, and a proposed
+turnover on downs); it performs no I/O and touches neither clock. One new
+composite command, `finalize_field_action` (undoable), carries the validated
+result through `application/service.py` in one expected-revision check, one
+durable history row, one revision increment, and one complete published
+snapshot; clock values and running flags are explicitly untouched. Two
+additive state fields (`assistant_first_quarter_home_direction`,
+`assistant_line_to_gain`) and an additive `assistant` snapshot block recover
+safely from a pre-Field-Assistant saved game. `host/bridge.py`'s
+`FieldAssistantBridge` exposes `get_snapshot`/`preview_field_action`/
+`finalize_field_action`; the helper UI shows a draft ball-spot readout
+distinct from the current authoritative status, on-screen nudge buttons plus
+arrow keys, per-workflow controls, a single Preview-then-Confirm action, and
+the stale-draft banner `FIELD STATUS CHANGED ELSEWHERE — RE-SYNC REQUIRED`,
+which disables Confirm until the operator re-syncs or discards.
+
+**A rules correction made during implementation.** Section 3.2 of the rules
+document originally said the offense direction in the private absolute
+coordinate flips every quarter. Because that coordinate is label-based (`0`
+is always the HOME goal line, `100` the AWAY goal line — section 3.1), a
+literal per-quarter flip was internally inconsistent and would have moved a
+2nd-quarter HOME gain toward HOME's own goal line. The implemented rule
+instead fixes each team's direction in the label coordinate (HOME always
+`+1` toward the AWAY goal line, AWAY always `-1`), and the operator's
+first-quarter choice records only which side of the on-screen drawing HOME
+attacks toward in the 1st quarter; the drawing mirrors at each quarter
+boundary (`home_goal_side`), while stored ball spots and line-to-gain never
+move at a quarter change. OT remains manual-only. The rules document's
+Amendments note and its FA-02 test-matrix row record the original wording and
+the correction; see the Decision Log below.
+
+**Verification performed.** `tests/unit/test_field_assistant.py` covers the
+pure rule matrix (FA-01 through FA-18, including the corrected direction
+behavior); `tests/unit/test_commands.py` and `tests/unit/test_state.py` add
+composite-command, undo, clock-isolation, additive-state, and
+old-snapshot-recovery cases; `tests/integration/test_bridge.py`'s
+`FieldAssistantBridgeTests` cover read-only preview, stale-draft refusal, and
+unchanged manual controls; `tests/integration/test_field_assistant_rehearsal.py`
+covers atomicity, undo, recovery, a simulated persistence failure, and a
+multi-quarter rehearsal sequence (FA-17/18/21-25/28);
+`tests/integration/test_field_assistant_window.py` exercises host window
+lifecycle (open/close/reopen, a helper push failure destroying only the
+helper, operator shutdown closing it) against pywebview-shaped fakes, not a
+real window.
+
+The three Field Assistant modules run **29 tests** together — rules 19,
+finalize rehearsal 6, window lifecycle 4 — counted from an actual run on
+September 5, 2026, not estimated. Together with the presentation layout
+editor's 100, that is the 129 focused tests recorded in commit `274119d`.
+
+**Deliberately manual, not implemented:** OT direction, onside/blocked
+kicks, defensive try returns, offsetting/multiple penalties, enforcement from
+a different spot, automatic possession flips, any clock change, live ball
+tracking, networking, OBS, LED, and physical controllers all remain the
+documented manual escape hatch.
+
+**Remaining evidence before game-day use.** Native Windows/WebView2
+rendering of the helper window, a physical 1366×768 at 100%/125% visual
+check, and a live operator rehearsal have not been performed; only
+fake-window host tests and a static browser render exist. This is separate
+from, and does not advance, Task 12, the Phase 0 HDMI gate, or any other
+stadium-readiness item in this document.
 
 ## Next Action
 
@@ -885,10 +1093,12 @@ Then, in order:
 4. **Work the `docs/PACKAGING.md` checklist on the target laptop** — clean machine, network disabled, SmartScreen, startup time. The package was rebuilt after Task 10 and carries the current display behaviour, so this checklist is now working the right build.
 5. **Task 12 — sustained rehearsal and recovery acceptance**, which closes Phase 2 together with the stadium display rehearsal.
 
-The owner-requested local-time presentation and expanded football fields
-(items 1 and 2 below) are implemented and tested; the presentation layout
-editor (item 3) remains deferred, as requested, and is the next scope item
-once Task 12 and the hardware evidence above are complete.
+All four owner-requested items below are delivered: the local-time
+presentation and the expanded football fields (items 1 and 2) are implemented
+and tested, the presentation layout editor (item 3) shipped v1 on
+September 5, 2026, and the Field Assistant (item 4) is delivered for
+rehearsal. None of the four advances Task 12 or the hardware and stadium
+evidence above, which remain the only ordered work left in this list.
 
 Carried forward as open items, none of which may be treated as completed on the strength of a passing automated suite:
 

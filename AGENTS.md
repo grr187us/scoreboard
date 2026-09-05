@@ -54,3 +54,18 @@ Presentation and integrations must not become authoritative state owners. Option
 - Update the relevant requirement/architecture/UX document when a decision changes.
 - Do not mark an item complete based only on files existing; record the verification performed.
 - Before committing, review the complete diff, validate relative Markdown links, and report every remaining uncommitted file.
+- The discovered suite is not green. Run it, and compare the result against the failure inventory in `PROJECT_ROADMAP.md` before calling anything a regression; the known failures are legacy pregame/quarter expectations plus the `tests/ui/` checks on a machine without Node and Playwright.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown files under `.scratch/<feature-slug>/` in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, using their default label strings. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Neither exists yet, which is the expected state — `docs/agents/domain.md` says to proceed silently when they are absent, and the domain-modeling skill creates them lazily when a term or decision is actually resolved. Until then the requirement, architecture, and UX documents under `docs/` remain the authority. See `docs/agents/domain.md`.

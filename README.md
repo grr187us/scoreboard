@@ -2,18 +2,18 @@
 
 This repository contains the Phase 2 implementation of a reliable, offline-capable football scoreboard and future stadium video-production system. The immediate product is intentionally small: a Windows application that a student or volunteer can operate under game pressure and display fullscreen through the stadium's existing HDMI video processor.
 
-A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, and the fullscreen spectator window. It also builds into an offline Windows package. It is **not** yet a release: display selection is implemented but lacks real two-display evidence, the sustained rehearsal is open, and no result on the stadium wall has been recorded.
+A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, the fullscreen spectator window, the Field Assistant helper window, and the presentation layout editor. It also builds into an offline Windows package. It is **not** yet a release: display selection is implemented but lacks real two-display evidence, the sustained rehearsal is open, and no result on the stadium wall has been recorded.
 
 ## Current status
 
 - **Phase 0 — discovery and feasibility:** substantially complete, with the critical stadium HDMI test still open.
 - **Phase 1 — repository, requirements, layout, and architecture:** documentation foundation created; owner decisions and field evidence remain open.
-- **Phase 2 — core MVP:** implementation tasks 1–11 are substantially implemented. The current Bundle A workflow passes focused verification, but the full discovered suite still needs its legacy pregame/quarter expectations reconciled; Task 10's two-display and stadium acceptance evidence, plus Task 12 sustained rehearsal, remain open.
+- **Phase 2 — core MVP:** implementation tasks 1–11 are substantially implemented, plus three owner-requested additions delivered after them (spectator local time, the expanded football state fields, and the presentation layout editor) and the Field Assistant. The current Bundle A workflow passes focused verification. The full discovered suite runs 597 tests with 15 failures and 3 errors: the 3 errors are the `tests/ui/` browser checks on a machine without Node and Playwright, and the 15 failures are all legacy pregame/quarter expectations that the unified pregame clock (`.scratch/testing-followups/issues/01`) deliberately changed and that have not yet been rewritten. **No failure is a regression from the Field Assistant or the layout editor**, but the suite cannot be called green and reconciling it is the first thing standing between here and Task 12. Task 10's two-display and stadium acceptance evidence remain open.
 - **Production media, OBS, networking, and hardware-controller work:** deferred.
 
 `PROJECT_ROADMAP.md` is the authority on status and evidence. Nothing here may be treated as release-ready on the strength of a passing automated suite; the open hardware and rehearsal evidence is listed there.
 
-The local repository uses `main` as the protected integration branch. Current implementation work is on `phase-2-audit` and synchronizes with `https://github.com/grr187us/scoreboard.git`.
+The local repository uses `main` as the protected integration branch. Current implementation work is on `feature/field-status` and synchronizes with `https://github.com/grr187us/scoreboard.git`. `phase-2-audit` and `feature/layout-editor` are earlier branches retained for history.
 
 ## Confirmed versus unverified
 
@@ -65,17 +65,32 @@ The Phase 2 MVP provides, or will provide:
 | A repeatable offline Windows package and one-action launch | Built at version 0.1.0 after Task 10; clean-machine and target-laptop checks remain open |
 | Down, distance, possession, field position, and timeouts remaining | Built and tested; owner/officials decisions on the timeout default and halftime reset remain open |
 | Human-readable Eastern-time recovery timestamps | Built and tested |
+| Field Assistant: a separate helper window that proposes down, distance, spot, penalty, turnover, and scoring outcomes and commits them as one reviewable action | Built and tested against the FA-01 to FA-28 matrix; no game-day rehearsal evidence yet |
+| Presentation layout editor: a separate window that moves, sizes, colors, and saves spectator-board widget layouts without touching game state | Built and tested; owner sign-off on the default layout and a stadium-resolution legibility check remain open |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
 
 Detailed, testable behavior is in [MVP requirements](docs/MVP_REQUIREMENTS.md).
 
 ## Intentionally deferred
 
-The MVP does not include OBS as a required runtime, media playback, replay, animations, penalties, advanced statistics, roster management, sponsors, multiple operators, cloud services, automated HDMI switching, the physical USB controller, license-dongle investigation, direct LED protocol work, or the presentation layout editor.
+The MVP does not include OBS as a required runtime, media playback, replay, animations, advanced statistics, roster management, sponsors, multiple operators, cloud services, automated HDMI switching, the physical USB controller, license-dongle investigation, or direct LED protocol work.
+
+Two items previously listed here have since been delivered at the owner's direct request, ahead of the phase in which they were originally filed: the **presentation layout editor** (research issue `.scratch/testing-followups/issues/05-presentation-layout-editor-discovery.md`, filed as Phase 3) and **penalty handling**, which now exists only inside the Field Assistant as a proposal the operator accepts — the scoreboard still stores no penalty state of its own. Neither delivery advances Phase 3, Task 12, or the Phase 0 HDMI gate.
 
 ## Architecture direction
 
-Phase 2 should use one Python application process as the authority for state, rules, clocks, persistence, and commands. It will host two HTML/CSS/JavaScript views in managed Windows webview windows: an operator view and a spectator view. OBS remains an optional future read-only presentation consumer, never the owner of game state.
+Phase 2 uses one Python application process as the authority for state, rules, clocks, persistence, and commands. It hosts HTML/CSS/JavaScript views in managed Windows webview windows, all fed from the same published snapshot:
+
+| Window | Page | Size |
+|---|---|---|
+| Startup / recovery | `views/startup/` | 800×650 |
+| Operator | `views/operator/` | 1180×720, minimum 1024×600 |
+| Spectator | `views/spectator/` + `views/shared/board.*` | borderless fullscreen on the selected display |
+| Spectator practice preview | the same spectator page | windowed, not tied to a display |
+| Field Assistant | `views/field_assistant/` | 1180×720, minimum 1024×600 |
+| Presentation layout editor | `views/layout/` | 1220×780, minimum 980×620 |
+
+The spectator windows are read-only. The Field Assistant first calls `preview_field_action` to show a proposed down, distance, spot, and score outcome, and commits it only through `finalize_field_action` against an expected state revision — one command, one history row, one snapshot, undone as one action. The layout editor changes presentation only: it advances no state revision, submits no command, and writes no action-history row. OBS remains an optional future read-only presentation consumer, never the owner of game state.
 
 See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/PROJECT_STRUCTURE.md) for the decision and boundaries.
 
@@ -93,9 +108,14 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/PROJECT_STRUCTURE.md` | Minimal Phase 2 boundaries and proposed tree |
 | `docs/PHASE_2_BACKLOG.md` | Ordered, bounded implementation tasks |
 | `docs/PACKAGING.md` | How the offline Windows package is built, installed, and verified |
-| `docs/HANDOFF_TASK_10.md` | Historical Task 10 handoff; superseded by the roadmap and display checklist |
+| `docs/DISPLAY_CHECKLIST.md` | The manual two-display and stadium checks that Task 10 still owes |
+| `docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` | The Field Assistant's football rules, operator workflow, and the FA-01 to FA-28 requirement matrix |
+| `docs/agents/` | Conventions the engineering skills follow in this repo: the `.scratch/` issue tracker, triage labels, and domain docs |
+| `docs/evidence/` | Captured measurements and screenshots, each claimed by a roadmap entry |
+| `docs/PHASE_2_TASK_1_RUNTIME_PROOF.md` | Environment setup, dependency pins, and the original multi-window proof |
+| `.scratch/` | Local issue tracker: one directory per effort, `spec.md` plus numbered issue files |
 | `tools/` | Build and measurement scripts; nothing here ships in the package |
-| `src/scoreboard/` | The application: `domain/`, `application/`, `infrastructure/`, `host/`, and the `views/` pages |
+| `src/scoreboard/` | The application: `domain/`, `application/`, `infrastructure/`, `presentation/`, `host/`, and the `views/` pages |
 | `tests/` | `unit/` domain and clock behaviour, `integration/` persistence, recovery, bridge and rehearsal, `ui/` optional browser checks |
 | `assets/` | Versioned, redistributable static presentation assets |
 
@@ -115,7 +135,7 @@ Environment setup, exact dependency pins, offline behavior, and the original mul
 .\.venv\Scripts\python.exe -m scoreboard
 ```
 
-That launches the recovery screen or the operator window, and opens the fullscreen spectator window on the selected display. It is a developer launch from a checkout, not the offline package, and it requires Python and the pinned dependencies on the machine. To build the package an operator can run without any of that, see [Packaging](docs/PACKAGING.md).
+That launches the recovery screen or the operator window, and opens the fullscreen spectator window on the selected display. The operator window opens the Field Assistant, the layout editor, and the windowed practice preview on demand; each is a separate webview the operator can close without affecting the game. It is a developer launch from a checkout, not the offline package, and it requires Python and the pinned dependencies on the machine. To build the package an operator can run without any of that, see [Packaging](docs/PACKAGING.md).
 
 Run the automated suite from the repository root:
 
@@ -123,7 +143,7 @@ Run the automated suite from the repository root:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-The two `tests/ui/` checks additionally need Node.js, Playwright, and Edge; they fail explicitly rather than skipping when that tooling is absent, so a machine without it reports errors on those two tests and passes the rest.
+The three `tests/ui/` checks — spectator board, keyboard, and layout editor — additionally need Node.js, Playwright, and Edge; they fail explicitly rather than skipping when that tooling is absent, so a machine without it reports errors on those three tests and runs the rest.
 
 ## Licensing
 

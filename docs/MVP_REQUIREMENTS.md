@@ -143,6 +143,38 @@ position should display relative to the named team's own goal line or as an
 OWN/OPP-relative label (B-3); whether timeouts remaining should also appear on
 the spectator board (B-4).
 
+### 4.7 Field Assistant — convenience path (added September 5, 2026)
+
+Implemented after section 4.6, as a separate, optional helper window
+(`docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`) that proposes and finalizes
+ordinary end-of-play field-status updates. It is a convenience path only: it
+does not remove, disable, or change the behavior of the manual down,
+distance, possession, and ball-on controls in section 4.6, which remain the
+fallback for every play the helper does not support.
+
+F-070 through F-074 below are this document's acceptance-level requirements
+for the feature. The granular FA-01 through FA-28 verification matrix is a
+separate namespace that lives entirely in
+`FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` and is deliberately not duplicated
+here; when the two disagree, the matrix is the authority on rules detail and
+this section is the authority on scope.
+
+| ID | Requirement | Verification |
+|---|---|---|
+| F-070 | The Field Assistant MUST be a separate window the operator opens deliberately. It MUST NOT be required to update down, distance, possession, or field position, and the existing manual controls (F-060 through F-063) MUST remain fully usable whether or not the helper window is open. | Manual-control regression tests with the helper open and closed. |
+| F-071 | A finalized helper action (an ordinary play, a penalty outcome, or a defined scoring/kickoff transition) MUST change every affected field through exactly one validated, revision-checked, undoable composite command. JavaScript MUST NOT derive or apply football rules. | Composite-command atomicity and undo tests. |
+| F-072 | The helper MUST read one snapshot revision as its draft baseline. If the authoritative revision changes before the draft is confirmed, Confirm MUST be disabled and the operator MUST re-sync or discard before finalizing. | Stale-revision refusal tests. |
+| F-073 | Finalizing a helper action MUST NOT start, stop, reset, or otherwise change either clock's value or running state. | Clock-isolation tests across every supported transition. |
+| F-074 | A saved game recorded before the Field Assistant existed MUST recover safely, with the helper reporting that setup is required, never a migration failure. | Old-snapshot recovery tests. |
+
+**Deliberately manual, not automated by the helper:** OT direction,
+onside/blocked kicks, defensive try returns, offsetting/multiple penalties,
+enforcement from a spot other than the one proposed, and automatic possession
+flips remain the documented manual escape hatch
+(`docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` section 7). Native WebView2
+rendering of the helper window, the 1366×768-at-100%/125% visual check, and a
+live operator rehearsal remain outstanding (`docs/UX_AND_LAYOUT.md` §11).
+
 ## 5. Operator-usability requirements
 
 | ID | Requirement | Verification |
@@ -191,9 +223,9 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 | ID | Requirement | Verification |
 |---|---|---|
-| D-001 | The spectator window MUST show only home name/score, away name/score, quarter, game clock, play clock, and, while the game board is shown, down/distance, field position, and possession (F-060 through F-066, added September 5, 2026). Timeouts remaining is tracked and shown to the operator but is not yet drawn on the spectator board (owner decision B-4, section 13). | Visual inventory check. |
+| D-001 | The spectator window MUST show only home name/score, away name/score, quarter, game clock, play clock, and, while the game board is shown, down/distance, field position, and possession (F-060 through F-066, added September 5, 2026). By default, timeouts remaining and the static game-clock label are still not drawn — the default field inventory is unchanged. The presentation layout editor (added September 5, 2026; `docs/UX_AND_LAYOUT.md` §10) additionally lets the operator turn on the positionable `home_timeouts`/`away_timeouts`/`game_clock_label` widgets as a presentation choice, but doing so is an operator layout decision, not an automatic answer to owner decision B-4 (whether timeouts should appear on the spectator board), which remains open (section 13). | Visual inventory check; layout-editor widget-visibility tests. |
 | D-002 | It MUST support borderless fullscreen on a selected Windows display and remember that preference. If the display is unavailable, it MUST keep the operator usable and report `DISPLAY NOT FOUND` rather than silently taking over the primary screen. | Multi-monitor disconnect/reconnect tests. |
-| D-003 | Layout MUST use a resolution-independent logical canvas, scalable typography, and safe margins; it MUST NOT assume the stadium's unknown pixel dimensions. | Render at 1280×720, 1366×768, 1920×1080, and a portrait test mode. |
+| D-003 | Layout MUST use a resolution-independent logical canvas, scalable typography, and safe margins; it MUST NOT assume the stadium's unknown pixel dimensions. The safe-area margin is now a validated, editable layout property (default 4% inset per side, adjustable only within a documented minimum and maximum inset; added September 5, 2026): every visible widget must fit inside it, and a layout that would place one outside it is rejected rather than silently accepted or clipped. | Render at 1280×720, 1366×768, 1920×1080, and a portrait test mode; layout-editor safe-area validation tests. |
 | D-004 | State changes SHOULD appear within 100 ms in the spectator view on the target laptop; MUST appear within 250 ms. | Timestamped integration test. |
 | D-005 | Closing the spectator window MUST NOT stop clocks or close the operator. The operator MUST show `DISPLAY CLOSED` and offer one-click reopen. | Close/reopen test while clocks run. |
 | D-006 | If the HDMI display disconnects, authoritative operation and persistence MUST continue. The app MUST move/reopen the spectator view only after an explicit operator action. | Unplug/replug test on a normal HDMI monitor. |
@@ -242,7 +274,11 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 ## 11. Explicit non-goals
 
-Down, distance, possession, ball position, and timeouts are implemented (section 4.6, September 5, 2026) and are no longer non-goals. The MVP does not implement penalties, statistics, rosters, team logos/colors as a requirement, animations, sponsor scheduling, audio, video, replay, OBS scenes/control, livestreaming, networking or multiple operators, cloud services, user accounts, automated HDMI switching, direct LED/RJ45 protocols, the physical USB controller, or the presentation layout editor (deferred, docs/PHASE_2_BACKLOG.md).
+Down, distance, possession, ball position, and timeouts are implemented (section 4.6, September 5, 2026) and are no longer non-goals. The MVP does not implement penalties, statistics, rosters, team logos/colors as a requirement, animations, sponsor scheduling, audio, video, replay, OBS scenes/control, livestreaming, networking or multiple operators, cloud services, user accounts, automated HDMI switching, direct LED/RJ45 protocols, or the physical USB controller.
+
+A presentation layout editor for spectator-board placement, sizing, and color is implemented as v1 (September 5, 2026; `docs/UX_AND_LAYOUT.md` §10, `docs/PHASE_2_BACKLOG.md`). It remains presentation-only and does not add media, OBS, logos/images, animations, sponsor rotation, networking, a freeform canvas, drag-and-drop, or arbitrary custom text for an authoritative field; the pregame/halftime event countdown board is not editable in v1. See `docs/PHASE_2_BACKLOG.md` for the full v1 exclusion list.
+
+A Field Assistant convenience path for ordinary end-of-play field-status updates is implemented (section 4.7, September 5, 2026; `docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`). It automates only the scrimmage, penalty, and scoring/kickoff outcomes that document describes; OT direction, onside/blocked kicks, defensive try returns, offsetting/multiple penalties, non-standard enforcement spots, automatic possession flips, and any clock change remain manual, unautomated corrections through the existing controls.
 
 It also does not modify the vendor computer, software, controller, or license dongle.
 

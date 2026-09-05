@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started. The owner-requested local-time presentation and deferred scoreboard fields (below) were implemented and tested on September 5, 2026.
+**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors — 597 tests, 15 failures, 3 errors, itemized under "Automated suite failure inventory" in `../PROJECT_ROADMAP.md`. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started. The owner-requested local-time presentation, expanded scoreboard fields, presentation layout editor, and Field Assistant (all below) were implemented or delivered for rehearsal on September 5, 2026; none of them touches Task 12 or the hardware/stadium evidence gap.
 **Last updated:** September 5, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
@@ -274,7 +274,7 @@ quarter-safety workflow and need an owner decision before implementation.
 | 02 — Quarter-transition safeguards | Confirm every quarter action; PRE → 1st time abandonment uses owner-approved action wording | ✅ Bundle A implemented and verified September 5 | Delivered with 01 |
 | 03 — Running-clock colors | Green running game clock; red running play clock, with text status retained | ✅ Implemented and verified September 5 | Delivered with 04 |
 | 04 — Persistent Play Clock label and quarter title | Show `PLAY CLOCK —` after a clear; render `2nd Quarter` and equivalent live labels | ✅ Implemented and verified September 5 | Delivered with 03 |
-| 05 — Presentation layout editor discovery | Safe, offline visual-editor research | Deferred to Phase 3 | Separate discovery/prototype |
+| 05 — Presentation layout editor discovery | Safe, offline visual-editor research | ✅ v1 delivered September 5, 2026 | Delivered as numeric constrained editing (no drag-and-drop); see "Phase 2 owner request 3" in `PROJECT_ROADMAP.md` |
 
 The owner explicitly considers routine scoring increments such as `+6` quick,
 reversible actions; do not add confirmation to them. Major time/lifecycle
@@ -310,11 +310,85 @@ object briefly reaching the JSON/history boundary through Undo) found and
 fixed during testing. No additional essential field beyond the five listed
 was identified during the requirements review.
 
-## Deferred presentation layout editor
+## Presentation layout editor — ✅ v1 delivered September 5, 2026
 
-The scoreboard editor remains later work. The local-time presentation and
-expanded football fields it was waiting on are both implemented and verified
-(see above); the editor itself has not been started. Its scope is spectator
-presentation only: safely editing text sizes, positions, colors, and related
-visual properties without allowing the editor to become authoritative game
-state or a dependency for offline keyboard/mouse operation.
+Implements item 3 of "Owner-requested next scoreboard work" in
+`PROJECT_ROADMAP.md`, delivered after the local-time presentation and expanded
+football fields it was waiting on (items 1 and 2, both implemented and
+verified above). See "Phase 2 owner request 3 — presentation layout editor"
+in `PROJECT_ROADMAP.md` for full evidence, and `docs/UX_AND_LAYOUT.md` §10 for
+the operator-facing workflow, widget inventory, and safe-area policy.
+
+**What v1 does.** A separate editor window, opened from the operator's
+Advanced drawer, lets an operator reposition, resize, recolor, realign,
+restack, and show or hide each of fifteen spectator-board widgets through
+numeric controls, validated against a safe-area margin and minimum widget
+size, with a live preview drawn by the same renderer as the real board.
+Layouts are named, saved locally in `layouts.json`, and can be reset to the
+built-in default per-widget or entirely. Every value a spectator sees is
+still produced in Python; the editor only changes where and how it is drawn.
+
+**What v1 deliberately does not do.** OBS, media playback, logos/images,
+animations, sponsor rotation, video, networking, cloud storage of a layout,
+physical controllers, a freeform canvas, or arbitrary custom text for an
+authoritative field. It does not edit the operator panel's own layout and
+does not support a different hand-tuned layout per screen resolution. There
+is **no drag-and-drop or drag-resize** in v1 — every geometry property is a
+numeric field with a documented range. The pregame/halftime event countdown
+board keeps its existing markup and styling and is **not editable in v1**.
+
+**What this does not touch.** Phase 2 acceptance, Task 12 (sustained
+rehearsal), and every piece of hardware/stadium evidence this backlog and the
+roadmap track are unaffected — the editor changes only spectator-board
+presentation and cannot reach `scoreboard.db`, the action history, or the
+state revision. Phase 3's remaining workstreams (OBS, cutscenes, media,
+sponsor content, team themes/logos) also remain deferred; only the
+presentation-layout-editor line item of that list moved, and only because the
+owner asked for it ahead of the rest of Phase 3.
+
+## Field Assistant — delivered for rehearsal, September 5, 2026
+
+Implements the Field Assistant request recorded as "Owner-requested next
+scoreboard work" item 4 in `PROJECT_ROADMAP.md`, against the design in
+[`../docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`](../docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md),
+whose status line now reads implemented (with one recorded amendment) rather
+than "proposed design."
+
+**What it does.** A separate, optional, similarly sized helper window
+(1180×720, minimum 1024×600), opened deliberately from the operator toolbar,
+proposes and finalizes ordinary end-of-play field-status updates —
+scrimmage plays, incomplete passes, penalty ±5/±10/±15 shortcuts with their
+down consequences, explicit turnovers, and touchdown/try/field-goal/safety/
+kickoff transitions — through one validated, undoable composite command
+(`finalize_field_action`). It never starts, stops, or reads clock controls,
+and it never replaces the existing manual Field Status drawer, which remains
+the fallback for anything the helper does not cover.
+
+**Automated coverage.** `tests/unit/test_field_assistant.py` (the pure FA-01
+through FA-18 rule matrix, including the corrected per-team direction),
+additions to `tests/unit/test_commands.py` and `tests/unit/test_state.py`
+(composite command, undo, clock isolation, additive state, old-snapshot
+recovery), `tests/integration/test_bridge.py::FieldAssistantBridgeTests`
+(read-only preview, stale-draft refusal, unchanged manual controls),
+`tests/integration/test_field_assistant_rehearsal.py` (atomicity, undo,
+recovery, a simulated persistence failure, and a multi-quarter rehearsal),
+and `tests/integration/test_field_assistant_window.py` (host window
+lifecycle against pywebview-shaped fakes).
+
+**"Delivered for rehearsal," not stadium-ready.** No native WebView2
+rendering of the helper window, no physical 1366×768-at-100%/125% check, and
+no live operator rehearsal have been performed — only fake-window host tests
+and a static browser render exist (`docs/UX_AND_LAYOUT.md` §11.5). This work
+does not advance Task 12, the Phase 0 HDMI gate, or any other
+stadium-readiness item above.
+
+**Backlog candidates carried forward as manual-only exclusions**, matching
+`docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` section 7:
+
+- OT direction, once local overtime rules are confirmed.
+- Onside kicks, blocked kicks, and defensive try/kick returns.
+- Offsetting or multiple penalties, and enforcement from a spot other than
+  the proposed one.
+- Automatic possession flips inferred from a score, a safety, or ball
+  position alone.
+- Any clock interaction from within the helper.

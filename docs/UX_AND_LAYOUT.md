@@ -1,7 +1,7 @@
 # Operator Workflow and Initial Layouts
 
 **Status:** Phase 1 wireframe baseline; visual design is not implemented
-**Last updated:** September 5, 2026 (added the field-status readout, the Field status drawer, and the recovery screen's local-time display)
+**Last updated:** September 5, 2026 (added the field-status readout, the Field status drawer, the recovery screen's local-time display, and the presentation layout editor)
 
 ## 1. Design intent
 
@@ -38,8 +38,11 @@ Color is supplemental, not the only state signal. Text labels such as `RUNNING`,
 │                                                                              │
 │            1st Quarter                   PLAY CLOCK 40                         │
 │                                                                              │
+│         3rd & 7            ◀ EAGLES            HOME 35                       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+The bottom row was added on September 5, 2026 with the football-state fields (F-060 to F-066). Its four widgets — `down`, `distance`, `possession`, and `ball_on` — are *optional*: the renderer hides a widget whose value is absent from the snapshot rather than drawing an empty box, so a board with no possession set simply omits that indicator. Three of the fifteen widgets default to hidden entirely — the `GAME CLOCK` label and the two timeout counters — because they are a layout choice rather than a required field (D-001); the editor can turn them on. There is no local-time widget on the spectator board: P-010's Eastern-time formatting is for recovery and history timestamps in the operator and startup surfaces.
 
 Visual priorities are scores first, game clock second, team names third, then quarter and play clock. The exact proportions, safe area, font, and color contrast must be tested on a normal monitor and revisited after the stadium HDMI test identifies the real canvas and viewing conditions.
 
@@ -52,6 +55,8 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Use local system fonts (Arial/sans-serif) with tabular numerals and white-on-black contrast; no font download.
 - Test at 1280×720, 1366×768, 1920×1080, and one portrait/narrow mode before stadium dimensions are known.
 - After the HDMI test, add the confirmed resolution/refresh/overscan mode to the test matrix rather than hard-coding a new layout.
+
+**Widget-rendered board (added September 5, 2026).** The board above is now drawn from fifteen individually positioned, sized, and colored widgets (`views/shared/board.js`) rather than a fixed CSS grid, so the arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) keeps its own separate markup and CSS and is **not** covered by the editor in v1 (section 10.8).
 
 ## 4. Operator-screen wireframe
 
@@ -73,7 +78,8 @@ Visual priorities are scores first, game clock second, team names third, then qu
 ├──────────────────────────┴──────────────────────────┴────────────────────────┤
 │ QUARTER [◀] 1st [▶]  3rd & 7 · EAGLES 35 · TO 3/2   LAST: Away +6 (7) [UNDO] │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ [ Corrections ▸ ] [ Halftime ▸ ] [ Field ▸ ] [ Shortcut Help ] [ Advanced ▸ ] │
+│ [ Corrections ▸ ] [ Halftime ▸ ] [ Field ▸ ] [ Field Assistant ]             │
+│ [ Shortcut Help ] [ Advanced ▸ ]                                             │
 │                                              [ End Game… ] [ New Game… ]     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -309,6 +315,148 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 - Rebalance type scale for real viewing distance and pixel pitch.
 - Verify fullscreen placement and recovery when the processor input is reselected.
 - Decide whether the logical 16:9 canvas is correct or whether a custom aspect-ratio profile is required.
+
+## 10. Presentation layout editor (added September 5, 2026)
+
+Implements item 3 of "Owner-requested next scoreboard work," delivered after items 1 and 2 (local time, expanded football fields). See "Phase 2 owner request 3 — presentation layout editor" in `PROJECT_ROADMAP.md` for full evidence.
+
+### 10.1 What it is and is not
+
+The editor changes only *where and how* the spectator board draws text: position, size, color, alignment, vertical alignment, font weight, stacking order, and visibility — one property at a time, through numeric controls. It cannot change *what* any string says. Every value a spectator sees is still produced in Python (`domain/formatting.py`); static labels (`GAME CLOCK`, `PLAY CLOCK`) can be moved, resized, recolored, or hidden but never retitled, and the editor cannot invent a field the application does not already produce. Saving, loading, or editing a layout advances no state revision, submits no `Command`, writes no action-history row, and never touches `scoreboard.db` or its backup — it is a host/presentation concern, exactly like the saved display and the data-folder choice (`docs/ARCHITECTURE.md` §9).
+
+### 10.2 Opening it
+
+**Advanced ▸ → Presentation layout…** in the operator window opens a separate window at 1220×780, minimum 980×620, because editing needs its own preview canvas and property panel alongside the widget list — it does not fit the corrections-drawer pattern used elsewhere. Like the Field Assistant (section 11.2), it opens, closes, and reopens independently of the operator and spectator windows, and closing it affects nothing else. There are deliberately no editing controls on the spectator display itself; it only ever receives a layout to render.
+
+### 10.3 Workflow
+
+1. Open the editor from Advanced. It loads the active layout and a live read-only snapshot of the current game for its preview.
+2. Select a widget from the list on the left, or click it directly in the preview.
+3. Edit its numeric properties in the panel on the right: position, size, font scale, color, text alignment, vertical alignment, font weight, visibility, and stacking order. Every field is a number entry with a documented `min`/`max`; there is no dragging.
+4. Each edit re-validates the draft immediately and lists any error or warning below the preview, naming the affected widget.
+5. `Save` is disabled while an error is outstanding. `Save as…` stores the draft under a new name; `Save` overwrites the currently selected one, including `Default`.
+6. `Discard changes` throws the draft away and reloads the last saved layout. `Reset this widget` restores one widget to its built-in default; `Reset entire layout…` restores the whole built-in default after an inline confirmation. `Fit to safe area` is a best-effort repair that nudges out-of-range geometry back into range.
+
+### 10.4 Widget inventory
+
+Fifteen widgets cover the spectator board. `game_clock_label`, `home_timeouts`, and `away_timeouts` are positionable but ship **hidden by default**, so the default layout keeps drawing exactly the fields today's board draws; the operator turns them on as a deliberate presentation choice.
+
+**What the default changed, and why.** The arrangement, the reading order, and the visual weight are preserved, but the default is a faithful re-expression rather than a pixel copy, in two respects worth recording:
+
+- **Several type sizes are slightly smaller.** The pre-widget board overflowed its own safe area — the browser viewport check failed with `outside safe area: play` at 1280×720, because the down/distance and ball-on lines added by owner request 2 were nested inside the play-clock block and pushed it past the bottom margin. Fitting every widget inside the safe area at all four supported viewports required reducing the score (0.120 → 0.112 of canvas width), game clock (0.100 → 0.093), play clock (0.085 → 0.078), and quarter (0.060 → 0.058) font scales. **This fixes a real defect**; the sizes remain operator-adjustable.
+- **Every bold widget uses font weight 700 rather than 800.** That is both scores, both team names, the possession indicator, and the play-clock value. Windows synthesizes weight 800 from Arial with taller metrics (~1.41 em versus ~1.13 em per line), which made a widget's required height depend on its weight. Using one real font weight makes box heights predictable and is visually near-identical.
+
+Both are presentation defaults, not rules: an operator can restore any size through the editor.
+
+| id | Label | What it shows | Default visible |
+|---|---|---|---|
+| `home_name` | Home team name | The home team's name | Yes |
+| `home_score` | Home score | The home team's score | Yes |
+| `possession` | Possession | Which team has the ball (`◀ BALL` / `BALL ▶`), blank when neither | Yes |
+| `away_name` | Away team name | The away team's name | Yes |
+| `away_score` | Away score | The away team's score | Yes |
+| `game_clock_label` | Game clock label | The static text `GAME CLOCK` | **No** |
+| `game_clock_value` | Game clock | The running/stopped game clock | Yes |
+| `quarter` | Quarter | The current quarter/lifecycle label | Yes |
+| `down` | Down | The current down (`1st`…`4th`), blank when not set | Yes |
+| `distance` | Distance to go | Yards to go, or `Goal`, blank when not set | Yes |
+| `play_clock_label` | Play clock label | The static text `PLAY CLOCK` | Yes |
+| `play_clock_value` | Play clock | The running/stopped play clock; `—` when cleared | Yes |
+| `ball_on` | Ball on | Field position, blank when not set | Yes |
+| `home_timeouts` | Home timeouts | Home timeouts remaining, blank when not set | **No** |
+| `away_timeouts` | Away timeouts | Away timeouts remaining, blank when not set | **No** |
+
+**Possession moves from an inline mark beside the home or away team name (owner request 2) to its own widget**, centered between the two names. Its text is still produced in Python; only its placement changed.
+
+### 10.5 Widget rules
+
+- A widget's text is always produced in Python. The editor changes size, position, color, visibility, and stacking order — never wording.
+- Static labels (`game_clock_label`, `play_clock_label`) may be styled, moved, resized, or hidden; their text is owned by the application and there is no free-text editor for them.
+- A widget whose value can legitimately be absent from a snapshot (`possession`, `down`, `distance`, `ball_on`, `home_timeouts`, `away_timeouts`) is hidden by the renderer — not drawn as an empty box — whenever its rendered text is blank. Whether the widget is turned on at all is still the operator's choice; the rendering gap for a missing value is automatic and graceful.
+- Every widget carries a numeric stacking order so overlap between adjacent widgets (for example a label beside its value) is resolved deterministically rather than by markup order.
+
+### 10.6 Safe-area policy
+
+The safe area is a margin inset from all four edges of the logical 16:9 canvas, expressed as a fraction of canvas width/height. It defaults to 4% on every side and is itself an editable, validated property: an operator can widen or narrow it only within a documented minimum and maximum inset, and the four insets together must always leave at least half of the canvas usable on both axes. Every visible widget must fit entirely inside the safe area. A layout that violates any of this is **rejected outright** with an error naming the widget or the safe area — it is never silently clamped or accepted.
+
+### 10.7 A bad layout
+
+Validation is strict: a value out of range, an unrecognized color format, a widget that would sit outside the safe area, or a serious overlap between two visible widgets is an error, and the layout as a whole is rejected rather than partially applied. A stored layout that fails to load — corrupted, wrong schema version, or otherwise invalid — falls back to the last known valid layout, and if none exists, to the built-in default. A malformed `layouts.json` never prevents the scoreboard from launching.
+
+**To reset a bad layout:** use **Reset entire layout…** inside the editor, or close the application, delete `layouts.json` from the Scoreboard data folder (the same per-user `%LOCALAPPDATA%\Scoreboard` folder documented in `docs/ARCHITECTURE.md` §9 and `docs/PACKAGING.md`, or the operator-chosen folder if one was set — see "Where the game is saved" below), and relaunch. The scoreboard rebuilds the built-in default layout automatically either way.
+
+### 10.8 What v1 does not support
+
+- OBS, media playback, logos/images, animations, sponsor rotation, or video.
+- Networking or cloud storage of a layout; every layout is a local file.
+- Physical controllers, freeform canvas design, or arbitrary custom text for an authoritative field — the editor cannot add a field the application does not already produce.
+- Editing the operator panel's own layout, or a different hand-tuned layout per screen resolution.
+- **Drag-and-drop or drag-resize of any kind.** Every geometry property is a numeric field with a documented range; there is no pointer-based positioning in v1.
+- The pregame/halftime **event countdown board** (the `KICKOFF IN…` / `UNTIL SECOND HALF…` presentation) is **not editable in v1**. It keeps its existing markup and CSS untouched; only the in-game widgetized board is covered by the editor.
+
+## 11. Field Assistant window (added September 5, 2026)
+
+Implements the owner-requested end-of-play helper documented in
+[`FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`](FIELD_ASSISTANT_RULES_AND_WORKFLOW.md)
+and the "Field Assistant" evidence in `PROJECT_ROADMAP.md`.
+
+### 11.1 What it is and is not
+
+A separate, optional, similarly sized helper window — not a replacement for
+the operator's manual Field Status drawer (section 5a) and not a second
+authoritative process. Python remains the sole state owner; the helper only
+requests a validated `finalize_field_action`. It is opened deliberately,
+never automatically, and closing it changes nothing about the game.
+
+### 11.2 Opening it
+
+**Field Assistant** on the operator toolbar opens a separate `pywebview`
+window, 1180×720 with a minimum size of 1024×600. Reopening while one is
+already open destroys the previous helper window first. A helper push
+failure destroys only the helper; operator shutdown closes it along with the
+other owned windows; reopening reads the latest snapshot.
+
+### 11.3 Layout
+
+- A prominent draft ball-spot readout sits above the field drawing, visually
+  distinct from the current authoritative field status shown alongside it.
+- The field shows a clickable, draggable ball, plus on-screen 1-yard nudge
+  buttons and arrow-key support for fine adjustment.
+- Line to gain and direction are shown with text labels, not color alone.
+- Controls for the active workflow (series start, normal play/incomplete,
+  penalty, or a scoring/kickoff transition) appear below the field.
+- One **Preview** step calculates the proposed result; a single, large
+  **Confirm Play** / **Confirm Transition** button finalizes it. There is no
+  drag-distance-implies-confirm behavior.
+- **Re-sync** and **Discard draft** are always available.
+- No clock controls appear in the helper window; finalizing an action never
+  starts, stops, resets, or otherwise changes either clock.
+
+### 11.4 Stale-draft protection
+
+If the authoritative revision changes while a draft is open — a manual
+field-status edit, a score, or any other accepted command — the helper shows
+the banner `FIELD STATUS CHANGED ELSEWHERE — RE-SYNC REQUIRED` and disables
+Confirm until the operator re-syncs (rebuilds the draft from the current
+snapshot) or discards it.
+
+### 11.5 Target layout, not yet visually verified
+
+- [ ] 1366×768 at 100% and 125% Windows scaling, without page scrolling
+  during ordinary finalization — not yet checked on a physical display or
+  under WebView2; only a static browser render has been observed on this
+  development host.
+- [ ] Native WebView2 rendering of the helper window.
+- [ ] A live operator rehearsal of the workflows above.
+
+### 11.6 Deliberately manual
+
+OT direction, onside/blocked kicks, defensive try returns, offsetting/multiple
+penalties, enforcement from a spot other than the one proposed, automatic
+possession flips, any clock change, live ball tracking, networking, OBS, LED,
+and physical controllers all remain outside the helper; the existing Field
+Status drawer and score/quarter controls (sections 5a, 5) are the fallback for
+anything the helper does not cover.
 
 ## Where the game is saved, and which display it is on
 
