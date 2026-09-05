@@ -332,10 +332,34 @@ The editor changes only *where and how* the spectator board draws text: position
 
 1. Open the editor from Advanced. It loads the active layout and a live read-only snapshot of the current game for its preview.
 2. Select a widget from the list on the left, or click it directly in the preview.
-3. Edit its numeric properties in the panel on the right: position, size, font scale, color, text alignment, vertical alignment, font weight, visibility, and stacking order. Every field is a number entry with a documented `min`/`max`; there is no dragging.
-4. Each edit re-validates the draft immediately and lists any error or warning below the preview, naming the affected widget.
-5. `Save` is disabled while an error is outstanding. `Save as…` stores the draft under a new name; `Save` overwrites the currently selected one, including `Default`.
-6. `Discard changes` throws the draft away and reloads the last saved layout. `Reset this widget` restores one widget to its built-in default; `Reset entire layout…` restores the whole built-in default after an inline confirmation. `Fit to safe area` is a best-effort repair that nudges out-of-range geometry back into range.
+3. **Place it by pointing at it** (added September 5, 2026). Drag the widget on the preview to move it; drag one of the eight handles on the selection to resize it. Arrow keys nudge the selection one step, and Shift with an arrow nudges it four steps; the `Move` arrows in the properties panel do the same for an operator who does not know the keys are there. `Bring forward` and `Send back` change the stacking order.
+4. Style it in the panel on the right: font scale, color, text alignment, vertical alignment, font weight, and visibility. The exact numbers for position, size, and stacking are still there under **Precise values**, collapsed — they are the way to read off an exact figure or match one widget to another, not the way to place something.
+5. Each edit re-validates the draft immediately and lists any error or warning below the preview, naming the affected widget.
+6. `Save` is disabled while an error is outstanding. `Save as…` stores the draft under a new name; `Save` overwrites the currently selected one, including `Default`.
+7. `Discard changes` throws the draft away and reloads the last saved layout. `Reset this widget` restores one widget to its built-in default; `Reset entire layout…` restores the whole built-in default after an inline confirmation. `Fit to safe area` is a best-effort repair that nudges out-of-range geometry back into range.
+
+**How a gesture stays safe.** A drag produces a pointer event per frame, so the
+editor -- not Python -- converts pixels to canvas fractions, snaps them, and
+holds them inside the safe area. Python still has the last word: every finished
+gesture calls `preview_layout()`, and `Save` is gated on that answer exactly as
+it was when the only way to move a widget was to type a number. The editor
+gained a gesture, not authority.
+
+Three rules make the gesture hard to misuse:
+
+- **Snapping.** A widget snaps to a fine grid, and to the edges and centre
+  lines of every other visible widget, of the safe area, and of the board
+  itself. A guide line appears only while a snap is actually holding, so the
+  operator can see *why* it stopped where it did. This is what makes a tidy
+  board reachable by hand on a wall where a two-pixel misalignment is visible
+  from the stands.
+- **The safe area is a hard boundary.** A drag stops at it. Because a
+  breach is a validation error that blocks `Save`, refusing the move outright
+  means a gesture can never build a layout that `Save` then rejects.
+- **Nothing but a real number reaches the draft.** Every geometry write is
+  rounded to the schema's own precision and checked for finiteness first. A
+  canvas that reports no size -- a collapsed or not-yet-laid-out preview --
+  makes the gesture a no-op instead of writing `NaN` into the layout.
 
 ### 10.4 Widget inventory
 

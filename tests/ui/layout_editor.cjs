@@ -50,6 +50,11 @@ async function main(data) {
     await page.goto(pathToFileURL(path.resolve('src/scoreboard/views/layout/index.html')).href);
     await page.waitForFunction(() => document.querySelectorAll('#widget-list button').length > 0);
 
+    // The numeric fields live in a collapsed "Precise values" section now that
+    // dragging is the primary way to place a widget. Open it once, so the
+    // checks below that still drive those fields can reach them.
+    await page.evaluate(() => { document.getElementById('precise').open = true; });
+
     // --- The widget list is generated from Python's descriptors ------------
     const listed = await page.$$eval('#widget-list button', els => els.map(e => e.textContent));
     assert.equal(listed.length, data.state.widgets.length);
@@ -161,6 +166,82 @@ async function main(data) {
     await page.waitForFunction(() =>
       window.__calls.some(c => c.name === 'save_layout' && c.args === 'Night game'));
     checks.push('save as');
+
+    // --- Direct manipulation: drag, resize, nudge --------------------------
+    //
+    // These use real mouse and keyboard input rather than synthetic events,
+    // so they exercise the same path an operator's hand does: pointer
+    // capture, the snap, and the safe-area boundary.
+    const geometry = id => page.evaluate(widgetId => {
+      const el = document.querySelector(`#game-board [data-widget="${widgetId}"]`);
+      const read = name => Number(el.style.getPropertyValue(name));
+      return { x: read('--x'), y: read('--y'), w: read('--w'), h: read('--h') };
+    }, id);
+    const canvasBox = async () => page.locator('#canvas').boundingBox();
+
+    await page.click('[data-select-widget="quarter"]');
+    const box = await canvasBox();
+    const at = (fx, fy) => [box.x + fx * box.width, box.y + fy * box.height];
+
+    // Drag it to the middle of the board.
+    const start = await geometry('quarter');
+    await page.mouse.move(...at(start.x + start.w / 2, start.y + start.h / 2));
+    await page.mouse.down();
+    await page.mouse.move(...at(0.5, 0.62), { steps: 8 });
+    await page.mouse.up();
+    const dragged = await geometry('quarter');
+    assert.ok(dragged.x !== start.x || dragged.y !== start.y, 'the drag must move the widget');
+    assert.equal(dragged.w, start.w, 'a move must not resize');
+    assert.equal(dragged.h, start.h, 'a move must not resize');
+    checks.push('drag to move');
+
+    // Dragging far outside stops at the safe area rather than going out.
+    const safe = data.state.layout.safe_area;
+    await page.mouse.move(...at(dragged.x + dragged.w / 2, dragged.y + dragged.h / 2));
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 2, box.y + box.height * 2, { steps: 8 });
+    await page.mouse.up();
+    const pushed = await geometry('quarter');
+    assert.ok(pushed.x + pushed.w <= 1 - safe.right + 1e-6, 'a drag must stop at the right edge');
+    assert.ok(pushed.y + pushed.h <= 1 - safe.bottom + 1e-6, 'a drag must stop at the bottom edge');
+    checks.push('safe area is a hard boundary');
+
+    // A corner handle resizes without moving the opposite corner.
+    const beforeResize = await geometry('quarter');
+    await page.mouse.move(...at(beforeResize.x, beforeResize.y));
+    await page.mouse.down();
+    await page.mouse.move(...at(beforeResize.x - 0.04, beforeResize.y - 0.03), { steps: 6 });
+    await page.mouse.up();
+    const resized = await geometry('quarter');
+    assert.ok(resized.w > beforeResize.w, 'dragging the NW handle out must widen the widget');
+    assert.ok(
+      Math.abs((resized.x + resized.w) - (beforeResize.x + beforeResize.w)) < 1e-6,
+      'resizing from the north-west must hold the south-east corner still');
+    checks.push('resize by handle');
+
+    // Arrow keys and the on-screen arrows nudge, and Shift nudges further.
+    const beforeNudge = await geometry('quarter');
+    await page.click('[data-action="nudge_right"]');
+    const nudgedByButton = await geometry('quarter');
+    assert.ok(nudgedByButton.x > beforeNudge.x, 'the arrow button must move it right');
+
+    await page.locator('#canvas').click({ position: { x: 4, y: 4 } });
+    await page.keyboard.press('ArrowRight');
+    const nudgedByKey = await geometry('quarter');
+    const fine = nudgedByKey.x - nudgedByButton.x;
+    await page.keyboard.press('Shift+ArrowRight');
+    const nudgedFar = await geometry('quarter');
+    assert.ok(fine > 0, 'the arrow key must move it right');
+    assert.ok(nudgedFar.x - nudgedByKey.x > fine, 'Shift must move it further than a plain arrow');
+    checks.push('nudge by key and button');
+
+    // Typing in a field keeps its own arrow-key behaviour.
+    const beforeTyping = await geometry('quarter');
+    await page.focus('#prop-x');
+    await page.keyboard.press('ArrowRight');
+    assert.deepEqual(await geometry('quarter'), beforeTyping,
+      'an arrow key inside a text field must not move the widget');
+    checks.push('arrows leave fields alone');
 
     // --- The page itself never scrolls at 1280x720 -------------------------
     const scroll = await page.evaluate(() => {

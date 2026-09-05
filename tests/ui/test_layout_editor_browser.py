@@ -58,8 +58,10 @@ class LayoutEditorBrowserTests(unittest.TestCase):
         self.assertEqual(result["checks"], [
             "widget list", "property panel", "numeric move", "visibility toggle",
             "preview selection", "validation blocks save", "validation clears",
-            "issue selects widget", "reset widget", "save as", "no page scroll",
-            "no game command",
+            "issue selects widget", "reset widget", "save as",
+            "drag to move", "safe area is a hard boundary", "resize by handle",
+            "nudge by key and button", "arrows leave fields alone",
+            "no page scroll", "no game command",
         ])
 
 

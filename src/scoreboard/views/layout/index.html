@@ -49,10 +49,16 @@
         <div id="canvas">
           <div id="safe-area" aria-hidden="true"></div>
           <div id="game-board"></div>
+          <!-- Alignment guides and resize handles are drawn by the editor over
+               the real board, never by board.js: the spectator window shares
+               that renderer and must never grow an editing affordance. -->
+          <div id="guides" aria-hidden="true"></div>
+          <div id="handles" aria-hidden="true" hidden></div>
         </div>
       </div>
-      <p class="hint">Click a widget to select it. The preview shows the live board values;
-        it cannot change them.</p>
+      <p class="hint">Drag a widget to move it. Drag a corner or edge handle to resize it.
+        Arrow keys nudge the selection; hold Shift to nudge further. The preview shows the
+        live board values; it cannot change them.</p>
     </section>
 
     <section class="panel properties" aria-label="Properties">
@@ -62,16 +68,50 @@
           <label for="prop-visible">Visible</label>
           <input type="checkbox" id="prop-visible" data-prop="visible">
         </div>
-        <div class="prop-grid">
-          <label for="prop-x">X</label>
-          <input type="number" id="prop-x" data-prop="x" step="0.005" min="0" max="1">
-          <label for="prop-y">Y</label>
-          <input type="number" id="prop-y" data-prop="y" step="0.005" min="0" max="1">
-          <label for="prop-width">Width</label>
-          <input type="number" id="prop-width" data-prop="width" step="0.005" min="0" max="1">
-          <label for="prop-height">Height</label>
-          <input type="number" id="prop-height" data-prop="height" step="0.005" min="0" max="1">
+        <!-- Position is a pointing task, so the pointing controls come first
+             and the numbers are kept for the cases pointing is bad at:
+             reading off an exact value, or matching one widget to another. -->
+        <div class="prop-row nudge-row">
+          <span class="prop-name" id="nudge-label">Move</span>
+          <div class="nudge" role="group" aria-labelledby="nudge-label">
+            <button type="button" class="nudge-up" data-action="nudge_up"
+                    aria-label="Move up">&#9650;</button>
+            <button type="button" class="nudge-left" data-action="nudge_left"
+                    aria-label="Move left">&#9664;</button>
+            <button type="button" class="nudge-right" data-action="nudge_right"
+                    aria-label="Move right">&#9654;</button>
+            <button type="button" class="nudge-down" data-action="nudge_down"
+                    aria-label="Move down">&#9660;</button>
+          </div>
+          <span class="hint">Or drag it on the preview. Arrow keys do the same;
+            Shift moves further.</span>
         </div>
+
+        <div class="prop-row">
+          <span class="prop-name" id="stack-label">Stacking</span>
+          <span class="choices" role="group" aria-labelledby="stack-label">
+            <button type="button" data-action="raise">Bring forward</button>
+            <button type="button" data-action="lower">Send back</button>
+          </span>
+          <span class="hint" id="stack-readout"></span>
+        </div>
+
+        <details class="precise" id="precise">
+          <summary>Precise values</summary>
+          <div class="prop-grid">
+            <label for="prop-x">X</label>
+            <input type="number" id="prop-x" data-prop="x" step="0.005" min="0" max="1">
+            <label for="prop-y">Y</label>
+            <input type="number" id="prop-y" data-prop="y" step="0.005" min="0" max="1">
+            <label for="prop-width">Width</label>
+            <input type="number" id="prop-width" data-prop="width" step="0.005" min="0" max="1">
+            <label for="prop-height">Height</label>
+            <input type="number" id="prop-height" data-prop="height" step="0.005" min="0" max="1">
+            <label for="prop-z_index">Stacking</label>
+            <input type="number" id="prop-z_index" data-prop="z_index" step="1">
+          </div>
+          <p class="hint">Shares of the board's width and height, from 0 to 1.</p>
+        </details>
         <div class="prop-row">
           <label for="prop-font_scale">Font size</label>
           <input type="number" id="prop-font_scale" data-prop="font_scale" step="0.001">
@@ -95,8 +135,6 @@
         <div class="prop-row">
           <label for="prop-font_weight">Weight</label>
           <select id="prop-font_weight" data-prop="font_weight"></select>
-          <label for="prop-z_index">Stacking</label>
-          <input type="number" id="prop-z_index" data-prop="z_index" step="1">
         </div>
         <p class="hint" id="static-note" hidden>This is a fixed label. You can move, restyle, or
           hide it; its wording is set by the application.</p>

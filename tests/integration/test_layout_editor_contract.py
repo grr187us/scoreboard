@@ -135,6 +135,43 @@ class ControlCoverageTests(unittest.TestCase):
                        "reset_layout_confirm", "clamp"):
             self.assertIn(f'data-action="{action}"', self.html, action)
 
+    def test_position_is_reachable_without_typing_a_number(self) -> None:
+        """The point of direct manipulation: every geometry change has a
+        pointing or keying route that does not involve the number fields."""
+
+        for action in ("nudge_up", "nudge_down", "nudge_left", "nudge_right"):
+            self.assertIn(f'data-action="{action}"', self.html, action)
+        for action in ("raise", "lower"):
+            self.assertIn(f'data-action="{action}"', self.html, action)
+        self.assertIn("data-handle", self.script,
+                      "resize handles are built by the script")
+        for key in ("ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"):
+            self.assertIn(key, self.script, key)
+        self.assertIn("pointerdown", self.script, "widgets must be draggable")
+        self.assertIn("shiftKey", self.script, "Shift must give a coarser nudge")
+
+    def test_the_number_fields_survive_as_the_precise_fallback(self) -> None:
+        """Demoted, not removed: an operator still needs an exact value."""
+
+        self.assertIn('<details class="precise"', self.html)
+        for prop in ("x", "y", "width", "height", "z_index"):
+            self.assertIn(f'data-prop="{prop}"', self.html, prop)
+
+    def test_the_shared_renderer_grows_no_editing_affordance(self) -> None:
+        """Handles and guides belong to the editor's own layers.
+
+        board.js is the spectator window's renderer too. An editing handle
+        that leaked into it would be drawn on the LED wall.
+        """
+
+        board = (VIEWS / "shared" / "board.js").read_text(encoding="utf-8")
+        board_css = (VIEWS / "shared" / "board.css").read_text(encoding="utf-8")
+        for forbidden in ("data-handle", "handle", "guide", "drag", "resize"):
+            self.assertNotIn(forbidden, board.lower(), forbidden)
+            self.assertNotIn(forbidden, board_css.lower(), forbidden)
+        self.assertIn('id="handles"', self.html)
+        self.assertIn('id="guides"', self.html)
+
     def test_it_uses_no_blocking_browser_dialog(self) -> None:
         """A modal in a webview blocks the window; the page asks inline instead."""
 
@@ -143,8 +180,41 @@ class ControlCoverageTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.script, forbidden)
 
     def test_it_derives_no_displayed_value(self) -> None:
-        for forbidden in ("toFixed", "parseInt", "parseFloat", "setInterval", "Math."):
+        """No formatting, no rounding of a value, no clock of its own.
+
+        `Math.` was on this list until direct manipulation arrived. It cannot
+        stay: a drag produces a pointer event per frame, and converting those
+        pixels into canvas fractions, snapping them to a grid, and holding
+        them inside the safe area is arithmetic that has to happen in the
+        browser -- a bridge round trip per frame is not available. What the
+        rule was actually protecting is untouched, and is still asserted
+        here and in the two tests below: the editor formats nothing, derives
+        no displayed value, and runs no clock. Every string in the preview
+        still arrives already formatted in the view model.
+        """
+
+        for forbidden in ("toFixed", "parseInt", "parseFloat", "setInterval"):
             self.assertNotIn(forbidden, self.script, forbidden)
+
+    def test_its_only_arithmetic_is_canvas_geometry(self) -> None:
+        """Rounding a coordinate is allowed; anything cleverer is not."""
+
+        used = set(re.findall(r"Math\.([a-zA-Z]+)", code_only(self.script)))
+        self.assertTrue(used, "the gesture layer is expected to do geometry")
+        self.assertEqual(used, {"round"},
+                         f"unexpected Math use in the editor: {sorted(used - {'round'})}")
+
+    def test_it_reads_no_formatted_value_out_of_the_view_model(self) -> None:
+        """The snapshot is passed to the renderer whole, never picked apart.
+
+        This is the assertion that really carries the old rule: if the editor
+        never touches a `.display` or `_display` field, it cannot be
+        re-deriving one, whatever arithmetic it does on rectangles.
+        """
+
+        code = code_only(self.script)
+        for forbidden in (".display", "_display", ".seconds", ".score"):
+            self.assertNotIn(forbidden, code, forbidden)
 
 
 if __name__ == "__main__":  # pragma: no cover

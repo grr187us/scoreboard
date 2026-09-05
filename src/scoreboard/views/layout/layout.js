@@ -36,6 +36,25 @@
   var NUMERIC_PROPS = ['x', 'y', 'width', 'height', 'font_scale', 'z_index'];
   var CHOICE_PROPS = ['text_align', 'vertical_align'];
 
+  var guideLayer = document.getElementById('guides');
+  var handleLayer = document.getElementById('handles');
+
+  /* Direct manipulation happens in the browser because it has to: a drag
+   * produces a pointer event per frame, and a bridge round trip per frame is
+   * not a thing a webview can do. So the editor owns the *gesture* -- pixels
+   * to fractions, snapping, and the safe-area boundary -- and Python still
+   * owns the *verdict*: every gesture ends in preview_layout(), and Save is
+   * still gated on what Python says. Nothing here computes a game value, and
+   * the limits below that could drift from the schema are read from Python's
+   * limits() rather than written down again. */
+  var GRID = 0.005;          // one nudge, and the number inputs' own step
+  var COARSE = 0.02;         // Shift+arrow, and four grid cells
+  var SNAP = 0.008;          // how close an edge must be to be captured
+  var MIN_SIZE = { width: 0.02, height: 0.02 };  // replaced from limits()
+  var PRECISION_SCALE = 10000;                   // 10^coordinate_precision
+
+  var drag = null;           // the gesture in progress, or null
+
   /* --- Small helpers ---------------------------------------------------- */
 
   function clone(value) {
@@ -147,6 +166,17 @@
 
   /** Apply the limits Python reported to the numeric controls. */
   function applyLimits(limits) {
+    MIN_SIZE.width = limits.min_widget_width;
+    MIN_SIZE.height = limits.min_widget_height;
+    // Keep the editor's rounding on exactly the same place as the schema's.
+    var places = limits.coordinate_precision;
+    if (typeof places === 'number' && places > 0) {
+      var scale = 1;
+      for (var step = 0; step < places; step += 1) {
+        scale *= 10;
+      }
+      PRECISION_SCALE = scale;
+    }
     var font = document.getElementById('prop-font_scale');
     font.min = String(limits.min_font_scale);
     font.max = String(limits.max_font_scale);
@@ -189,9 +219,23 @@
       // the application; say so rather than offering a text box that is not
       // there.
       document.getElementById('static-note').hidden = !(descriptor && descriptor.static_text);
+      R.setText(document.getElementById('stack-readout'), 'Now ' + widget.z_index);
     } finally {
       suppress = false;
     }
+  }
+
+  /** Build the eight resize handles once. They carry their compass point in
+   * `data-handle`; everything else about them is CSS. */
+  function buildHandles() {
+    var edges = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+    handleLayer.replaceChildren();
+    edges.forEach(function (edge) {
+      var handle = document.createElement('div');
+      handle.className = 'handle handle-' + edge;
+      handle.setAttribute('data-handle', edge);
+      handleLayer.appendChild(handle);
+    });
   }
 
   function renderIssues(payload) {
@@ -255,6 +299,7 @@
     renderWidgetList();
     renderProperties();
     renderPreview();
+    renderHandles();
     renderIssues(payload);
     if (payload.message && options.announce !== false) {
       showAlert(payload.message);
@@ -303,6 +348,348 @@
     });
   }
 
+  /* --- Geometry ---------------------------------------------------------
+   *
+   * All of it in fractions of the canvas, the same units the layout document
+   * and board.js already use, so nothing is converted twice.
+   */
+
+  function clampRange(value, low, high) {
+    // A widget wider than the safe area would make low > high; letting the
+    // low edge win keeps it on the board instead of inverting the box.
+    if (high < low) {
+      return low;
+    }
+    return value < low ? low : (value > high ? high : value);
+  }
+
+  function snapToGrid(value) {
+    return Math.round(value / GRID) * GRID;
+  }
+
+  function apart(a, b) {
+    var difference = a - b;
+    return difference < 0 ? -difference : difference;
+  }
+
+  /** The safe area as edges rather than insets, which is what every caller
+   * below actually wants. Falls back to the schema default if the draft has
+   * no usable safe area, so a gesture never throws. */
+  function safeBounds() {
+    var area = (draft && draft.safe_area) ? draft.safe_area : null;
+    var top = area && typeof area.top === 'number' ? area.top : 0.04;
+    var right = area && typeof area.right === 'number' ? area.right : 0.04;
+    var bottom = area && typeof area.bottom === 'number' ? area.bottom : 0.04;
+    var left = area && typeof area.left === 'number' ? area.left : 0.04;
+    return { left: left, top: top, right: 1 - right, bottom: 1 - bottom };
+  }
+
+  /** Every edge and centre line a dragged widget can snap to: the safe-area
+   * boundary, the canvas centre, and the corresponding lines of every other
+   * visible widget. Returns two lists of plain numbers. */
+  function snapTargets(excludeId) {
+    var bounds = safeBounds();
+    var vertical = [bounds.left, bounds.right, 0.5];
+    var horizontal = [bounds.top, bounds.bottom, 0.5];
+    var ids = Object.keys(draft.widgets || {});
+    for (var index = 0; index < ids.length; index += 1) {
+      var id = ids[index];
+      if (id === excludeId) {
+        continue;
+      }
+      var other = draft.widgets[id];
+      if (!other || !other.visible) {
+        continue;
+      }
+      vertical.push(other.x, other.x + other.width / 2, other.x + other.width);
+      horizontal.push(other.y, other.y + other.height / 2, other.y + other.height);
+    }
+    return { vertical: vertical, horizontal: horizontal };
+  }
+
+  /** Pull `value` onto the nearest target within SNAP, given that the moving
+   * box presents three lines of its own (near edge, centre, far edge).
+   * Returns the adjusted origin and the line that captured it, if any. */
+  function capture(origin, size, targets) {
+    var best = null;
+    var offsets = [0, size / 2, size];
+    for (var line = 0; line < targets.length; line += 1) {
+      for (var which = 0; which < offsets.length; which += 1) {
+        var distance = apart(origin + offsets[which], targets[line]);
+        if (distance <= SNAP && (!best || distance < best.distance)) {
+          best = { distance: distance, origin: targets[line] - offsets[which], at: targets[line] };
+        }
+      }
+    }
+    return best;
+  }
+
+  function drawGuides(lines) {
+    guideLayer.replaceChildren();
+    lines.forEach(function (line) {
+      var element = document.createElement('div');
+      element.className = 'guide guide-' + line.axis;
+      element.style.setProperty('--at', line.at);
+      guideLayer.appendChild(element);
+    });
+  }
+
+  function clearGuides() {
+    guideLayer.replaceChildren();
+  }
+
+  /** Position the eight resize handles over the selected widget, or hide
+   * them when nothing is selected. */
+  function renderHandles() {
+    var widget = currentWidget();
+    handleLayer.hidden = !widget || !widget.visible;
+    if (handleLayer.hidden) {
+      return;
+    }
+    handleLayer.style.setProperty('--hx', widget.x);
+    handleLayer.style.setProperty('--hy', widget.y);
+    handleLayer.style.setProperty('--hw', widget.width);
+    handleLayer.style.setProperty('--hh', widget.height);
+  }
+
+  /** Where the pointer is, as a fraction of the canvas, or null when the
+   * canvas has no area to measure against.
+   *
+   * A zero-sized canvas is not hypothetical -- it is what a collapsed or
+   * not-yet-laid-out preview reports -- and dividing by it yields NaN, which
+   * would be written straight into the draft. board.js then falls back to the
+   * built-in default for that widget, so the operator sees the widget jump
+   * home rather than an error. Refusing the gesture is the honest answer. */
+  function pointerFraction(event) {
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return null;
+    }
+    return {
+      x: (event.clientX - rect.left) / rect.width,
+      y: (event.clientY - rect.top) / rect.height
+    };
+  }
+
+  /** Assign only a real number. The last line of defence for the draft: a
+   * geometry value that is not finite must never reach the layout document,
+   * whatever produced it. */
+  function setGeometry(widget, prop, value) {
+    if (typeof value === 'number' && isFinite(value)) {
+      // Round to the schema's own precision. Repeated fractional arithmetic
+      // otherwise leaves values like 0.16999999999999998 in the number
+      // fields, and Python would round them to the same place on save
+      // anyway -- so the operator may as well be shown what will be stored.
+      widget[prop] = Math.round(value * PRECISION_SCALE) / PRECISION_SCALE;
+    }
+  }
+
+  /* --- Gestures ---------------------------------------------------------- */
+
+  /** Move the selected widget to a snapped, in-bounds position. */
+  function moveTo(widget, wantX, wantY) {
+    var bounds = safeBounds();
+    var targets = snapTargets(selected);
+    var lines = [];
+
+    var x = snapToGrid(wantX);
+    var capturedX = capture(wantX, widget.width, targets.vertical);
+    if (capturedX) {
+      x = capturedX.origin;
+      lines.push({ axis: 'v', at: capturedX.at });
+    }
+    var y = snapToGrid(wantY);
+    var capturedY = capture(wantY, widget.height, targets.horizontal);
+    if (capturedY) {
+      y = capturedY.origin;
+      lines.push({ axis: 'h', at: capturedY.at });
+    }
+
+    // The hard boundary. A drag stops at the safe area rather than being
+    // allowed out and flagged, so a gesture can never build a layout that
+    // Save then refuses.
+    setGeometry(widget, 'x', clampRange(x, bounds.left, bounds.right - widget.width));
+    setGeometry(widget, 'y', clampRange(y, bounds.top, bounds.bottom - widget.height));
+    drawGuides(lines);
+  }
+
+  /** Resize the selected widget by moving one edge or corner. `edge` is a
+   * compass string: n, s, e, w, or a corner such as `nw`. */
+  function resizeTo(widget, edge, point) {
+    var bounds = safeBounds();
+    var targets = snapTargets(selected);
+    var right = widget.x + widget.width;
+    var bottom = widget.y + widget.height;
+
+    if (edge.indexOf('w') !== -1) {
+      var newLeft = clampRange(snapToGrid(point.x), bounds.left, right - MIN_SIZE.width);
+      var capturedLeft = capture(point.x, 0, targets.vertical);
+      if (capturedLeft) {
+        newLeft = clampRange(capturedLeft.origin, bounds.left, right - MIN_SIZE.width);
+      }
+      setGeometry(widget, 'x', newLeft);
+      setGeometry(widget, 'width', right - newLeft);
+    }
+    if (edge.indexOf('e') !== -1) {
+      var newRight = clampRange(snapToGrid(point.x), widget.x + MIN_SIZE.width, bounds.right);
+      var capturedRight = capture(point.x, 0, targets.vertical);
+      if (capturedRight) {
+        newRight = clampRange(capturedRight.origin, widget.x + MIN_SIZE.width, bounds.right);
+      }
+      setGeometry(widget, 'width', newRight - widget.x);
+    }
+    if (edge.indexOf('n') !== -1) {
+      var newTop = clampRange(snapToGrid(point.y), bounds.top, bottom - MIN_SIZE.height);
+      setGeometry(widget, 'y', newTop);
+      setGeometry(widget, 'height', bottom - newTop);
+    }
+    if (edge.indexOf('s') !== -1) {
+      var newBottom = clampRange(snapToGrid(point.y), widget.y + MIN_SIZE.height, bounds.bottom);
+      setGeometry(widget, 'height', newBottom - widget.y);
+    }
+    clearGuides();
+  }
+
+  /** Redraw everything a gesture touches, without a bridge call. */
+  function refreshGeometry() {
+    renderPreview();
+    renderHandles();
+    renderProperties();
+  }
+
+  /** End a gesture: let Python have the last word, and record the change. */
+  function settle() {
+    clearGuides();
+    markDirty(true);
+    renderWidgetList();
+    validateDraft();
+  }
+
+  canvas.addEventListener('pointerdown', function (event) {
+    if (event.button !== 0) {
+      return;
+    }
+    var handle = event.target.closest('[data-handle]');
+    var widgetElement = event.target.closest('#game-board [data-widget]');
+    if (!handle && !widgetElement) {
+      return;
+    }
+    if (widgetElement && widgetElement.dataset.widget !== selected) {
+      select(widgetElement.dataset.widget);
+    }
+    var widget = currentWidget();
+    if (!widget) {
+      return;
+    }
+    var point = pointerFraction(event);
+    if (!point) {
+      return;
+    }
+    drag = {
+      edge: handle ? handle.dataset.handle : null,
+      grabX: point.x - widget.x,
+      grabY: point.y - widget.y
+    };
+    // Capture keeps the gesture alive if the pointer outruns the widget.
+    // Losing it is survivable -- the move handler still fires on the canvas --
+    // so a refusal must not abort the drag.
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch (error) {
+      drag.uncaptured = true;
+    }
+    canvas.classList.add('is-dragging');
+    event.preventDefault();
+  });
+
+  canvas.addEventListener('pointermove', function (event) {
+    if (!drag) {
+      return;
+    }
+    var widget = currentWidget();
+    if (!widget) {
+      return;
+    }
+    var point = pointerFraction(event);
+    if (!point) {
+      return;
+    }
+    if (drag.edge) {
+      resizeTo(widget, drag.edge, point);
+    } else {
+      moveTo(widget, point.x - drag.grabX, point.y - drag.grabY);
+    }
+    refreshGeometry();
+  });
+
+  function endDrag(event) {
+    if (!drag) {
+      return;
+    }
+    var wasCaptured = !drag.uncaptured;
+    drag = null;
+    canvas.classList.remove('is-dragging');
+    try {
+      if (wasCaptured && event && canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    } catch (error) {
+      // Already released by the browser; nothing to undo.
+    }
+    settle();
+  }
+
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
+
+  /** One nudge, from an arrow key or an on-screen arrow button. */
+  function nudge(dx, dy, far) {
+    var widget = currentWidget();
+    if (!widget) {
+      return;
+    }
+    var step = far ? COARSE : GRID;
+    var bounds = safeBounds();
+    setGeometry(widget, 'x', clampRange(snapToGrid(widget.x + dx * step),
+      bounds.left, bounds.right - widget.width));
+    setGeometry(widget, 'y', clampRange(snapToGrid(widget.y + dy * step),
+      bounds.top, bounds.bottom - widget.height));
+    refreshGeometry();
+    settle();
+  }
+
+  var ARROWS = {
+    ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]
+  };
+
+  document.addEventListener('keydown', function (event) {
+    var step = ARROWS[event.key];
+    if (!step || !selected) {
+      return;
+    }
+    // Never steal an arrow key from a field the operator is typing in.
+    var tag = event.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+      return;
+    }
+    event.preventDefault();
+    nudge(step[0], step[1], event.shiftKey);
+  });
+
+  /** Move the selection one place up or down the stacking order. */
+  function restack(direction) {
+    var widget = currentWidget();
+    if (!widget) {
+      return;
+    }
+    var limits = state && state.limits ? state.limits : {};
+    var low = typeof limits.min_z_index === 'number' ? limits.min_z_index : 0;
+    var high = typeof limits.max_z_index === 'number' ? limits.max_z_index : 100;
+    widget.z_index = clampRange(widget.z_index + direction, low, high);
+    refreshGeometry();
+    settle();
+  }
+
   /* --- Editing ---------------------------------------------------------- */
 
   function changeProperty(prop, value) {
@@ -313,6 +700,7 @@
     widget[prop] = value;
     markDirty(true);
     renderPreview();
+    renderHandles();
     renderWidgetList();
     validateDraft();
   }
@@ -389,6 +777,8 @@
     renderWidgetList();
     renderProperties();
     markSelection();
+    renderHandles();
+    clearGuides();
   }
 
   function handleAction(action) {
@@ -416,6 +806,18 @@
     } else if (action === 'reset_layout_confirm') {
       document.getElementById('reset-confirm').hidden = true;
       resetLayout();
+    } else if (action === 'nudge_left') {
+      nudge(-1, 0, false);
+    } else if (action === 'nudge_right') {
+      nudge(1, 0, false);
+    } else if (action === 'nudge_up') {
+      nudge(0, -1, false);
+    } else if (action === 'nudge_down') {
+      nudge(0, 1, false);
+    } else if (action === 'raise') {
+      restack(1);
+    } else if (action === 'lower') {
+      restack(-1);
     }
   }
 
@@ -532,6 +934,8 @@
   };
 
   Board.build(boardRoot);
+
+  buildHandles();
 
   R.whenReady(function (bridge) {
     api = bridge;

@@ -265,3 +265,117 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .severity { font-weight: 700; letter-spacing: .06em; margin-right: 6px; }
 .error .severity { color: var(--danger); }
 .warning .severity { color: var(--warn); }
+
+/* --- Direct manipulation ---------------------------------------------------
+ *
+ * Handles and guides are drawn in their own layers above the board, so the
+ * shared renderer stays exactly what the spectator window gets. Both layers
+ * work in the same 0..1 canvas fractions the layout document uses.
+ */
+
+#guides,
+#handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* An alignment guide is a hairline the full width or height of the canvas,
+ * shown only while a drag is actually snapped to something. */
+.guide {
+  position: absolute;
+  background: var(--accent);
+  opacity: .9;
+}
+
+.guide-v {
+  top: 0;
+  bottom: 0;
+  left: calc(var(--at) * 100%);
+  width: 1px;
+}
+
+.guide-h {
+  left: 0;
+  right: 0;
+  top: calc(var(--at) * 100%);
+  height: 1px;
+}
+
+/* The handle frame tracks the selected widget through four custom properties
+ * the script sets; the handles themselves sit on its corners and edges. */
+#handles {
+  --hx: 0;
+  --hy: 0;
+  --hw: 0;
+  --hh: 0;
+}
+
+.handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--bg, #000);
+  border: 2px solid var(--accent);
+  pointer-events: auto;
+  z-index: 5;
+}
+
+.handle-nw { left: calc(var(--hx) * 100%); top: calc(var(--hy) * 100%); cursor: nwse-resize; }
+.handle-n  { left: calc((var(--hx) + var(--hw) / 2) * 100%); top: calc(var(--hy) * 100%); cursor: ns-resize; }
+.handle-ne { left: calc((var(--hx) + var(--hw)) * 100%); top: calc(var(--hy) * 100%); cursor: nesw-resize; }
+.handle-e  { left: calc((var(--hx) + var(--hw)) * 100%); top: calc((var(--hy) + var(--hh) / 2) * 100%); cursor: ew-resize; }
+.handle-se { left: calc((var(--hx) + var(--hw)) * 100%); top: calc((var(--hy) + var(--hh)) * 100%); cursor: nwse-resize; }
+.handle-s  { left: calc((var(--hx) + var(--hw) / 2) * 100%); top: calc((var(--hy) + var(--hh)) * 100%); cursor: ns-resize; }
+.handle-sw { left: calc(var(--hx) * 100%); top: calc((var(--hy) + var(--hh)) * 100%); cursor: nesw-resize; }
+.handle-w  { left: calc(var(--hx) * 100%); top: calc((var(--hy) + var(--hh) / 2) * 100%); cursor: ew-resize; }
+
+/* Say "you can drag this" before the operator tries. */
+#game-board .widget { cursor: grab; }
+#canvas.is-dragging { cursor: grabbing; }
+#canvas.is-dragging #game-board .widget { cursor: grabbing; }
+
+/* A drag must not turn into a text selection or a touch scroll. */
+#canvas {
+  touch-action: none;
+  user-select: none;
+}
+
+/* --- The move pad ---------------------------------------------------------- */
+
+.nudge {
+  display: grid;
+  grid-template-columns: repeat(3, 1.9rem);
+  grid-template-rows: repeat(2, 1.6rem);
+  gap: 2px;
+}
+
+.nudge button {
+  padding: 0;
+  line-height: 1;
+}
+
+.nudge-up { grid-column: 2; grid-row: 1; }
+.nudge-left { grid-column: 1; grid-row: 2; }
+.nudge-right { grid-column: 3; grid-row: 2; }
+.nudge-down { grid-column: 2; grid-row: 2; }
+
+.nudge-row { align-items: start; }
+
+/* --- Precise values -------------------------------------------------------- */
+
+/* Collapsed by default: the numbers are the fallback now, not the method. */
+.precise {
+  margin: .5rem 0;
+  border-top: 1px solid var(--line, #333);
+  padding-top: .4rem;
+}
+
+.precise > summary {
+  cursor: pointer;
+  font-size: .8rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .8;
+}
