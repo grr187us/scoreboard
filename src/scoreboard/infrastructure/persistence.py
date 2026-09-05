@@ -110,6 +110,11 @@ CLOCK_EXPIRED: Final[dict[str, str]] = {
     "event": "event_countdown_expired",
 }
 
+#: The game clock expired naturally while a play clock was running.  The paired
+#: system row records why the play clock disappeared instead of falsely calling
+#: it a play-clock expiration.
+PLAY_CLOCK_CLEARED_ON_GAME_CLOCK_STOP: Final[str] = "play_clock_cleared_on_game_clock_stop"
+
 #: A failed write keeps its history rows in memory and retries them on the next
 #: successful transaction. The cap stops an all-session outage from growing
 #: without bound; it is far larger than a game's realistic command count.
@@ -751,6 +756,58 @@ class GameStore:
         except (sqlite3.Error, OSError) as exc:
             self._queue_pending(row)
             return self._fail("record_expiration", exc)
+        self._reset_display_cadence(state)
+        self._refresh_backup()
+        return self._succeed(state, timestamp, "Game state saved.")
+
+    def record_game_clock_expiration_and_play_clock_clear(
+        self,
+        state: GameState,
+        *,
+        game_from_seconds: float,
+        play_from_seconds: float,
+    ) -> PersistenceStatus:
+        """Atomically record a game expiry and its stop-side play-clock clear.
+
+        Both are system observations and leave ``state.revision`` unchanged,
+        but they must share a transaction so recovery never sees the cleared
+        board without the reason it happened.
+        """
+
+        if self._game_id is None:
+            raise NoActiveGame("begin_session() must be called before recording expiry")
+        timestamp = self._timestamp()
+        common = (RESULT_ACCEPTED, None, None, state.revision, self._app_version)
+        game_row = (
+            timestamp,
+            CLOCK_EXPIRED["game"],
+            SYSTEM_SOURCE,
+            None,
+            "game_clock",
+            _encode({"seconds": float(game_from_seconds), "running": True}),
+            _encode({"seconds": 0.0, "running": False}),
+            *common,
+        )
+        clear_row = (
+            timestamp,
+            PLAY_CLOCK_CLEARED_ON_GAME_CLOCK_STOP,
+            SYSTEM_SOURCE,
+            None,
+            "play_clock",
+            _encode({"seconds": float(play_from_seconds), "running": True}),
+            _encode({"seconds": 0.0, "running": False}),
+            *common,
+        )
+        try:
+            with self._transaction() as connection:
+                self._flush_pending(connection)
+                self._write_state(connection, state, timestamp, CHECKPOINT_CLOCK_TICK)
+                self._insert_history(connection, game_row)
+                self._insert_history(connection, clear_row)
+        except (sqlite3.Error, OSError) as exc:
+            self._queue_pending(game_row)
+            self._queue_pending(clear_row)
+            return self._fail("record_game_clock_expiration_and_play_clock_clear", exc)
         self._reset_display_cadence(state)
         self._refresh_backup()
         return self._succeed(state, timestamp, "Game state saved.")

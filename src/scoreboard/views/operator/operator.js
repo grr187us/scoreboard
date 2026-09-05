@@ -443,6 +443,14 @@
       });
       return;
     }
+    if (action === 'open_test_window') {
+      Promise.resolve(api.open_test_window()).then(function (result) {
+        showAlert((result && result.message) || 'Test spectator window opened.');
+      }).catch(function (error) {
+        showAlert('The test spectator window could not be opened: ' + error);
+      });
+      return;
+    }
     if (action === 'open_corrections') {
       openDrawer('corrections');
       refreshDataFolder();
@@ -451,6 +459,8 @@
       openDrawer('event-drawer');
     } else if (action === 'open_help') {
       openDrawer('shortcut-help');
+    } else if (action === 'open_advanced') {
+      openDrawer('advanced-drawer');
     } else if (action === 'close_drawer') {
       closeDrawers();
     } else if (action === 'reopen_display') {
@@ -483,7 +493,7 @@
   }
 
   function closeDrawers() {
-    ['corrections', 'event-drawer', 'shortcut-help'].forEach(function (id) {
+    ['corrections', 'event-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
       var drawer = document.getElementById(id);
       if (drawer) {
         drawer.hidden = true;

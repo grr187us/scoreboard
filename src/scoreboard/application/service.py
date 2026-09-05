@@ -37,6 +37,7 @@ from scoreboard.domain.clocks import (
     GameClock,
     PlayClock,
     clear_play_clock_on_game_clock_start,
+    clear_play_clock_on_game_clock_stop,
     event_phase_for,
 )
 from scoreboard.domain.commands import (
@@ -65,6 +66,7 @@ from scoreboard.domain.commands import (
     validate_command,
 )
 from scoreboard.domain.state import (
+    LIVE_QUARTER_LABELS,
     MAX_SCORE,
     QUARTER_LABELS,
     ClockValue,
@@ -88,6 +90,17 @@ class _Transition:
     undo: UndoEntry | None = None
     clears_undo: bool = False
     replacement_state: GameState | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TickObservation:
+    """A non-command clock observation made under the bridge command lock."""
+
+    state: GameState
+    game_clock_expired: bool = False
+    play_clock_cleared: bool = False
+    game_clock_from_seconds: float = 0.0
+    play_clock_from_seconds: float = 0.0
 
 
 def _clock_snapshot(value: ClockValue) -> dict[str, Any]:
@@ -180,6 +193,49 @@ class ScoreboardService:
             # The HALFTIME/WARMUP label is derived, so it changes at 3:00 while
             # the countdown runs rather than waiting for the next command.
             event_phase=event_phase_for(self._state.event_phase, countdown.seconds),
+        )
+
+    def observe_tick(self, now: float | None = None) -> TickObservation:
+        """Materialize a refresh and commit the natural-expiry stop coupling.
+
+        ``materialized_state`` intentionally stays read-only.  The bridge calls
+        this method while holding its command lock, so the single service
+        mutation below cannot race a submitted command.  Natural expiration
+        keeps the state revision unchanged, but clearing the running play-clock
+        engine is committed so later ticks cannot resume its old deadline.
+        """
+
+        current = float(self._monotonic()) if now is None else float(now)
+        game_before = self._game_clock.current_value(current)
+        play_before = self._play_clock.current_value(current)
+        game_expired = self._game_clock.value.running and not game_before.running
+        game_clock_from_seconds = self._game_clock.value.seconds
+        play_clock_cleared = False
+
+        if game_expired:
+            self._game_clock = self._game_clock.expire(now=current)
+            next_play_clock = clear_play_clock_on_game_clock_stop(
+                self._play_clock,
+                game_clock_is_running=False,
+                now=current,
+            )
+            if next_play_clock is not self._play_clock:
+                self._play_clock = next_play_clock
+                # This is deliberately not ``evolve``: it records a system
+                # observation without assigning an operator-command revision.
+                self._state = replace(
+                    self._state,
+                    play_clock=next_play_clock.to_clock_value(now=current),
+                    play_clock_cleared=True,
+                )
+                play_clock_cleared = True
+
+        return TickObservation(
+            state=self.materialized_state(current),
+            game_clock_expired=game_expired,
+            play_clock_cleared=play_clock_cleared,
+            game_clock_from_seconds=game_clock_from_seconds if game_expired else 0.0,
+            play_clock_from_seconds=play_before.seconds if play_clock_cleared else 0.0,
         )
 
     @property
@@ -275,7 +331,11 @@ class ScoreboardService:
                 changes["play_clock_cleared"] = True
             elif command.type is CommandType.PLAY_CLOCK_CLEAR:
                 changes["play_clock_cleared"] = True
-            elif command.type in (CommandType.PLAY_CLOCK_PRESET, CommandType.PLAY_CLOCK_CORRECT):
+            elif command.type in (
+                CommandType.PLAY_CLOCK_PRESET,
+                CommandType.PLAY_CLOCK_PRESET_START,
+                CommandType.PLAY_CLOCK_CORRECT,
+            ):
                 changes["play_clock_cleared"] = False
             elif command.type is CommandType.PLAY_CLOCK_RESET:
                 changes["play_clock_cleared"] = play_clock.preset_seconds == 0
@@ -492,18 +552,35 @@ class ScoreboardService:
             new_value=target,
             source=command.source,
         )
-        if a_clock_is_running:
-            # One committed step: stop both clocks and change the quarter.
+        next_game_clock = (
+            self._game_clock.stop(now=now) if a_clock_is_running else self._game_clock
+        )
+        auto_reset_game_clock = (
+            target in LIVE_QUARTER_LABELS
+            and next_game_clock.current_value(now).seconds <= 0.0
+        )
+        if auto_reset_game_clock:
+            # A live quarter beginning at zero needs its full stopped length,
+            # but a nonzero correction always remains the operator's choice.
+            next_game_clock = next_game_clock.reset()
+
+        if a_clock_is_running or auto_reset_game_clock:
+            # Either stopping a clock or loading a fresh quarter clock makes a
+            # simple quarter-only Undo misleading: it could not restore the
+            # clock value that existed before this transition.
             return _Transition(
                 changes={"quarter": target},
                 event=event,
-                game_clock=self._game_clock.stop(now=now),
-                play_clock=self._play_clock.stop(now=now),
+                game_clock=next_game_clock,
+                play_clock=self._play_clock.stop(now=now)
+                if a_clock_is_running
+                else self._play_clock,
                 clears_undo=True,
             )
         return _Transition(
             changes={"quarter": target},
             event=event,
+            game_clock=next_game_clock,
             undo=UndoEntry(
                 command=command.type,
                 field="quarter",
@@ -592,7 +669,19 @@ class ScoreboardService:
     def _handle_game_clock_stop(
         self, command: Command, now: float
     ) -> _Transition | CommandError:
-        return self._game_clock_transition(command, now, self._game_clock.stop(now=now))
+        was_running = self._game_clock.current_value(now).running
+        next_clock = self._game_clock.stop(now=now)
+        next_play_clock = self._play_clock
+        if was_running:
+            next_play_clock = clear_play_clock_on_game_clock_stop(
+                self._play_clock,
+                game_clock_is_running=next_clock.current_value(now).running,
+                now=now,
+            )
+        transition = self._game_clock_transition(command, now, next_clock, next_play_clock)
+        if next_play_clock is not self._play_clock:
+            return replace(transition, changes={"play_clock_cleared": True})
+        return transition
 
     def _handle_game_clock_reset(
         self, command: Command, now: float
@@ -634,6 +723,17 @@ class ScoreboardService:
         except StateValidationError as exc:
             return CommandError(INVALID_PLAY_CLOCK_PRESET, f"Play clock preset rejected: {exc}.")
         return self._play_clock_transition(command, now, loaded)
+
+    def _handle_play_clock_preset_start(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        try:
+            started = self._play_clock.load_preset(float(command.seconds), now=now).start(
+                now=now
+            )
+        except StateValidationError as exc:
+            return CommandError(INVALID_PLAY_CLOCK_PRESET, f"Play clock preset rejected: {exc}.")
+        return self._play_clock_transition(command, now, started)
 
     def _handle_play_clock_start(
         self, command: Command, now: float
@@ -750,6 +850,7 @@ class ScoreboardService:
         CommandType.GAME_CLOCK_RESET: _handle_game_clock_reset,
         CommandType.GAME_CLOCK_CORRECT: _handle_game_clock_correct,
         CommandType.PLAY_CLOCK_PRESET: _handle_play_clock_preset,
+        CommandType.PLAY_CLOCK_PRESET_START: _handle_play_clock_preset_start,
         CommandType.PLAY_CLOCK_START: _handle_play_clock_start,
         CommandType.PLAY_CLOCK_STOP: _handle_play_clock_stop,
         CommandType.PLAY_CLOCK_CLEAR: _handle_play_clock_clear,
@@ -763,4 +864,4 @@ class ScoreboardService:
     }
 
 
-__all__ = ["FINAL_LIFECYCLE", "ScoreboardService"]
+__all__ = ["FINAL_LIFECYCLE", "ScoreboardService", "TickObservation"]

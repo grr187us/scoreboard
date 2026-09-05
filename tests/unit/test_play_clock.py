@@ -5,6 +5,7 @@ from scoreboard.domain.clocks import (
     GameClock,
     PlayClock,
     clear_play_clock_on_game_clock_start,
+    clear_play_clock_on_game_clock_stop,
 )
 from scoreboard.domain.state import StateValidationError, default_state
 
@@ -207,6 +208,26 @@ class PlayClockTests(unittest.TestCase):
         self.assertIs(play, play_after)
         self.assertTrue(play_after.running)
         self.assertAlmostEqual(play_after.remaining_at(5.0), 35.0)
+
+    def test_game_clock_stop_clears_a_running_play_clock(self) -> None:
+        play = PlayClock().load_preset(40.0, now=0.0).start(now=0.0)
+
+        cleared = clear_play_clock_on_game_clock_stop(
+            play, game_clock_is_running=False, now=5.0
+        )
+
+        self.assertFalse(cleared.running)
+        self.assertEqual(cleared.remaining_at(5.0), 0.0)
+        self.assertEqual(cleared.preset_seconds, 0.0)
+
+    def test_running_game_clock_does_not_trigger_stop_side_clear(self) -> None:
+        play = PlayClock().load_preset(40.0, now=0.0).start(now=0.0)
+
+        unchanged = clear_play_clock_on_game_clock_stop(
+            play, game_clock_is_running=True, now=5.0
+        )
+
+        self.assertIs(unchanged, play)
 
     def test_no_play_clock_command_changes_game_clock_state(self) -> None:
         game = GameClock().start(now=0.0)

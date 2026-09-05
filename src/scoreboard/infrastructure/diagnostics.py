@@ -151,6 +151,13 @@ class Diagnostics:
 
         self._logger.info(_render("CLOCK_EXPIRED", {"clock": clock, **fields}))
 
+    def play_clock_cleared_on_game_clock_stop(self, **fields: Any) -> None:
+        """Record the system coupling that blanked a running play clock."""
+
+        self._logger.info(
+            _render("PLAY_CLOCK_CLEARED_ON_GAME_CLOCK_STOP", fields)
+        )
+
     def command_rejected(self, *, command: str, code: str, message: str, **fields: Any) -> None:
         self._logger.warning(
             _render(

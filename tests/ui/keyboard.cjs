@@ -27,7 +27,8 @@ async function main(data) {
       const result = await rpc({op:'command',args}); results.push(result); return result;
     });
     await page.addInitScript(() => {
-      window.pywebview = {api:{get_snapshot:()=>window.testSnapshot(),command:(...args)=>window.testCommand(...args)}};
+      window.pywebview = {api:{get_snapshot:()=>window.testSnapshot(),command:(...args)=>window.testCommand(...args),
+        open_test_window:()=>Promise.resolve({message:'Test spectator window opened.'})}};
     });
     await page.goto(pathToFileURL(path.resolve('src/scoreboard/views/operator/index.html')).href);
     await page.waitForFunction(() => document.querySelector('#chip-game').textContent.includes('STOPPED'));
@@ -167,6 +168,14 @@ async function main(data) {
     const help=await page.locator('#shortcut-list tr').evaluateAll(rows=>rows.map(row=>Array.from(row.children).map(e=>e.textContent)));
     assert.deepEqual(help,[...map.map(row=>[row[3],row[4]]),['Esc','Close dialog / drawer']]);
     await page.keyboard.press('Escape');assert.equal(await page.locator('#shortcut-help').isVisible(),false);
+    await page.locator('#open-advanced').click();
+    assert.equal(await page.locator('#advanced-drawer').isVisible(),true);
+    assert.equal(await page.locator('#open-test-window').isVisible(),true);
+    await page.locator('#open-test-window').click();
+    await page.locator('#alert').waitFor({state:'visible'});
+    assert.equal(await page.locator('#alert').textContent(),'Test spectator window opened.');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#advanced-drawer').isVisible(),false);
     // Live controls must still fit after adding help at both operator modes.
     for(const viewport of [{width:1366,height:768},{width:1093,height:614}]) {
       await page.setViewportSize(viewport);

@@ -166,6 +166,13 @@ A full read of the implemented code against `docs/MVP_REQUIREMENTS.md`, `docs/PH
 - The state revision is the discriminator that keeps it honest. If the revision moved since the previous tick, an accepted command produced the zero — a correction to 0:00, or a game-clock Start blanking a running play clock under F-048 — and that command already has its own row, so no expiration is invented. Only an unchanged revision means the clock got there on its own.
 - Seven focused tests in [`tests/integration/test_bridge.py`](tests/integration/test_bridge.py) cover expiry recorded exactly once for the game and play clocks, the revision left alone, and the three non-expiry cases: a clock stopped short of zero, a play clock cleared by a game-clock Start, and a running clock corrected to 0:00.
 
+### Phase 2 defect fix — complete tenths cadence and game-stop play-clock clear (F-052)
+
+- The host refresh cadence is now 100 ms, so the existing correct formatter can deliver every game-clock tenth instead of skipping values between 250 ms updates. Checkpoints remain keyed to displayed seconds, so the faster refresh does not add state writes or history noise.
+- A real game-clock Stop clears a running play clock in the same accepted command. A redundant Stop while the game clock was already stopped deliberately leaves an independently running play clock alone.
+- Natural game-clock expiry is observed under the existing bridge command lock. The service commits the play-clock clear into its engine and the persisted `play_clock_cleared` state without advancing the game revision, so later ticks cannot continue the old play-clock deadline. The durable history writes `game_clock_expired` and `play_clock_cleared_on_game_clock_stop` together with source `system`; it does not mislabel the clear as a play-clock expiry.
+- Focused fake-time unit/integration coverage verifies the explicit Stop, the no-op Stop, the blank state on the first expiry tick, persistence/history attribution, no revision advance, and continued blank state on later ticks. `\.venv\Scripts\python.exe -m unittest discover -s tests -q` passed **392 tests** with `SCOREBOARD_DATA_DIR` set process-locally to the platform default, isolating the test run from the operator's saved data-folder choice; `compileall`, `pip check`, and `git diff --check` also passed.
+
 ### Phase 2 defect fix — a saved game survives an application update (P-004, P-006)
 
 - `app_version` is now provenance, not a compatibility gate: only `schema_version` decides whether a stored game can be read. Gating on the build number made every saved game unrecoverable the moment the version changed.
@@ -649,6 +656,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | `schema_version` is the only compatibility gate on a stored game; `app_version` is provenance and is reported, never enforced. | Gating on the build number made every saved game unrecoverable the moment the version changed, which Task 11 packaging guarantees will happen. A mid-season update installed between two launches would have destroyed a game in progress. | A future schema change that genuinely cannot be read by an older or newer build; that is what `schema_version` is for. |
 | September 5, 2026 | Record clock expiration as a `system`-sourced action-history row written by the refresh tick, rather than adding an expire command or letting the tick submit one. | F-037 and F-046 require expiration in the durable history, but nobody presses anything when a clock reaches zero. Keeping it out of the command model preserves the rule that the service is the only writer of the authoritative revision. | If expiration ever needs to change game state — an automatic quarter advance, for example — at which point it becomes a real command and needs a confirmation policy. |
 | September 5, 2026 | Distinguish a genuine expiry from a commanded zero by comparing the state revision between refresh ticks. | A game-clock Start blanks a running play clock (F-048) and a correction can set 0:00; both reach zero without expiring. The command that caused them already has its own history row, so inventing an expiration as well would misreport the field. | If a future command changes a clock without advancing a revision. |
+| September 5, 2026 | A genuine game-clock running-to-stopped transition clears a running play clock: explicit Stop does so in its command commit; natural expiry clears it through a bridge-locked observed tick without advancing the revision. | The stadium board must not keep showing a self-running play clock after the game clock has stopped. The observed expiry path mutates the play-clock engine and writes the game-expiry and system-caused clear records together, so a later tick cannot revive the old deadline and recovery retains why it disappeared. A redundant Stop remains a no-op for an independent play clock. | If officials require a different stopped-game-clock workflow. |
 | September 4, 2026 | Task 8 gap 1: lifecycle follows accepted quarter commands (including quarter Undo): PRE → PRE_GAME, HALF → HALFTIME, FINAL → FINAL, all playing labels → IN_PROGRESS. A successful game-clock Start leaving pregame/halftime enters IN_PROGRESS; End Game sets FINAL and New Game restores PRE_GAME. PRE/HALF entry selects its stopped event preset only when switching countdown kind; an already selected countdown retains its time. | No overlapping lifecycle control; team-name validation now leaves pregame. Expiry never advances lifecycle. | Operator rehearsal. |
 | September 4, 2026 | Persist an additive play_clock_cleared flag; retain old blank-zero interpretation for legacy snapshots lacking it. | The old model erased expiry versus clear intent; the renderer cannot recreate it safely. | Recovery compatibility/rehearsal. |
 | September 4, 2026 | Task 8 gap 2: publish after accepted commands under the existing serialization lock, retaining ticks for timed refresh/checkpoint work. | Removes the 250 ms scheduler wait; push-count tests prove delivery without a tick. Physical latency remains release evidence. | Target laptop measurement. |
@@ -722,6 +730,42 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | Encoding defect found by the pre-commit UTF-8 check, outside Task 10 | `views/startup/startup.js` held a cp1252 em dash (byte 0x97) rather than UTF-8, in the score separator of the recovery screen preview. A browser decoding the file as UTF-8 would have shown the operator `Tigers 7 <?> 3 Eagles` on the one screen that exists to help them decide whether to resume a game. Replaced with a real U+2014; all 81 checked files now decode as UTF-8. | `src/scoreboard/views/startup/startup.js` | Pre-existing since the Task 8 recovery prerequisite and unrelated to display work. Fixed rather than recorded and left, because it is one byte and it is visible to an operator under pressure. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
+### Practice-only spectator test window — September 5, 2026
+
+Added an **Advanced → Open test window** control for home practice and
+side-by-side spectator-layout checks. It opens a fixed 640×360, bordered 16:9
+spectator window with the real read-only snapshot bridge; it is deliberately
+separate from the fullscreen production window, selected display, saved
+preference, display watch, and health strip. Reopening the practice window
+destroys its predecessor before creating a replacement, and operator shutdown
+cleans it up with the other owned windows.
+
+- Focused automated verification passed: 124 tests across the host, display,
+  and bridge suites. It asserts the test window never resolves a target display
+  or mutates configuration, action history, revision, or production health;
+  receives live spectator updates; replaces its old handle; and is cleaned up
+  at shutdown.
+- The browser contract now checks the Advanced drawer opens and closes and its
+  button reports success; it passed in headless Edge.
+
+### Quarter and play-clock command refinements — September 5, 2026
+
+- A quarter transition landing on `1st`, `2nd`, `3rd`, `4th`, or `OT` now
+  loads a stopped 12:00 game clock only when the resulting value is exactly
+  zero (using the clock's safe `<= 0.0` boundary). Nonzero values and PRE,
+  HALF, and FINAL remain untouched. A clock-loading transition deliberately
+  clears Undo because a quarter-only reversal could not restore the prior
+  zero clock. OT follows the existing shared 12:00 default; no overtime rule
+  was invented.
+- The Play Clock now retains its plain stopped `25`/`40` loads and adds
+  visually distinct `25 + START` / `40 + START` controls. Their new atomic
+  command validates the same presets, loads, and begins counting down in one
+  revision, avoiding a second request with a stale expected revision.
+- Focused verification: 117 unit and bridge tests passed, including zero and
+  nonzero quarter transitions, halftime, reverse navigation, Undo safety,
+  invalid preset rejection without mutation, stopped and already-running
+  preset-start behavior, and both mouse-control paths. `compileall` passed.
+
 ## Current Status
 
 | Item | Current state |
@@ -729,8 +773,8 @@ Record decisions here so later implementation work does not silently reverse the
 | Active phase | Phase 2. Tasks 1-11 are implemented; Task 12 remains, together with the hardware evidence Task 10 could not produce here. Phase 0's hardware gate is open in parallel |
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
-| Implementation status | Every Phase 2 implementation task is done. Tasks 1-9: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator layout, keyboard safety and generated shortcut help. The September 5 audit added expiration recording, application-version-safe recovery, and a whole-game rehearsal. Task 11 produced the offline one-folder package at 0.1.0, and Task 10 then replaced the Task 1 fixed display index with a remembered display identity, an explicit selector, and disconnect reporting — after which the package was rebuilt and confirmed to carry it. **Task 10's policy is verified against injected screen lists only; nothing has been placed on a second monitor.** Task 12 (rehearsal) remains unstarted. |
-| Automated suite | 385 Python tests pass on this host; the two `tests/ui/` browser checks require Node.js and Playwright and error explicitly without them. `385 passed, 2 errors` is the expected shape on a machine without that tooling, not a regression. |
+| Implementation status | Every Phase 2 implementation task is done. Tasks 1-9: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator layout, keyboard safety and generated shortcut help. The September 5 audit added expiration recording, application-version-safe recovery, and a whole-game rehearsal. Task 11 produced the offline one-folder package at 0.1.0, and Task 10 then replaced the Task 1 fixed display index with a remembered display identity, an explicit selector, and disconnect reporting — after which the package was rebuilt and confirmed to carry it. A separate fixed-size test spectator window now supports local layout checks and practice without participating in production display management. **Task 10's policy is verified against injected screen lists only; nothing has been placed on a second monitor.** Task 12 (rehearsal) remains unstarted. |
+| Automated suite | The prior Python baseline is 392 passing tests when isolated from the operator's saved data-folder choice. This task's 124 focused host/display/bridge tests pass, and Node.js plus Playwright are now available: both browser suites pass (3 tests total), including the new Advanced-drawer path. |
 | Repository status | Work is on `phase-2-audit`, four commits ahead of `main`. The Phase 1 foundation commit `6f9fc18` was pushed and independently cloned cleanly. An unrelated agent-skills change to `AGENTS.md` and a new untracked `docs/agents/` directory are present in the working tree and were **deliberately left uncommitted**, because they are not Task 10 work. |
 
 ## Next Action

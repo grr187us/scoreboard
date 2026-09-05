@@ -29,6 +29,8 @@ QUARTER_LABELS: Final[tuple[str, ...]] = (
     "OT",
     "FINAL",
 )
+#: Labels for quarters in which the game clock has a live game-time meaning.
+LIVE_QUARTER_LABELS: Final[frozenset[str]] = frozenset({"1st", "2nd", "3rd", "4th", "OT"})
 LIFECYCLE_LABELS: Final[tuple[str, ...]] = (
     "PRE_GAME",
     "IN_PROGRESS",

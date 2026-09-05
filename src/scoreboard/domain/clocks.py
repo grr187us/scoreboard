@@ -783,6 +783,27 @@ def clear_play_clock_on_game_clock_start(
     return play_clock.clear(now=now)
 
 
+def clear_play_clock_on_game_clock_stop(
+    play_clock: "PlayClock",
+    *,
+    game_clock_is_running: bool,
+    now: float | None = None,
+) -> "PlayClock":
+    """Clear a running play clock after the game clock has stopped.
+
+    The caller owns transition detection: a STOP issued while the game clock
+    was already stopped must not clear an otherwise independent play clock.
+    Keeping this helper to plain state facts means ``PlayClock`` never reaches
+    into ``GameClock`` internals.
+    """
+
+    if not isinstance(play_clock, PlayClock):
+        raise TypeError("play_clock must be a PlayClock")
+    if game_clock_is_running or not play_clock.current_value(now).running:
+        return play_clock
+    return play_clock.clear(now=now)
+
+
 def start_game_clock(
     clock: GameClock | None = None,
     *,
@@ -961,6 +982,7 @@ __all__ = [
     "PlayClock",
     "clear_play_clock",
     "clear_play_clock_on_game_clock_start",
+    "clear_play_clock_on_game_clock_stop",
     "event_phase_for",
     "correct_game_clock",
     "correct_play_clock",

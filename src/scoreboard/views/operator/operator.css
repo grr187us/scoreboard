@@ -196,6 +196,11 @@ body {
   min-height: 52px;
 }
 
+.preset-start {
+  background: #213f30;
+  border-color: #4d9b70;
+}
+
 /* The action that is already true is de-emphasised, never hidden. */
 button.is-active {
   border-color: var(--accent);

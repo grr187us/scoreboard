@@ -50,6 +50,7 @@ class CommandType(str, Enum):
     GAME_CLOCK_RESET = "game_clock_reset"
     GAME_CLOCK_CORRECT = "game_clock_correct"
     PLAY_CLOCK_PRESET = "play_clock_preset"
+    PLAY_CLOCK_PRESET_START = "play_clock_preset_start"
     PLAY_CLOCK_START = "play_clock_start"
     PLAY_CLOCK_STOP = "play_clock_stop"
     PLAY_CLOCK_CLEAR = "play_clock_clear"
@@ -277,7 +278,7 @@ def validate_command(command: Command) -> CommandError | None:
             + ".",
         )
 
-    if command.type is CommandType.PLAY_CLOCK_PRESET:
+    if command.type in (CommandType.PLAY_CLOCK_PRESET, CommandType.PLAY_CLOCK_PRESET_START):
         if not _is_number(command.seconds) or float(command.seconds) not in PLAY_CLOCK_PRESETS:
             return CommandError(
                 INVALID_PLAY_CLOCK_PRESET,
@@ -376,6 +377,12 @@ def play_clock_preset(seconds: float, *, source: str = "operator") -> Command:
     return Command(CommandType.PLAY_CLOCK_PRESET, seconds=seconds, source=source)
 
 
+def play_clock_preset_start(seconds: float, *, source: str = "operator") -> Command:
+    """Load a documented play-clock preset and begin counting down atomically."""
+
+    return Command(CommandType.PLAY_CLOCK_PRESET_START, seconds=seconds, source=source)
+
+
 def play_clock_start(*, source: str = "operator") -> Command:
     return Command(CommandType.PLAY_CLOCK_START, source=source)
 
@@ -466,6 +473,7 @@ __all__ = [
     "play_clock_clear",
     "play_clock_correct",
     "play_clock_preset",
+    "play_clock_preset_start",
     "play_clock_reset",
     "play_clock_start",
     "play_clock_stop",

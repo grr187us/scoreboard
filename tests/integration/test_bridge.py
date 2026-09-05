@@ -52,6 +52,7 @@ COMMAND_PAYLOADS: dict[str, dict] = {
     "game_clock_reset": {},
     "game_clock_correct": {"seconds": 300.0},
     "play_clock_preset": {"seconds": 40},
+    "play_clock_preset_start": {"seconds": 40},
     "play_clock_start": {},
     "play_clock_stop": {},
     "play_clock_clear": {},
@@ -106,6 +107,20 @@ class MousePathTests(BridgeTestCase):
 
         self.assertEqual(controls - known, set())
 
+    def test_preset_start_buttons_are_distinct_and_reach_the_atomic_command(self) -> None:
+        for seconds in (25, 40):
+            with self.subTest(seconds=seconds):
+                control = (
+                    f'class="preset preset-start" data-command="play_clock_preset_start" '
+                    f'data-seconds="{seconds}"'
+                )
+                self.assertIn(control, OPERATOR_HTML)
+
+                result = self.send("play_clock_preset_start", {"seconds": seconds})
+                self.assertTrue(result["accepted"], result["error"])
+                self.assertTrue(result["view"]["clocks"]["play"]["running"])
+                self.assertEqual(result["view"]["clocks"]["play"]["seconds"], seconds)
+
     def test_every_command_reaches_the_service_through_the_bridge(self) -> None:
         for command in CommandType:
             with self.subTest(command=command.value):
@@ -131,6 +146,12 @@ class MousePathTests(BridgeTestCase):
 
         self.assertEqual(row["source"], OPERATOR_MOUSE_SOURCE)
         self.assertEqual(decode(row["new_value"]), 6)
+
+    def test_the_test_window_control_is_reachable_without_becoming_a_command(self) -> None:
+        self.assertIn('data-action="open_advanced"', OPERATOR_HTML)
+        self.assertIn('data-action="open_test_window"', OPERATOR_HTML)
+        self.assertIn("api.open_test_window()", OPERATOR_JS)
+        self.assertNotIn("open_test_window", {command.value for command in CommandType})
 
 
 class CommandTranslationTests(unittest.TestCase):
@@ -659,6 +680,45 @@ class ExpirationHistoryTests(BridgeTestCase):
         self.assertEqual(
             [row["command"] for row in self.expirations()], ["game_clock_expired"]
         )
+
+    def test_game_clock_expiry_clears_a_running_play_clock_durably(self) -> None:
+        self.send("game_clock_correct", {"seconds": 2.0})
+        self.send("game_clock_start")
+        self.send("play_clock_preset", {"seconds": 40})
+        self.send("play_clock_start")
+        self.bridge.tick()  # Establish the pre-expiry observation.
+        revision = self.service.revision
+
+        self.monotonic.advance(1.0)
+        self.bridge.tick()
+        self.monotonic.advance(1.0)
+        view = self.bridge.tick()
+
+        self.assertFalse(view["clocks"]["game"]["running"])
+        self.assertFalse(view["clocks"]["play"]["running"])
+        self.assertEqual(view["clocks"]["play"]["display"], "")
+        self.assertEqual(self.service.revision, revision)
+        commands = [row["command"] for row in read_action_history(self.paths.database)]
+        self.assertIn("game_clock_expired", commands)
+        self.assertIn("play_clock_cleared_on_game_clock_stop", commands)
+        self.assertNotIn("play_clock_expired", commands)
+        game_expiry = next(
+            row for row in read_action_history(self.paths.database)
+            if row["command"] == "game_clock_expired"
+        )
+        self.assertEqual(decode(game_expiry["old_value"]), {"seconds": 1.0, "running": True})
+        auto_clear = next(
+            row for row in read_action_history(self.paths.database)
+            if row["command"] == "play_clock_cleared_on_game_clock_stop"
+        )
+        self.assertEqual(auto_clear["source"], "system")
+        self.assertEqual(decode(auto_clear["old_value"]), {"seconds": 39.0, "running": True})
+        self.assertEqual(decode(auto_clear["new_value"]), {"seconds": 0.0, "running": False})
+
+        self.monotonic.advance(3.0)
+        later = self.bridge.tick()
+        self.assertFalse(later["clocks"]["play"]["running"])
+        self.assertEqual(later["clocks"]["play"]["display"], "")
 
     def test_the_revision_is_not_advanced_by_an_expiration(self) -> None:
         self.send("game_clock_correct", {"seconds": 2.0})

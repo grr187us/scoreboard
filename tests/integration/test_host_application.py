@@ -10,7 +10,12 @@ import json
 import threading
 import unittest
 
-from scoreboard.host.app import RecoveryChoiceRequired, ScoreboardApplication, view_url
+from scoreboard.host.app import (
+    REFRESH_INTERVAL_SECONDS,
+    RecoveryChoiceRequired,
+    ScoreboardApplication,
+    view_url,
+)
 from scoreboard.infrastructure.diagnostics import NullDiagnostics
 from scoreboard.infrastructure.persistence import (
     InstanceAlreadyRunning,
@@ -128,6 +133,9 @@ class RecoveryChoiceTests(ApplicationTestCase):
 
 class RefreshTests(ApplicationTestCase):
     """The refresh loop displays and checkpoints; it never commands."""
+
+    def test_refresh_cadence_can_present_each_tenth(self) -> None:
+        self.assertEqual(REFRESH_INTERVAL_SECONDS, 0.1)
 
     def test_a_worker_refresh_can_checkpoint_the_shared_store(self) -> None:
         application = self.make_application()

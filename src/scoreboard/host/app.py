@@ -97,10 +97,14 @@ def _views_directory() -> Path:
 
 VIEWS = _views_directory()
 
-#: Four refreshes a second: fast enough that a tenths readout never looks
-#: frozen, slow enough that the checkpoint policy still writes once per
-#: displayed second rather than once per frame.
-REFRESH_INTERVAL_SECONDS: float = 0.25
+#: Ten refreshes a second lets a tenths readout present every descending digit.
+#: The checkpoint policy remains keyed to displayed seconds, not refreshes.
+REFRESH_INTERVAL_SECONDS: float = 0.1
+
+#: A faithful, side-by-side 16:9 spectator preview for practice. This is not
+#: the fullscreen production display and is deliberately not configurable.
+TEST_SPECTATOR_WIDTH: int = 640
+TEST_SPECTATOR_HEIGHT: int = 360
 
 #: How often the host looks at the list of connected displays. Windows offers
 #: no event pywebview passes on, so noticing an unplugged LED wall means
@@ -395,6 +399,8 @@ class WindowHost:
         self.startup_window: webview.Window | None = None
         self.operator_window: webview.Window | None = None
         self.spectator_window: webview.Window | None = None
+        # A practice-only window. It has no display-selection or health role.
+        self.test_window: webview.Window | None = None
         self.status = "STARTING"
         self._lock = threading.RLock()
         # Injected so every display behaviour below can be exercised without a
@@ -414,6 +420,7 @@ class WindowHost:
         application.display.list_displays = self.list_displays  # type: ignore[method-assign]
         application.display.select = self.select_display  # type: ignore[method-assign]
         application.display.forget = self.forget_display  # type: ignore[method-assign]
+        application.display.open_test_window = self.open_test_window  # type: ignore[method-assign]
 
     # --- Lifecycle ----------------------------------------------------------
 
@@ -469,10 +476,14 @@ class WindowHost:
         with self._lock:
             self.status = "SHUTTING DOWN"
             spectator = self.spectator_window
+            test_window = self.test_window
             self.spectator_window = None
+            self.test_window = None
         self.application.stop_refresh()
         if spectator is not None:
             spectator.destroy()
+        if test_window is not None:
+            test_window.destroy()
 
     # --- Windows ------------------------------------------------------------
 
@@ -664,6 +675,35 @@ class WindowHost:
 
         return self.open_spectator(key=key, remember=True)
 
+    def open_test_window(self) -> dict[str, str]:
+        """Open a fixed-size spectator preview for side-by-side practice.
+
+        This window is neither fullscreen nor tied to a Windows display. It
+        intentionally bypasses display selection, saved preferences, and the
+        production spectator health lifecycle.
+        """
+
+        with self._lock:
+            previous, self.test_window = self.test_window, None
+        if previous is not None:
+            previous.destroy()
+
+        test_window = webview.create_window(
+            "Scoreboard display (test)",
+            url=view_url("spectator"),
+            js_api=SpectatorBridge(self._spectator_snapshot),
+            width=TEST_SPECTATOR_WIDTH,
+            height=TEST_SPECTATOR_HEIGHT,
+            frameless=False,
+            resizable=False,
+        )
+        if test_window is None:
+            raise RuntimeError("The test spectator window could not be created.")
+        test_window.events.closed += self._test_window_closed
+        with self._lock:
+            self.test_window = test_window
+        return {"message": "Test spectator window opened."}
+
     def list_displays(self) -> dict[str, Any]:
         """What the operator's display panel renders. Opens and moves nothing."""
 
@@ -698,6 +738,13 @@ class WindowHost:
         # Clocks and the operator continue; only the health strip changes.
         self.application.spectator_closed()
         self._set_status("DISPLAY CLOSED: Select a display and reopen it")
+
+    def _test_window_closed(self, window: webview.Window) -> None:
+        """Forget a manually closed practice window without affecting the board."""
+
+        with self._lock:
+            if self.test_window is window:
+                self.test_window = None
 
     # --- Noticing a display that came or went (D-006) -----------------------
 
@@ -759,14 +806,35 @@ class WindowHost:
 
     def _push(self, window_name: str, view: dict[str, Any]) -> None:
         with self._lock:
-            window = (
-                self.operator_window
-                if window_name == "operator"
-                else self.spectator_window
-            )
-        if window is None or not window.events.loaded.is_set():
-            return
-        window.evaluate_js(f"window.applyView && window.applyView({_json(view)})")
+            if window_name == "operator":
+                operator = self.operator_window
+                spectator = None
+                test_window = None
+            else:
+                operator = None
+                spectator = self.spectator_window
+                test_window = self.test_window
+        script = f"window.applyView && window.applyView({_json(view)})"
+        if operator is not None and operator.events.loaded.is_set():
+            operator.evaluate_js(script)
+        if spectator is not None and spectator.events.loaded.is_set():
+            spectator.evaluate_js(script)
+        if test_window is not None and test_window.events.loaded.is_set():
+            try:
+                test_window.evaluate_js(script)
+            except Exception as exc:  # noqa: BLE001 - practice aid only
+                self.application.diagnostics.unhandled_error(
+                    context="test_spectator_push", error=exc
+                )
+                with self._lock:
+                    if self.test_window is test_window:
+                        self.test_window = None
+                try:
+                    test_window.destroy()
+                except Exception as destroy_exc:  # noqa: BLE001 - best effort only
+                    self.application.diagnostics.unhandled_error(
+                        context="destroy_test_spectator", error=destroy_exc
+                    )
 
     def _set_status(self, message: str) -> dict[str, str]:
         with self._lock:
@@ -782,6 +850,8 @@ def _json(payload: dict[str, Any]) -> str:
 
 __all__ = [
     "REFRESH_INTERVAL_SECONDS",
+    "TEST_SPECTATOR_HEIGHT",
+    "TEST_SPECTATOR_WIDTH",
     "RecoveryChoiceRequired",
     "ScoreboardApplication",
     "WindowHost",

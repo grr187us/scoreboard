@@ -11,6 +11,8 @@ The operator bridge exposes deliberately few methods:
   changes no game state (D-005);
 * ``displays()``, ``select_display(key)``, and ``forget_display()`` -- report
   which displays exist and put the spectator window on one of them (Task 10);
+* ``open_test_window()`` -- open a small practice-only spectator preview,
+  without changing production-display health or preference;
 * ``data_folder()``, ``choose_data_folder()``, and ``use_default_folder()`` --
   report and change where the game and its logs are saved.
 
@@ -90,6 +92,7 @@ _ALLOWED_ARGUMENTS: Final[dict[CommandType, frozenset[str]]] = {
     CommandType.GAME_CLOCK_RESET: frozenset(),
     CommandType.GAME_CLOCK_CORRECT: frozenset({"seconds"}),
     CommandType.PLAY_CLOCK_PRESET: frozenset({"seconds"}),
+    CommandType.PLAY_CLOCK_PRESET_START: frozenset({"seconds"}),
     CommandType.PLAY_CLOCK_START: frozenset(),
     CommandType.PLAY_CLOCK_STOP: frozenset(),
     CommandType.PLAY_CLOCK_CLEAR: frozenset(),
@@ -199,6 +202,11 @@ class DisplayLink:
         """Overridden by the host. On its own this link forgets nothing."""
 
         return self._status
+
+    def open_test_window(self) -> dict[str, str]:
+        """Overridden by the host. On its own this opens no practice window."""
+
+        return {"message": "The test window is unavailable."}
 
 
 # --- Command translation ----------------------------------------------------
@@ -539,6 +547,17 @@ class ScoreboardBridge:
                 self._display.mark_closed(f"The display could not be reopened: {exc}")
             return self._view()
 
+    def open_test_window(self) -> dict[str, str]:
+        """Open a practice-only spectator preview without changing game state.
+
+        This is a host action, like :meth:`reopen_display`: it has no revision,
+        database, or action-history effect. Unlike reopening, it deliberately
+        does not touch production-display health or its saved destination.
+        """
+
+        with self._lock:
+            return self._display.open_test_window()
+
     def displays(self) -> dict[str, Any]:
         """Which displays exist, which one is saved, and how it matched.
 
@@ -602,20 +621,50 @@ class ScoreboardBridge:
     def tick(self, now: float | None = None) -> dict[str, Any]:
         """Refresh the display and checkpoint a running clock (P-003).
 
-        Called by the host's refresh loop. It never submits a command, so a
-        repaint can neither advance a revision nor write an action-history row.
+        Called by the host's refresh loop. It never submits a command or
+        advances a revision; natural expirations and their documented
+        system-caused couplings are the only action-history records it writes.
         """
 
         with self._lock:
-            state = self._service.materialized_state(now)
+            observation = self._service.observe_tick(now)
+            state = observation.state
             try:
-                self._record_expirations(state)
+                if observation.play_clock_cleared:
+                    # Prefer the prior rendered values for the audit row, as
+                    # _record_expirations does.  The service fallback covers a
+                    # first refresh that happens only after the deadline.
+                    game_from_seconds = observation.game_clock_from_seconds
+                    play_from_seconds = observation.play_clock_from_seconds
+                    if self._observed is not None and self._observed[0] == state.revision:
+                        previous = self._observed[1]
+                        game_was_running, previous_game_seconds = previous["game"]
+                        play_was_running, previous_play_seconds = previous["play"]
+                        if game_was_running and previous_game_seconds > 0.0:
+                            game_from_seconds = previous_game_seconds
+                        if play_was_running and previous_play_seconds > 0.0:
+                            play_from_seconds = previous_play_seconds
+                    self._store.record_game_clock_expiration_and_play_clock_clear(
+                        state,
+                        game_from_seconds=game_from_seconds,
+                        play_from_seconds=play_from_seconds,
+                    )
+                    self._diagnostics.clock_expired(
+                        clock="game", revision=state.revision
+                    )
+                    self._diagnostics.play_clock_cleared_on_game_clock_stop(
+                        revision=state.revision,
+                        reason="game_clock_expired",
+                    )
+                    self._record_expirations(state, skip={"game", "play"})
+                else:
+                    self._record_expirations(state)
                 self._store.checkpoint(state)
             except Exception as exc:  # noqa: BLE001 - saving must not stop a clock
                 self._diagnostics.persistence_failure(operation="checkpoint", error=str(exc))
             return self._view(now)
 
-    def _record_expirations(self, state: GameState) -> None:
+    def _record_expirations(self, state: GameState, *, skip: set[str] | None = None) -> None:
         """Write a history row for any clock that just counted down to zero.
 
         A clock reaching 0:00 is not an operator command, so nothing here
@@ -639,6 +688,8 @@ class ScoreboardBridge:
         if previous is None or previous[0] != state.revision:
             return
         for clock, (running, seconds) in current.items():
+            if skip is not None and clock in skip:
+                continue
             was_running, was_seconds = previous[1][clock]
             if was_running and was_seconds > 0.0 and not running and seconds <= 0.0:
                 self._store.record_expiration(clock, state, from_seconds=was_seconds)

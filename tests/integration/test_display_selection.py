@@ -74,8 +74,9 @@ class FakeWindowEvents:
 class FakeWindow:
     """A spectator window that records what happened to it."""
 
-    def __init__(self, screen: Any) -> None:
-        self.screen = screen
+    def __init__(self, **kwargs: Any) -> None:
+        self.screen = kwargs.get("screen")
+        self.kwargs = kwargs
         self.events = FakeWindowEvents()
         self.destroyed = False
         self.pushes: list[str] = []
@@ -104,7 +105,7 @@ class DisplayHostTestCase(TemporaryDataDirectoryTest):
         self.addCleanup(patcher.stop)
 
     def _create_window(self, *args: Any, **kwargs: Any) -> FakeWindow:
-        window = FakeWindow(kwargs.get("screen"))
+        window = FakeWindow(**kwargs)
         self.created.append(window)
         return window
 
@@ -503,6 +504,87 @@ class ReopenedViewTests(DisplayHostTestCase):
         self.assertTrue(self.created[0].destroyed)
         self.assertFalse(self.created[1].destroyed)
         self.assertIs(host.spectator_window, self.created[1])
+
+
+class TestSpectatorWindowTests(DisplayHostTestCase):
+    """The practice preview is independent of production display management."""
+
+    def test_it_is_fixed_size_bordered_live_and_never_reads_display_selection(self) -> None:
+        host = self.make_host()
+        self.save_wall(host)
+        config_before = self.paths.config.read_text(encoding="utf-8")
+        health_before = self.display_health()
+        revision = self.bridge.get_snapshot()["revision"]
+        history_before = len(read_action_history(self.paths.database))
+
+        with mock.patch.object(host, "resolve_target", side_effect=AssertionError):
+            payload = self.bridge.open_test_window()
+
+        window = self.created[0]
+        self.assertEqual(payload, {"message": "Test spectator window opened."})
+        self.assertEqual(window.kwargs["width"], 640)
+        self.assertEqual(window.kwargs["height"], 360)
+        self.assertFalse(window.kwargs["frameless"])
+        self.assertFalse(window.kwargs["resizable"])
+        self.assertNotIn("screen", window.kwargs)
+        self.assertNotIn("fullscreen", window.kwargs)
+        self.assertIs(host.test_window, window)
+        self.assertEqual(self.paths.config.read_text(encoding="utf-8"), config_before)
+        self.assertEqual(self.display_health(), health_before)
+        self.assertEqual(self.bridge.get_snapshot()["revision"], revision)
+        self.assertEqual(len(read_action_history(self.paths.database)), history_before)
+
+        # It receives the same spectator snapshot stream as the real board.
+        self.bridge.command("add_score", {"team": "home", "points": 6}, revision)
+        self.assertEqual(len(window.pushes), 1)
+        self.assertIn('"score": 6', window.pushes[0])
+
+    def test_reopening_replaces_the_old_test_window_without_touching_health(self) -> None:
+        host = self.make_host()
+        health_before = self.display_health()
+
+        self.bridge.open_test_window()
+        self.bridge.open_test_window()
+
+        self.assertEqual(len(self.created), 2)
+        self.assertTrue(self.created[0].destroyed)
+        self.assertFalse(self.created[1].destroyed)
+        self.assertIs(host.test_window, self.created[1])
+        self.assertEqual(self.display_health(), health_before)
+
+    def test_a_test_window_render_failure_does_not_change_production_health(self) -> None:
+        host = self.make_host()
+        self.bridge.open_test_window()
+        test_window = self.created[0]
+        health_before = self.display_health()
+        test_window.evaluate_js = mock.Mock(side_effect=RuntimeError("test crashed"))
+
+        host._push("spectator", host._spectator_snapshot())
+
+        self.assertTrue(test_window.destroyed)
+        self.assertIsNone(host.test_window)
+        self.assertEqual(self.display_health(), health_before)
+
+    def test_closing_or_shutdown_cleans_up_only_the_test_window_lifecycle(self) -> None:
+        host = self.make_host()
+        self.save_wall(host)
+        host.reopen_spectator()
+        self.bridge.open_test_window()
+        production, test_window = self.created
+        health_before = self.display_health()
+
+        host._test_window_closed(test_window)
+
+        self.assertIsNone(host.test_window)
+        self.assertEqual(self.display_health(), health_before)
+
+        self.bridge.open_test_window()
+        replacement = self.created[-1]
+        host._operator_closing()
+
+        self.assertTrue(production.destroyed)
+        self.assertTrue(replacement.destroyed)
+        self.assertIsNone(host.test_window)
 
 
 class HostActionTests(DisplayHostTestCase):

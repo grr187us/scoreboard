@@ -135,10 +135,12 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 
 - Click `25 LOAD` / `40 LOAD`, or press the mapped key.
 - The requested value loads while stopped; use the separate play-clock Start command when the official signals ready for play.
+- Click the visibly distinct `25 + START` / `40 + START` controls to load that preset and begin its countdown in one atomic action. The plain load controls remain available for a stopped setup.
 - The game clock is unchanged.
 - The play clock uses the same upward presentation rule and changes to tenths only once its rounded tenths value is below `5.0`; it stays at `5` until it can display `4.9`.
 - This is the stadium's only play-clock display, so the active value must remain prominent and display recovery must preserve it.
 - When the game clock transitions from stopped to running, the play clock is stopped and its spectator area becomes blank. Starting an already-running game clock does not affect it; it may then count to zero unless an operator clears or changes it.
+- When the game clock makes a real running-to-stopped transition through STOP or naturally reaches `0:00`, a running play clock also stops and becomes blank. A redundant STOP while the game clock was already stopped leaves an independently running play clock alone.
 - No clock expiration produces an alarm. A play clock that reaches `0.0` while the game clock is already running remains visible there until the operator uses the deliberate clear control or issues another play-clock command.
 - `Edit Current Time` lives in Corrections: it stops the play clock if needed, validates the value, and offers `Start after applying?`; `Remain stopped` is the default.
 
@@ -159,7 +161,7 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 
 - Use next/back on the main screen or direct selection in Corrections.
 - If either clock is running, the application warns that both will stop; cancel is safe.
-- On confirmation, stop both clocks and change the quarter plus its matching lifecycle/presentation. Do not automatically reset either clock until official behavior is confirmed.
+- On confirmation, stop both clocks and change the quarter plus its matching lifecycle/presentation. If the target is `1st`, `2nd`, `3rd`, `4th`, or `OT` and the resulting game clock is `0:00`, load a stopped 12:00; preserve a nonzero clock. PRE, HALF, and FINAL do not load the game clock. A transition that loads 12:00 cannot be undone because Undo could not restore the former zero value.
 
 ### 6.7 Recover after application restart/crash
 
@@ -187,6 +189,18 @@ click and the other is not:
 `Reopen Display` stays in the health strip and stays one click, because a dark
 wall is not the moment to go looking through a drawer. The panel it falls back
 to is **Corrections → Spectator display**.
+
+### 6.8a Practice with a small spectator preview
+
+- **Advanced → Open test window** opens a bordered, fixed 640×360 (16:9)
+  spectator preview beside the operator controls. It is for layout checks and
+  home practice, not a substitute for the stadium display.
+- It renders the same live snapshot as the spectator board, so score and clock
+  changes are useful rehearsal evidence.
+- The preview is not fullscreen, is not tied to a selected monitor, and does
+  not read or change the saved-display preference. Its close button and any
+  rendering failure leave `DISPLAY OPEN`/`DISPLAY CLOSED` health for the real
+  production board exactly as it was.
 
 ### 6.9 End a game
 

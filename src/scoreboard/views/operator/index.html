@@ -58,6 +58,10 @@
           <button type="button" class="preset" data-command="play_clock_preset" data-seconds="40">40</button>
         </div>
         <div class="pair">
+          <button type="button" class="preset preset-start" data-command="play_clock_preset_start" data-seconds="25">25 + START</button>
+          <button type="button" class="preset preset-start" data-command="play_clock_preset_start" data-seconds="40">40 + START</button>
+        </div>
+        <div class="pair">
           <button type="button" id="play-start" data-command="play_clock_start">START</button>
           <button type="button" id="play-stop" data-command="play_clock_stop">STOP</button>
         </div>
@@ -94,6 +98,7 @@
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
     <button type="button" id="open-event" data-action="open_event">Pregame / Halftime &#9656;</button>
     <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
+    <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
     <span class="spacer"></span>
     <button type="button" class="danger" data-command="game_clock_reset" data-confirm="local"
             data-confirm-title="Reset the game clock?"
@@ -258,6 +263,20 @@
         All editable fields and confirmation dialogs suppress live shortcuts.</p>
       <table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody id="shortcut-list"></tbody></table>
       <button type="button" data-action="close_drawer">Close</button>
+    </div>
+  </div>
+
+  <div class="drawer" id="advanced-drawer" hidden aria-label="Advanced">
+    <div class="drawer-panel">
+      <h2>ADVANCED</h2>
+      <p class="hint">Open a small side-by-side spectator preview to test layout changes or practice at home. It never changes the production display.</p>
+      <div class="row">
+        <span class="row-label">Spectator preview</span>
+        <button type="button" id="open-test-window" data-action="open_test_window">Open test window</button>
+      </div>
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
     </div>
   </div>
 

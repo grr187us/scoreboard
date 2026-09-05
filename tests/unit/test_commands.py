@@ -77,6 +77,7 @@ class AcceptedCommandContractTests(unittest.TestCase):
             ("game clock correct", lambda s, f: None, cmd.game_clock_correct(300.0)),
             ("play clock 25", lambda s, f: None, cmd.play_clock_preset(25.0)),
             ("play clock 40", lambda s, f: None, cmd.play_clock_preset(40.0)),
+            ("play clock 25 and start", lambda s, f: None, cmd.play_clock_preset_start(25.0)),
             ("play clock start", running_play_clock, cmd.play_clock_start()),
             ("play clock stop", running_play_clock, cmd.play_clock_stop()),
             ("play clock clear", running_play_clock, cmd.play_clock_clear()),
@@ -193,6 +194,12 @@ class RejectedCommandContractTests(unittest.TestCase):
                 "unsupported play clock preset",
                 lambda s, f: None,
                 cmd.play_clock_preset(30.0),
+                cmd.INVALID_PLAY_CLOCK_PRESET,
+            ),
+            (
+                "unsupported play clock preset and start",
+                lambda s, f: None,
+                cmd.play_clock_preset_start(30.0),
                 cmd.INVALID_PLAY_CLOCK_PRESET,
             ),
             ("unconfirmed new game", lambda s, f: None, cmd.new_game(), cmd.CONFIRMATION_REQUIRED),
@@ -454,6 +461,60 @@ class QuarterTests(unittest.TestCase):
         self.assertFalse(second.state.play_clock.running)
         self.assertAlmostEqual(second.state.play_clock.seconds, 35.0)
 
+    def test_live_quarter_transition_at_zero_loads_the_full_stopped_clock_and_blocks_undo(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_quarter("1st"))
+        service.submit(cmd.game_clock_correct(0.0))
+
+        result = service.submit(cmd.quarter_forward())
+
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.state.quarter, "2nd")
+        self.assertFalse(result.state.game_clock.running)
+        self.assertAlmostEqual(result.state.game_clock.seconds, 12 * 60)
+        undo = service.submit(cmd.undo())
+        self.assertFalse(undo.accepted)
+        self.assertEqual(undo.error.code, cmd.NOT_UNDOABLE)
+
+    def test_live_quarter_transition_preserves_a_nonzero_game_clock(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_quarter("1st"))
+        service.submit(cmd.game_clock_correct(5 * 60 + 30))
+
+        result = service.submit(cmd.quarter_forward())
+
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.state.quarter, "2nd")
+        self.assertAlmostEqual(result.state.game_clock.seconds, 5 * 60 + 30)
+
+    def test_non_live_quarter_does_not_reset_but_halftime_to_live_does(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_quarter("2nd"))
+        service.submit(cmd.game_clock_correct(0.0))
+
+        halftime = service.submit(cmd.quarter_forward())
+        self.assertTrue(halftime.accepted)
+        self.assertEqual(halftime.state.quarter, "HALF")
+        self.assertAlmostEqual(halftime.state.game_clock.seconds, 0.0)
+
+        second_half = service.submit(cmd.set_quarter("3rd"))
+        self.assertTrue(second_half.accepted)
+        self.assertEqual(second_half.state.quarter, "3rd")
+        self.assertFalse(second_half.state.game_clock.running)
+        self.assertAlmostEqual(second_half.state.game_clock.seconds, 12 * 60)
+
+    def test_quarter_back_applies_the_same_live_quarter_zero_rule(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_quarter("HALF"))
+        service.submit(cmd.game_clock_correct(0.0))
+
+        result = service.submit(cmd.quarter_back())
+
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.state.quarter, "2nd")
+        self.assertFalse(result.state.game_clock.running)
+        self.assertAlmostEqual(result.state.game_clock.seconds, 12 * 60)
+
 
 class LifecycleTests(unittest.TestCase):
     def test_new_game_requires_confirmation(self) -> None:
@@ -548,6 +609,32 @@ class TeamNameTests(unittest.TestCase):
                 result = service.submit(cmd.set_team_name("away", "T" * length))
 
                 self.assertEqual(result.accepted, accepted)
+
+
+class PlayClockPresetStartCommandTests(unittest.TestCase):
+    def test_preset_start_loads_and_runs_in_one_command(self) -> None:
+        service, fake = make_service()
+
+        result = service.submit(cmd.play_clock_preset_start(25.0))
+
+        self.assertTrue(result.accepted)
+        self.assertTrue(result.state.play_clock.running)
+        self.assertAlmostEqual(result.state.play_clock.seconds, 25.0)
+        fake.advance(1.0)
+        self.assertAlmostEqual(service.play_clock.remaining_at(), 24.0)
+
+    def test_preset_start_reloads_and_restarts_an_already_running_play_clock(self) -> None:
+        service, fake = make_service()
+        running_play_clock(service, fake, 40.0)
+        fake.advance(8.0)
+
+        result = service.submit(cmd.play_clock_preset_start(25.0))
+
+        self.assertTrue(result.accepted)
+        self.assertTrue(result.state.play_clock.running)
+        self.assertAlmostEqual(result.state.play_clock.seconds, 25.0)
+        fake.advance(1.0)
+        self.assertAlmostEqual(service.play_clock.remaining_at(), 24.0)
 
 
 class GameClockCommandTests(unittest.TestCase):
@@ -749,10 +836,23 @@ class ClockCouplingTests(unittest.TestCase):
         fake.advance(1.0)
         self.assertAlmostEqual(service.play_clock.remaining_at(), 20.0)
 
-    def test_game_clock_stop_does_not_touch_the_play_clock(self) -> None:
+    def test_game_clock_stop_clears_a_running_play_clock_in_the_same_commit(self) -> None:
         service, fake = make_service()
         service.submit(cmd.game_clock_start())
         running_play_clock(service, fake, 40.0)
+        fake.advance(8.0)
+
+        result = service.submit(cmd.game_clock_stop())
+
+        self.assertTrue(result.accepted)
+        self.assertFalse(result.state.play_clock.running)
+        self.assertAlmostEqual(result.state.play_clock.seconds, 0.0)
+        self.assertTrue(result.state.play_clock_cleared)
+
+    def test_redundant_game_clock_stop_leaves_an_independent_play_clock_running(self) -> None:
+        service, fake = make_service()
+        service.submit(cmd.play_clock_preset(40.0))
+        service.submit(cmd.play_clock_start())
         fake.advance(8.0)
 
         result = service.submit(cmd.game_clock_stop())
