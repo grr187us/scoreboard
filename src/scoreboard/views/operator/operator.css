@@ -1,0 +1,390 @@
+/* Operator layout.
+ *
+ * The page is a fixed vertical stack sized to the viewport: a health strip, an
+ * alert line, the live board, the quarter bar, and the tool bar. Only the board
+ * flexes. Nothing scrolls, at any supported size (U-001).
+ */
+
+body {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: var(--gap);
+  padding: var(--gap);
+}
+
+/* Each region names its own row. Without this, hiding the alert removes it
+ * from the grid and every later region moves up one row, which hands the
+ * board the auto-sized row and the quarter bar the flexible one. */
+.health { grid-row: 1; }
+.alert { grid-row: 2; }
+.board { grid-row: 3; }
+.quarter-bar { grid-row: 4; }
+.tools { grid-row: 5; }
+
+/* --- Health strip (U-005) ------------------------------------------------ */
+
+.health {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  flex-wrap: nowrap;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-right: auto;
+}
+
+.chip {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.bad {
+  background: #40201f;
+  border-color: var(--danger);
+  color: #ffd7d7;
+  font-weight: 700;
+}
+
+.chip.good {
+  border-color: var(--ok);
+}
+
+.chip-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border-color: var(--warn);
+}
+
+/* --- Rejections and failures (U-007) ------------------------------------ */
+
+.alert {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: #40201f;
+  border: 1px solid var(--danger);
+  color: #ffe1e1;
+  font-weight: 600;
+}
+
+/* --- Live board --------------------------------------------------------- */
+
+.board {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: var(--gap);
+  min-height: 0;
+}
+
+.team,
+.clocks {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 10px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team h2,
+.clock-block h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+}
+
+.team-name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score {
+  margin: 0;
+  font-size: clamp(48px, 9vh, 84px);
+  line-height: 1;
+  font-weight: 700;
+  text-align: center;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.score-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.score-buttons .wide {
+  grid-column: 1 / -1;
+  min-height: 52px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.clocks {
+  flex-direction: row;
+  gap: var(--gap);
+}
+
+.clock-block {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clock.big {
+  margin: 0;
+  font-size: clamp(30px, 6.2vh, 52px);
+  line-height: 1.05;
+  font-weight: 700;
+  text-align: center;
+}
+
+.state {
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+/* Running/stopped is text first; the border is supplementary. */
+.state.running {
+  color: var(--ok);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.pair button {
+  font-weight: 700;
+}
+
+.preset {
+  font-size: 20px;
+  min-height: 52px;
+}
+
+/* The action that is already true is de-emphasised, never hidden. */
+button.is-active {
+  border-color: var(--accent);
+  background: #1d3550;
+}
+
+button.is-current {
+  opacity: 0.5;
+}
+
+/* --- Quarter bar -------------------------------------------------------- */
+
+.quarter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.quarter-bar .label,
+.tools .label {
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  font-size: 12px;
+}
+
+.quarter-bar button {
+  min-height: 36px;
+  min-width: 48px;
+}
+
+.quarter {
+  font-size: 20px;
+  font-weight: 700;
+  min-width: 64px;
+  text-align: center;
+}
+
+.last-action {
+  margin-left: auto;
+  color: var(--ink-dim);
+}
+
+.last-action #last-action {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+#undo {
+  min-height: 36px;
+  min-width: 96px;
+  font-weight: 700;
+}
+
+/* --- Tool bar ----------------------------------------------------------- */
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+
+.tools .spacer {
+  flex: 1 1 auto;
+}
+
+/* Dangerous actions sit apart from everything used during normal play (U-004). */
+button.danger {
+  border-color: var(--danger-edge);
+  background: #2a1b1e;
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* --- Drawers ------------------------------------------------------------ */
+
+.drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 13, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.drawer-panel {
+  width: min(1040px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.drawer-panel h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.hint {
+  margin: 0 0 10px;
+  color: var(--ink-dim);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.row.end {
+  justify-content: flex-end;
+}
+
+.row-label {
+  min-width: 190px;
+  color: var(--ink-dim);
+}
+
+.row input {
+  width: 88px;
+}
+
+.row input[type="text"] {
+  width: 170px;
+}
+
+.row button {
+  min-height: 38px;
+}
+
+.quarter-choices {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* --- Confirmation dialog ------------------------------------------------ */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 13, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog {
+  width: min(560px, 92%);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.dialog p {
+  margin: 0 0 8px;
+}
+
+.change {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gap);
+  margin-top: 12px;
+}
+
+.dialog-buttons button {
+  min-width: 128px;
+}
+
+/* Cancel is the safe default and is presented first. */
+#confirm-cancel {
+  border-color: var(--accent);
+}

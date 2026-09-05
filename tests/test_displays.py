@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
+from scoreboard.host.app import ScoreboardApplication, WindowHost
 from scoreboard.host.displays import enumerate_displays, selected_screen
-from scoreboard.host.app import WindowHost
+from scoreboard.infrastructure.diagnostics import NullDiagnostics
+from scoreboard.infrastructure.paths import resolve_paths
 
 
 class FakeScreen:
@@ -35,8 +39,21 @@ class DisplaySelectionTests(unittest.TestCase):
 
         self.assertIs(selected_screen(screens, 1), screens[1])
 
+    def make_host(self) -> WindowHost:
+        """A host with a real application but no window and no data of its own."""
+
+        directory = tempfile.TemporaryDirectory(prefix="scoreboard-displays-")
+        self.addCleanup(directory.cleanup)
+        application = ScoreboardApplication(
+            resolve_paths(Path(directory.name) / "Scoreboard"),
+            diagnostics=NullDiagnostics(),
+            acquire_lock=False,
+        )
+        self.addCleanup(application.stop_refresh)
+        return WindowHost(application, initial_display_index=0)
+
     def test_closing_a_replaced_spectator_does_not_clear_the_new_window(self) -> None:
-        host = WindowHost(initial_display_index=0)
+        host = self.make_host()
         replaced_window = object()
         current_window = object()
         host.spectator_window = current_window  # type: ignore[assignment]

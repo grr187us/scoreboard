@@ -1,0 +1,103 @@
+/* Shared reset and design tokens for both windows.
+ *
+ * Everything here is bundled: no font, stylesheet, or script is fetched from a
+ * network, so the board works with every adapter disabled (R-001).
+ *
+ * The operator layout is sized for the worst supported case: 1366x768 at 125%
+ * Windows scaling, which is roughly a 1093x614 CSS viewport. `html, body` are
+ * locked to the viewport height with `overflow: hidden`, so live controls
+ * structurally cannot scroll off the screen (U-001). Corrective panels are
+ * overlays that scroll inside themselves instead.
+ */
+
+:root {
+  --ink: #f4f6f8;
+  --ink-dim: #a9b4c0;
+  --surface: #12161c;
+  --panel: #1b222b;
+  --panel-raised: #263040;
+  --edge: #37424f;
+  --accent: #4da3ff;
+  --ok: #35c48a;
+  --warn: #ffbf47;
+  --danger: #ff6b6b;
+  --danger-edge: #7a2a2a;
+
+  --gap: 8px;
+  --radius: 6px;
+  --touch: 44px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  min-height: var(--touch);
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The focus ring must always be visible for keyboard operation. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  min-height: 32px;
+  padding: 0 8px;
+}
+
+.numeric,
+.clock {
+  /* Tabular numerals stop a running clock from shifting its own layout. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+[hidden] {
+  display: none !important;
+}

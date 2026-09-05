@@ -63,9 +63,9 @@ scoreboard/
 │  │  ├─ bridge.py                 # narrow JS/Python contract
 │  │  └─ displays.py               # enumeration, selection, reopen/fullscreen
 │  ├─ views/
-│  │  ├─ shared/                   # reset, base styles, renderer utilities
-│  │  ├─ operator/                 # HTML/CSS/JS control UI
-│  │  └─ spectator/                # HTML/CSS/JS display-only UI
+│  │  ├─ shared/                   # base.css tokens/reset, render.js helpers
+│  │  ├─ operator/                 # index.html, operator.css, operator.js
+│  │  └─ spectator/                # display-only page; layout is Task 8
 │  └─ integrations/                # empty/uncreated until a later phase needs it
 │     ├─ obs.py                    # future output adapter, not MVP
 │     └─ controller.py             # future optional input adapter, not MVP

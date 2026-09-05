@@ -1,0 +1,619 @@
+"""Task 7 bridge and operator-interface contract tests.
+
+These assert behaviour at the bridge boundary rather than by driving a browser:
+a browser test would prove that one build of WebView2 dispatched a click, while
+these prove that every control reaches the right command, that nothing changes
+before Apply, and that no domain object escapes into JavaScript.
+
+The one requirement that cannot be checked here is U-001, the 1366x768 visual
+fit at 100% and 125% scaling. That is recorded as a manual observation with
+evidence, not claimed from an automated pass.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import unittest
+from pathlib import Path
+
+from scoreboard.domain.commands import CommandType
+from scoreboard.host.bridge import (
+    OPERATOR_MOUSE_SOURCE,
+    DisplayLink,
+    ScoreboardBridge,
+    SpectatorBridge,
+    build_command,
+)
+from scoreboard.infrastructure.persistence import decode, read_action_history
+
+from tests.integration.support import FailingConnection, TemporaryDataDirectoryTest
+
+VIEWS = Path(__file__).resolve().parents[2] / "src" / "scoreboard" / "views"
+OPERATOR_HTML = (VIEWS / "operator" / "index.html").read_text(encoding="utf-8")
+OPERATOR_JS = (VIEWS / "operator" / "operator.js").read_text(encoding="utf-8")
+SPECTATOR_HTML = (VIEWS / "spectator" / "index.html").read_text(encoding="utf-8")
+
+
+#: One representative payload per command, exactly as a control sends it.
+COMMAND_PAYLOADS: dict[str, dict] = {
+    "set_team_name": {"team": "home", "name": "Tigers"},
+    "add_score": {"team": "home", "points": 6},
+    "correct_score": {"team": "home", "points": 1},
+    "set_score": {"team": "home", "value": 21},
+    "undo": {},
+    "quarter_forward": {},
+    "quarter_back": {},
+    "set_quarter": {"label": "2nd"},
+    "new_game": {"confirmed": True},
+    "end_game": {},
+    "game_clock_start": {},
+    "game_clock_stop": {},
+    "game_clock_reset": {},
+    "game_clock_correct": {"seconds": 300.0},
+    "play_clock_preset": {"seconds": 40},
+    "play_clock_start": {},
+    "play_clock_stop": {},
+    "play_clock_clear": {},
+    "play_clock_reset": {},
+    "play_clock_correct": {"seconds": 12.0},
+    "event_countdown_select": {"label": "HALFTIME"},
+    "event_countdown_start": {},
+    "event_countdown_stop": {},
+    "event_countdown_reset": {},
+    "event_countdown_correct": {"seconds": 120.0},
+}
+
+#: A few commands need the board to be somewhere first: there is nothing to
+#: undo, subtract, or step back from on a brand new game.
+COMMAND_PRELUDES: dict[str, list[tuple[str, dict]]] = {
+    "undo": [("add_score", {"team": "home", "points": 6})],
+    "correct_score": [("add_score", {"team": "home", "points": 6})],
+    "quarter_back": [("quarter_forward", {})],
+}
+
+
+class BridgeTestCase(TemporaryDataDirectoryTest):
+    """A bridge over a real service and store, with no window anywhere."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.service, self.store = self.started_session()
+        self.display = DisplayLink()
+        self.bridge = ScoreboardBridge(self.service, self.store, display=self.display)
+
+    def send(self, name, args=None, expected_revision="current"):
+        if expected_revision == "current":
+            expected_revision = self.service.revision
+        return self.bridge.command(name, args or {}, expected_revision)
+
+
+class MousePathTests(BridgeTestCase):
+    """K-001: every command is reachable, and every control has a command."""
+
+    def test_every_command_has_a_control_in_the_operator_page(self) -> None:
+        controls = set(re.findall(r'data-command="([a-z_]+)"', OPERATOR_HTML))
+        # set_quarter's buttons are built from the view model's quarter labels,
+        # so the page carries it as a rendered control rather than a literal.
+        controls.update(re.findall(r"'data-command', '([a-z_]+)'", OPERATOR_JS))
+
+        missing = {command.value for command in CommandType} - controls
+        self.assertEqual(missing, set(), f"no mouse control for: {sorted(missing)}")
+
+    def test_no_control_names_a_command_that_does_not_exist(self) -> None:
+        controls = set(re.findall(r'data-command="([a-z_]+)"', OPERATOR_HTML))
+        known = {command.value for command in CommandType}
+
+        self.assertEqual(controls - known, set())
+
+    def test_every_command_reaches_the_service_through_the_bridge(self) -> None:
+        for command in CommandType:
+            with self.subTest(command=command.value):
+                # Each command runs against a fresh game so an earlier one
+                # cannot make a later one impossible.
+                service, store = self.started_session()
+                bridge = ScoreboardBridge(service, store)
+                for name, args in COMMAND_PRELUDES.get(command.value, []):
+                    bridge.command(name, args, service.revision)
+                before = service.revision
+
+                result = bridge.command(
+                    command.value, COMMAND_PAYLOADS[command.value], before
+                )
+
+                self.assertTrue(result["accepted"], result["error"])
+                self.assertEqual(result["view"]["revision"], before + 1)
+
+    def test_a_command_is_recorded_with_the_operator_mouse_source(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+
+        row = read_action_history(self.paths.database)[-1]
+
+        self.assertEqual(row["source"], OPERATOR_MOUSE_SOURCE)
+        self.assertEqual(decode(row["new_value"]), 6)
+
+
+class CommandTranslationTests(unittest.TestCase):
+    """The airlock: JavaScript cannot invent a mutation."""
+
+    def test_an_unknown_name_never_becomes_a_command(self) -> None:
+        error = build_command("drop_tables", {})
+
+        self.assertEqual(error.code, "UNKNOWN_COMMAND")
+
+    def test_an_argument_a_command_does_not_take_is_refused(self) -> None:
+        error = build_command("game_clock_start", {"team": "home"})
+
+        self.assertEqual(error.code, "INVALID_ARGUMENTS")
+        self.assertIn("team", error.message)
+
+    def test_arguments_of_the_wrong_type_are_refused(self) -> None:
+        for name, args in (
+            ("add_score", {"team": "home", "points": "six"}),
+            ("add_score", {"team": 6, "points": 6}),
+            ("set_quarter", {"label": 2}),
+            ("game_clock_correct", {"seconds": None}),
+        ):
+            with self.subTest(args=args):
+                self.assertEqual(build_command(name, args).code, "INVALID_ARGUMENTS")
+
+    def test_an_empty_number_field_is_refused_rather_than_becoming_nan(self) -> None:
+        error = build_command("set_score", {"team": "home", "value": float("nan")})
+
+        self.assertEqual(error.code, "INVALID_ARGUMENTS")
+
+    def test_a_bad_expected_revision_is_refused(self) -> None:
+        error = build_command("undo", {}, "seventeen")
+
+        self.assertEqual(error.code, "INVALID_ARGUMENTS")
+
+    def test_a_well_formed_request_carries_the_mouse_source(self) -> None:
+        command = build_command("add_score", {"team": "away", "points": 3}, 4)
+
+        self.assertEqual(command.type, CommandType.ADD_SCORE)
+        self.assertEqual(command.source, OPERATOR_MOUSE_SOURCE)
+        self.assertEqual(command.expected_revision, 4)
+        self.assertFalse(command.confirmed)
+
+
+class TypingChangesNothingTests(BridgeTestCase):
+    """F-016: authoritative state changes only on Apply."""
+
+    def test_the_text_fields_are_drafts_with_no_command_of_their_own(self) -> None:
+        inputs = re.findall(r"<input[^>]*>", OPERATOR_HTML)
+        self.assertTrue(inputs)
+
+        for element in inputs:
+            with self.subTest(element=element[:60]):
+                # A field carries no command, so no keystroke has a path to the
+                # bridge; the Apply button reads it at click time instead.
+                self.assertNotIn("data-command", element)
+                self.assertIn('data-draft="true"', element)
+
+    def test_no_input_or_change_listener_exists_in_the_operator_script(self) -> None:
+        self.assertNotIn("addEventListener('input'", OPERATOR_JS)
+        self.assertNotIn("addEventListener('change'", OPERATOR_JS)
+        self.assertNotIn('addEventListener("input"', OPERATOR_JS)
+        self.assertNotIn('addEventListener("change"', OPERATOR_JS)
+
+    def test_reading_the_view_repeatedly_changes_no_state(self) -> None:
+        before = self.service.revision
+
+        for _ in range(5):
+            self.bridge.get_snapshot()
+
+        self.assertEqual(self.service.revision, before)
+        self.assertEqual(self.service.state.home_score, 0)
+
+    def test_a_direct_set_only_applies_when_it_is_actually_submitted(self) -> None:
+        # A typed value that is never submitted leaves the board untouched.
+        self.assertEqual(self.bridge.get_snapshot()["teams"]["home"]["score"], 0)
+
+        result = self.send("set_score", {"team": "home", "value": 21})
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 21)
+
+
+class ConfirmationTests(BridgeTestCase):
+    """F-022, F-023, U-004: confirmation travels on the command."""
+
+    def test_new_game_asks_first_and_changes_nothing(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        before = self.service.revision
+
+        result = self.send("new_game", {})
+
+        self.assertFalse(result["accepted"])
+        self.assertTrue(result["confirmation_required"])
+        self.assertEqual(result["error"]["code"], "CONFIRMATION_REQUIRED")
+        self.assertEqual(self.service.revision, before)
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 6)
+
+    def test_cancelling_new_game_does_nothing_at_all(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        self.send("new_game", {})
+        before = self.service.revision
+
+        # Cancel sends no second command; the next read must be unchanged.
+        view = self.bridge.get_snapshot()
+
+        self.assertEqual(view["teams"]["home"]["score"], 6)
+        self.assertEqual(self.service.revision, before)
+
+    def test_confirming_new_game_resubmits_the_same_command(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+
+        result = self.send("new_game", {"confirmed": True})
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 0)
+        self.assertEqual(result["view"]["quarter"], "PRE")
+
+    def test_a_quarter_change_while_a_clock_runs_asks_first(self) -> None:
+        self.send("game_clock_start")
+        before = self.service.revision
+
+        result = self.send("quarter_forward", {})
+
+        self.assertTrue(result["confirmation_required"])
+        self.assertIn("stop both clocks", result["error"]["message"])
+        self.assertEqual(self.service.revision, before)
+        self.assertTrue(result["view"]["clocks"]["game"]["running"])
+        self.assertEqual(result["view"]["quarter"], "PRE")
+
+    def test_confirming_the_quarter_change_stops_both_clocks_in_one_step(self) -> None:
+        self.send("game_clock_start")
+        self.send("quarter_forward", {})
+
+        result = self.send("quarter_forward", {"confirmed": True})
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["quarter"], "1st")
+        self.assertFalse(result["view"]["clocks"]["game"]["running"])
+        self.assertFalse(result["view"]["clocks"]["play"]["running"])
+
+    def test_a_quarter_change_while_stopped_needs_no_confirmation(self) -> None:
+        result = self.send("quarter_forward", {})
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["quarter"], "1st")
+
+    def test_the_page_offers_a_cancel_and_a_confirm(self) -> None:
+        self.assertIn('id="confirm-cancel"', OPERATOR_HTML)
+        self.assertIn('id="confirm-accept"', OPERATOR_HTML)
+        # Cancel is focused first, so a stray Enter is safe (U-004).
+        self.assertIn("confirm-cancel').focus()", OPERATOR_JS)
+
+    def test_dangerous_corrections_confirm_locally_before_anything_is_sent(self) -> None:
+        confirming = re.findall(
+            r'data-command="([a-z_]+)"[^>]*data-confirm="local"', OPERATOR_HTML
+        )
+
+        for command in ("set_score", "game_clock_correct", "play_clock_correct",
+                        "game_clock_reset", "end_game", "event_countdown_correct"):
+            with self.subTest(command=command):
+                self.assertIn(command, confirming)
+
+
+class RejectionTests(BridgeTestCase):
+    """U-007: a rejection is visible and leaves the board unchanged."""
+
+    def test_a_rejected_command_returns_a_plain_language_message(self) -> None:
+        result = self.send("correct_score", {"team": "home", "points": 6})
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["error"]["code"], "SCORE_BELOW_ZERO")
+        self.assertIn("cannot be corrected below 0", result["error"]["message"])
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 0)
+
+    def test_a_rejection_still_returns_the_authoritative_view(self) -> None:
+        self.send("add_score", {"team": "away", "points": 3})
+
+        result = self.send("set_score", {"team": "home", "value": 500})
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["view"]["teams"]["away"]["score"], 3)
+        self.assertEqual(result["view"]["revision"], self.service.revision)
+
+    def test_the_page_has_somewhere_to_show_a_rejection(self) -> None:
+        self.assertIn('id="alert"', OPERATOR_HTML)
+        self.assertIn('role="alert"', OPERATOR_HTML)
+        self.assertIn("showAlert(result.error.message)", OPERATOR_JS)
+
+
+class StaleRevisionTests(BridgeTestCase):
+    """A control showing an old revision is refused, never applied."""
+
+    def test_a_stale_control_is_rejected(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        stale_revision = self.service.revision - 1
+
+        result = self.bridge.command(
+            "add_score", {"team": "home", "points": 6}, stale_revision
+        )
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["error"]["code"], "STALE_REVISION")
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 6)
+
+    def test_the_rendered_revision_is_what_the_next_command_sends(self) -> None:
+        view = self.bridge.get_snapshot()
+
+        result = self.bridge.command(
+            "add_score", {"team": "home", "points": 6}, view["revision"]
+        )
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["revision"], view["revision"] + 1)
+
+    def test_the_script_sends_the_rendered_revision(self) -> None:
+        self.assertIn("var expected = model ? model.revision : null;", OPERATOR_JS)
+
+
+class HealthStripTests(BridgeTestCase):
+    """U-005: spectator connection, persistence status, and the revision."""
+
+    def test_the_health_strip_reports_all_three(self) -> None:
+        health = self.bridge.get_snapshot()["health"]
+
+        self.assertEqual(health["revision"], self.service.revision)
+        self.assertIn("open", health["display"])
+        self.assertIn("saved", health["persistence"])
+
+    def test_a_write_failure_shows_not_saved_without_stopping_the_game(self) -> None:
+        failing = FailingConnection(self.store._connection, fail_execute=True)
+        self.store._connection = failing
+
+        result = self.send("add_score", {"team": "home", "points": 6})
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 6)
+        persistence = result["view"]["health"]["persistence"]
+        self.assertFalse(persistence["saved"])
+        self.assertEqual(persistence["label"], "NOT SAVED")
+        self.assertIn("memory only", persistence["message"])
+
+    def test_saving_recovers_and_the_strip_says_saved_again(self) -> None:
+        failing = FailingConnection(self.store._connection, fail_execute=True)
+        self.store._connection = failing
+        self.send("add_score", {"team": "home", "points": 6})
+
+        failing.fail_execute = False
+        result = self.send("add_score", {"team": "away", "points": 3})
+
+        self.assertTrue(result["view"]["health"]["persistence"]["saved"])
+        self.assertEqual(result["view"]["health"]["persistence"]["label"], "SAVED")
+
+    def test_a_closed_display_says_so_and_offers_one_click_reopen(self) -> None:
+        view = self.bridge.display_closed()
+
+        display = view["health"]["display"]
+        self.assertFalse(display["open"])
+        self.assertEqual(display["label"], "DISPLAY CLOSED")
+        self.assertTrue(display["can_reopen"])
+        self.assertIn('id="reopen-display"', OPERATOR_HTML)
+
+    def test_closing_the_display_stops_no_clock(self) -> None:
+        self.send("game_clock_start")
+
+        self.bridge.display_closed()
+        self.monotonic.advance(5.0)
+        view = self.bridge.get_snapshot()
+
+        self.assertTrue(view["clocks"]["game"]["running"])
+        self.assertEqual(view["clocks"]["game"]["display"], "11:55")
+
+    def test_reopening_marks_the_display_open_again(self) -> None:
+        self.bridge.display_closed()
+
+        self.bridge.display_opened("Display 2")
+        view = self.bridge.get_snapshot()
+
+        self.assertTrue(view["health"]["display"]["open"])
+        self.assertEqual(view["health"]["display"]["label"], "DISPLAY OPEN")
+        self.assertEqual(view["health"]["display"]["target"], "Display 2")
+
+    def test_a_failing_reopen_is_reported_and_the_game_survives(self) -> None:
+        def explode():
+            raise RuntimeError("no display attached")
+
+        self.display.reopen = explode  # type: ignore[method-assign]
+        self.send("game_clock_start")
+
+        view = self.bridge.reopen_display()
+
+        self.assertFalse(view["health"]["display"]["open"])
+        self.assertIn("could not be reopened", view["health"]["display"]["detail"])
+        self.assertTrue(view["clocks"]["game"]["running"])
+
+
+class UndoVisibilityTests(BridgeTestCase):
+    """U-008: the previous reversible command and Undo are always visible."""
+
+    def test_the_last_action_is_reported_in_plain_language(self) -> None:
+        result = self.send("add_score", {"team": "home", "points": 6})
+
+        last = result["view"]["last_action"]
+        self.assertEqual(last["label"], "HOME score 0 → 6")
+        self.assertTrue(result["view"]["can_undo"])
+
+    def test_nothing_to_undo_is_reported_rather_than_hidden(self) -> None:
+        view = self.bridge.get_snapshot()
+
+        self.assertIsNone(view["last_action"])
+        self.assertFalse(view["can_undo"])
+
+    def test_undo_reverses_the_previous_command(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+
+        result = self.send("undo", {})
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["view"]["teams"]["home"]["score"], 0)
+        self.assertFalse(result["view"]["can_undo"])
+
+    def test_the_page_shows_both(self) -> None:
+        self.assertIn('id="last-action"', OPERATOR_HTML)
+        self.assertIn('id="undo"', OPERATOR_HTML)
+
+
+class RunningStateTests(BridgeTestCase):
+    """U-002, U-003: separate Start/Stop with visible state; presets on top."""
+
+    def test_running_and_stopped_are_reported_as_text(self) -> None:
+        stopped = self.bridge.get_snapshot()
+        self.assertEqual(stopped["clocks"]["game"]["status"], "STOPPED")
+
+        running = self.send("game_clock_start")["view"]
+        self.assertEqual(running["clocks"]["game"]["status"], "RUNNING")
+
+    def test_start_and_stop_are_separate_controls(self) -> None:
+        self.assertIn('id="game-start" data-command="game_clock_start"', OPERATOR_HTML)
+        self.assertIn('id="game-stop" data-command="game_clock_stop"', OPERATOR_HTML)
+
+    def test_the_presets_and_both_score_columns_need_no_menu(self) -> None:
+        # Everything below is in the always-visible board, not in a drawer.
+        board = OPERATOR_HTML.split('<main class="board"')[1].split("</main>")[0]
+
+        self.assertIn('data-command="play_clock_preset" data-seconds="25"', board)
+        self.assertIn('data-command="play_clock_preset" data-seconds="40"', board)
+        for team in ("home", "away"):
+            for points in (1, 2, 3, 6):
+                with self.subTest(team=team, points=points):
+                    self.assertIn(
+                        f'data-command="add_score" data-team="{team}" data-points="{points}"',
+                        board,
+                    )
+
+    def test_corrections_are_separated_from_normal_scoring(self) -> None:
+        board = OPERATOR_HTML.split('<main class="board"')[1].split("</main>")[0]
+        drawer = OPERATOR_HTML.split('id="corrections"')[1]
+
+        self.assertNotIn("correct_score", board)
+        self.assertNotIn("set_score", board)
+        self.assertIn("correct_score", drawer)
+        self.assertIn("set_score", drawer)
+
+
+class JsonBoundaryTests(BridgeTestCase):
+    """No domain object leaks into JavaScript."""
+
+    def assert_json_only(self, payload) -> None:
+        encoded = json.dumps(payload, allow_nan=False)
+        self.assertEqual(json.loads(encoded), payload)
+
+    def test_the_snapshot_is_json_compatible(self) -> None:
+        self.assert_json_only(self.bridge.get_snapshot())
+
+    def test_every_command_result_is_json_compatible(self) -> None:
+        for command in CommandType:
+            with self.subTest(command=command.value):
+                service, store = self.started_session()
+                bridge = ScoreboardBridge(service, store)
+                for name, args in COMMAND_PRELUDES.get(command.value, []):
+                    bridge.command(name, args, service.revision)
+                result = bridge.command(
+                    command.value, COMMAND_PAYLOADS[command.value], service.revision
+                )
+                self.assert_json_only(result)
+
+    def test_a_rejection_payload_is_json_compatible(self) -> None:
+        self.assert_json_only(self.send("correct_score", {"team": "home", "points": 6}))
+        self.assert_json_only(self.bridge.command("nonsense", {}, None))
+
+    def test_the_payload_contains_no_domain_object(self) -> None:
+        def walk(value):
+            if isinstance(value, dict):
+                for item in value.values():
+                    walk(item)
+            elif isinstance(value, list):
+                for item in value:
+                    walk(item)
+            else:
+                self.assertIsInstance(value, (str, int, float, bool, type(None)))
+
+        walk(self.send("game_clock_start"))
+        walk(self.bridge.get_snapshot())
+
+    def test_clock_values_are_formatted_by_python_not_javascript(self) -> None:
+        view = self.bridge.get_snapshot()
+
+        self.assertEqual(view["clocks"]["game"]["display"], "12:00")
+        self.assertEqual(view["clocks"]["event"]["display"], "30:00")
+        self.assertEqual(view["clocks"]["event"]["title"], "KICKOFF IN")
+        # The page renders these strings; it does not build them.
+        self.assertNotIn("Math.floor", OPERATOR_JS)
+        self.assertNotIn("toFixed", OPERATOR_JS)
+
+
+class SpectatorBridgeTests(BridgeTestCase):
+    """The spectator surface can read and can do nothing else."""
+
+    def test_it_exposes_no_mutating_method(self) -> None:
+        spectator = SpectatorBridge(self.bridge.spectator_snapshot)
+
+        public = {name for name in dir(spectator) if not name.startswith("_")}
+
+        self.assertEqual(public, {"get_snapshot"})
+
+    def test_it_returns_a_complete_json_snapshot(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        spectator = SpectatorBridge(self.bridge.spectator_snapshot)
+
+        snapshot = spectator.get_snapshot()
+
+        json.dumps(snapshot, allow_nan=False)
+        self.assertEqual(snapshot["teams"]["home"]["score"], 6)
+        self.assertEqual(snapshot["clocks"]["game"]["display"], "12:00")
+
+    def test_the_spectator_page_carries_no_control(self) -> None:
+        self.assertNotIn("data-command", SPECTATOR_HTML)
+        self.assertNotIn("<button", SPECTATOR_HTML)
+
+    def test_a_spectator_rendering_error_is_caught_in_the_page(self) -> None:
+        # R-002: the page reports its own failure rather than throwing into
+        # the host, which is what would put the state engine at risk.
+        self.assertIn("catch (error)", SPECTATOR_HTML)
+        self.assertIn("Display error", SPECTATOR_HTML)
+
+
+class TickTests(BridgeTestCase):
+    """The refresh loop displays and checkpoints; it never commands."""
+
+    def test_a_tick_checkpoints_without_advancing_the_revision(self) -> None:
+        self.send("game_clock_start")
+        revision = self.service.revision
+        history = len(read_action_history(self.paths.database))
+
+        for _ in range(12):
+            self.monotonic.advance(0.25)
+            self.bridge.tick()
+
+        self.assertEqual(self.service.revision, revision)
+        self.assertEqual(len(read_action_history(self.paths.database)), history)
+
+    def test_a_tick_returns_the_current_formatted_view(self) -> None:
+        self.send("game_clock_start")
+
+        self.monotonic.advance(1.5)
+        view = self.bridge.tick()
+
+        self.assertEqual(view["clocks"]["game"]["display"], "11:59")
+        self.assertTrue(view["clocks"]["game"]["running"])
+
+    def test_a_failing_checkpoint_does_not_stop_the_clock(self) -> None:
+        self.send("game_clock_start")
+        self.store._connection = FailingConnection(
+            self.store._connection, fail_execute=True
+        )
+
+        self.monotonic.advance(2.0)
+        view = self.bridge.tick()
+
+        self.assertTrue(view["clocks"]["game"]["running"])
+        self.assertFalse(view["health"]["persistence"]["saved"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -2,44 +2,241 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Scoreboard operator proof</title>
+  <title>Scoreboard control</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="operator.css">
 </head>
 <body>
-  <h1>Scoreboard operator window proof</h1>
-  <p>This placeholder verifies Windows window lifecycle only. It contains no game state or controls.</p>
-  <label for="display">Spectator display</label>
-  <select id="display"></select>
-  <button type="button" id="open">Open or reopen spectator</button>
-  <button type="button" id="fullscreen">Toggle spectator fullscreen</button>
-  <p id="status">STARTING</p>
-  <script>
-    const status = document.getElementById('status');
-    const display = document.getElementById('display');
+  <!--
+    Every control carries data-command, so the mouse can reach every command
+    (K-001) and a contract test can prove it without driving a browser.
+    Controls that read a text field name it in data-arg-source; the field is
+    read at click time only, so typing changes nothing before Apply (F-016).
+  -->
+  <header class="health" id="health">
+    <span class="brand">SCOREBOARD CONTROL</span>
+    <span class="chip" id="chip-game">GAME 12:00 STOPPED</span>
+    <span class="chip" id="chip-play">PLAY &mdash; STOPPED</span>
+    <span class="chip" id="chip-display">DISPLAY CLOSED</span>
+    <button type="button" id="reopen-display" class="chip-button" data-action="reopen_display">Reopen Display</button>
+    <span class="chip" id="chip-save">SAVED</span>
+    <span class="chip" id="chip-revision">Rev 0</span>
+  </header>
 
-    window.setHostStatus = (message) => { status.textContent = message; };
+  <p class="alert" id="alert" hidden role="alert" aria-live="assertive"></p>
 
-    async function refresh() {
-      const api = window.pywebview.api;
-      const displays = await api.get_displays();
-      display.replaceChildren(...displays.map((item) => {
-        const option = document.createElement('option');
-        option.value = item.index;
-        option.textContent = item.label;
-        return option;
-      }));
-      const result = await api.get_status();
-      window.setHostStatus(result.message);
-    }
+  <main class="board">
+    <section class="team" aria-labelledby="home-heading">
+      <h2 id="home-heading">HOME</h2>
+      <p class="team-name" data-field="teams.home.name">HOME</p>
+      <p class="score numeric" data-field="teams.home.score">0</p>
+      <div class="score-buttons">
+        <button type="button" data-command="add_score" data-team="home" data-points="1">+1</button>
+        <button type="button" data-command="add_score" data-team="home" data-points="2">+2</button>
+        <button type="button" data-command="add_score" data-team="home" data-points="3">+3</button>
+        <button type="button" class="wide" data-command="add_score" data-team="home" data-points="6">+6</button>
+      </div>
+    </section>
 
-    window.addEventListener('pywebviewready', refresh);
-    document.getElementById('open').addEventListener('click', async () => {
-      const result = await window.pywebview.api.open_spectator(Number(display.value));
-      window.setHostStatus(result.message);
-    });
-    document.getElementById('fullscreen').addEventListener('click', async () => {
-      const result = await window.pywebview.api.toggle_spectator_fullscreen();
-      window.setHostStatus(result.message);
-    });
-  </script>
+    <section class="clocks" aria-label="Clocks">
+      <div class="clock-block">
+        <h2>GAME CLOCK</h2>
+        <p class="clock big" data-field="clocks.game.display">12:00</p>
+        <p class="state" id="game-state" data-field="clocks.game.status">STOPPED</p>
+        <div class="pair">
+          <button type="button" id="game-start" data-command="game_clock_start">START</button>
+          <button type="button" id="game-stop" data-command="game_clock_stop">STOP</button>
+        </div>
+      </div>
+
+      <div class="clock-block">
+        <h2>PLAY CLOCK</h2>
+        <p class="clock big" id="play-display" data-field="clocks.play.display">&mdash;</p>
+        <p class="state" id="play-state" data-field="clocks.play.status">STOPPED</p>
+        <div class="pair">
+          <button type="button" class="preset" data-command="play_clock_preset" data-seconds="25">25</button>
+          <button type="button" class="preset" data-command="play_clock_preset" data-seconds="40">40</button>
+        </div>
+        <div class="pair">
+          <button type="button" id="play-start" data-command="play_clock_start">START</button>
+          <button type="button" id="play-stop" data-command="play_clock_stop">STOP</button>
+        </div>
+        <div class="pair">
+          <button type="button" data-command="play_clock_clear">CLEAR</button>
+          <button type="button" data-command="play_clock_reset">RESET</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="team" aria-labelledby="away-heading">
+      <h2 id="away-heading">AWAY</h2>
+      <p class="team-name" data-field="teams.away.name">AWAY</p>
+      <p class="score numeric" data-field="teams.away.score">0</p>
+      <div class="score-buttons">
+        <button type="button" data-command="add_score" data-team="away" data-points="1">+1</button>
+        <button type="button" data-command="add_score" data-team="away" data-points="2">+2</button>
+        <button type="button" data-command="add_score" data-team="away" data-points="3">+3</button>
+        <button type="button" class="wide" data-command="add_score" data-team="away" data-points="6">+6</button>
+      </div>
+    </section>
+  </main>
+
+  <section class="quarter-bar" aria-label="Quarter and undo">
+    <span class="label">QUARTER</span>
+    <button type="button" data-command="quarter_back" aria-label="Previous quarter">&#9664;</button>
+    <span class="quarter" data-field="quarter">PRE</span>
+    <button type="button" data-command="quarter_forward" aria-label="Next quarter">&#9654;</button>
+    <span class="last-action">LAST: <span id="last-action">nothing yet</span></span>
+    <button type="button" id="undo" data-command="undo">UNDO</button>
+  </section>
+
+  <footer class="tools">
+    <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
+    <button type="button" id="open-event" data-action="open_event">Pregame / Halftime &#9656;</button>
+    <span class="spacer"></span>
+    <button type="button" class="danger" data-command="game_clock_reset" data-confirm="local"
+            data-confirm-title="Reset the game clock?"
+            data-confirm-detail="The game clock returns to 12:00 and stays stopped.">Reset Game Clock&hellip;</button>
+    <button type="button" class="danger" data-command="end_game" data-confirm="local"
+            data-confirm-title="End the game?"
+            data-confirm-detail="Both clocks stop and the quarter becomes FINAL. Scores and names are kept.">End Game&hellip;</button>
+    <button type="button" class="danger" data-command="new_game">New Game&hellip;</button>
+  </footer>
+
+  <!-- Corrective controls live in an overlay, visually separated from normal
+       scoring (F-015). It may scroll inside itself; the live board never does. -->
+  <div class="drawer" id="corrections" hidden aria-label="Corrections">
+    <div class="drawer-panel">
+      <h2>CORRECTIONS</h2>
+      <p class="hint">Typing changes nothing. Each Apply asks you to confirm the old and new value.</p>
+
+      <div class="row">
+        <span class="row-label">HOME score <span class="numeric" data-field="teams.home.score">0</span></span>
+        <button type="button" data-command="correct_score" data-team="home" data-points="1">&minus;1</button>
+        <button type="button" data-command="correct_score" data-team="home" data-points="2">&minus;2</button>
+        <button type="button" data-command="correct_score" data-team="home" data-points="3">&minus;3</button>
+        <button type="button" data-command="correct_score" data-team="home" data-points="6">&minus;6</button>
+        <input type="number" id="home-score-input" min="0" max="199" step="1" data-draft="true"
+               aria-label="Set home score">
+        <button type="button" data-command="set_score" data-team="home" data-arg-source="#home-score-input"
+                data-arg-name="value" data-confirm="local" data-confirm-title="Change the HOME score?">Apply&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">AWAY score <span class="numeric" data-field="teams.away.score">0</span></span>
+        <button type="button" data-command="correct_score" data-team="away" data-points="1">&minus;1</button>
+        <button type="button" data-command="correct_score" data-team="away" data-points="2">&minus;2</button>
+        <button type="button" data-command="correct_score" data-team="away" data-points="3">&minus;3</button>
+        <button type="button" data-command="correct_score" data-team="away" data-points="6">&minus;6</button>
+        <input type="number" id="away-score-input" min="0" max="199" step="1" data-draft="true"
+               aria-label="Set away score">
+        <button type="button" data-command="set_score" data-team="away" data-arg-source="#away-score-input"
+                data-arg-name="value" data-confirm="local" data-confirm-title="Change the AWAY score?">Apply&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Game clock <span class="clock" data-field="clocks.game.display">12:00</span></span>
+        <input type="number" id="game-minutes" min="0" max="12" step="1" value="12" data-draft="true"
+               aria-label="Game clock minutes">
+        <span>:</span>
+        <input type="number" id="game-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Game clock seconds">
+        <button type="button" data-command="game_clock_correct" data-arg-minutes="#game-minutes"
+                data-arg-seconds="#game-seconds" data-arg-name="seconds" data-confirm="local"
+                data-confirm-title="Set the game clock?"
+                data-confirm-detail="Editing stops the game clock. Use START when you are ready.">Apply&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Play clock <span class="clock" data-field="clocks.play.display">&mdash;</span></span>
+        <input type="number" id="play-seconds" min="0" max="40" step="1" value="0" data-draft="true"
+               aria-label="Play clock seconds">
+        <button type="button" data-command="play_clock_correct" data-arg-source="#play-seconds"
+                data-arg-name="seconds" data-confirm="local" data-confirm-title="Set the play clock?"
+                data-confirm-detail="Editing stops the play clock. Use START when you are ready.">Apply&hellip;</button>
+      </div>
+
+      <div class="row" id="quarter-row">
+        <span class="row-label">Quarter <span data-field="quarter">PRE</span></span>
+        <span class="quarter-choices" id="quarter-choices"></span>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Team names</span>
+        <input type="text" id="home-name-input" maxlength="24" data-draft="true" aria-label="Home team name">
+        <button type="button" data-command="set_team_name" data-team="home" data-arg-source="#home-name-input"
+                data-arg-name="name" data-confirm="local" data-confirm-title="Change the HOME team name?">Apply&hellip;</button>
+        <input type="text" id="away-name-input" maxlength="24" data-draft="true" aria-label="Away team name">
+        <button type="button" data-command="set_team_name" data-team="away" data-arg-source="#away-name-input"
+                data-arg-name="name" data-confirm="local" data-confirm-title="Change the AWAY team name?">Apply&hellip;</button>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="event-drawer" hidden aria-label="Pregame and halftime countdown">
+    <div class="drawer-panel">
+      <h2>PREGAME / HALFTIME COUNTDOWN</h2>
+      <p class="hint">This countdown never starts, stops, or resets the game or play clock.</p>
+
+      <div class="row">
+        <span class="row-label"><span data-field="clocks.event.title">KICKOFF IN</span>
+          <span class="clock" data-field="clocks.event.display">30:00</span>
+          <span class="state" data-field="clocks.event.status">STOPPED</span>
+          <span class="state" data-field="clocks.event.phase">PREGAME</span></span>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Select</span>
+        <button type="button" data-command="event_countdown_select" data-label="PREGAME">Pregame 30:00</button>
+        <button type="button" data-command="event_countdown_select" data-label="HALFTIME">Halftime 15:00</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Run</span>
+        <button type="button" id="event-start" data-command="event_countdown_start">START</button>
+        <button type="button" id="event-stop" data-command="event_countdown_stop">STOP</button>
+        <button type="button" data-command="event_countdown_reset">RESET</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Edit current time</span>
+        <input type="number" id="event-minutes" min="0" max="30" step="1" value="15" data-draft="true"
+               aria-label="Countdown minutes">
+        <span>:</span>
+        <input type="number" id="event-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Countdown seconds">
+        <button type="button" data-command="event_countdown_correct" data-arg-minutes="#event-minutes"
+                data-arg-seconds="#event-seconds" data-arg-name="seconds" data-confirm="local"
+                data-confirm-title="Set the countdown?"
+                data-confirm-detail="Editing stops the countdown. Remain stopped is the default; use START to run it.">Apply&hellip;</button>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- One dialog serves both confirmation paths: a local confirmation before a
+       direct correction, and the service's CONFIRMATION_REQUIRED answer. Cancel
+       does nothing at all; Confirm resubmits the same command. -->
+  <div class="dialog-backdrop" id="confirm-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-detail"></p>
+      <p class="change" id="confirm-change" hidden></p>
+      <div class="dialog-buttons">
+        <button type="button" id="confirm-cancel" autofocus>Cancel</button>
+        <button type="button" id="confirm-accept" class="danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared/render.js"></script>
+  <script src="operator.js"></script>
 </body>
 </html>
