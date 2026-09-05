@@ -9,10 +9,15 @@ The operator bridge exposes deliberately few methods:
 * ``get_snapshot()`` -- return the same dictionary without changing anything;
 * ``reopen_display()`` -- ask the host to recreate the spectator window, which
   changes no game state (D-005);
+* ``displays()``, ``select_display(key)``, and ``forget_display()`` -- report
+  which displays exist and put the spectator window on one of them (Task 10);
 * ``data_folder()``, ``choose_data_folder()``, and ``use_default_folder()`` --
-  report and change where the game and its logs are saved. Like
-  ``reopen_display`` these are host actions, not game commands: they advance no
-  revision and write nothing to the database.
+  report and change where the game and its logs are saved.
+
+The last two groups are host actions, not game commands. They advance no
+revision, write nothing to the game database, and are asserted to leave a
+running clock running: a display or a folder is something about this laptop,
+not something that happened in the football game.
 
 The spectator bridge exposes ``get_snapshot()`` and nothing that mutates.
 
@@ -111,10 +116,15 @@ class DisplayStatus:
     open: bool
     target: str | None = None
     detail: str | None = None
+    #: True when there is no display to reopen onto, so one click cannot fix
+    #: this and the operator has to pick one (D-002, UX section 6.8).
+    needs_selection: bool = False
 
     @property
     def label(self) -> str:
-        return "DISPLAY OPEN" if self.open else "DISPLAY CLOSED"
+        if self.open:
+            return "DISPLAY OPEN"
+        return "DISPLAY NOT FOUND" if self.needs_selection else "DISPLAY CLOSED"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +135,7 @@ class DisplayStatus:
             # A closed display is recoverable in one click and never stops a
             # clock or closes the operator (D-005).
             "can_reopen": not self.open,
+            "needs_selection": self.needs_selection,
         }
 
 
@@ -133,6 +144,10 @@ class DisplayLink:
 
     Keeping this tiny means the bridge can be tested without a webview, and a
     spectator rendering failure has no path to the state engine (R-002).
+
+    The four hooks below are replaced by :class:`~scoreboard.host.app.WindowHost`
+    at wiring time. On their own they open, move, and forget nothing, which is
+    what lets every display test run on a machine with one screen.
     """
 
     def __init__(self) -> None:
@@ -146,12 +161,42 @@ class DisplayLink:
         self._status = DisplayStatus(open=True, target=target)
         return self._status
 
-    def mark_closed(self, detail: str = "The spectator window is closed.") -> DisplayStatus:
-        self._status = DisplayStatus(open=False, target=self._status.target, detail=detail)
+    def mark_closed(
+        self,
+        detail: str = "The spectator window is closed.",
+        *,
+        needs_selection: bool = False,
+    ) -> DisplayStatus:
+        self._status = DisplayStatus(
+            open=False,
+            target=self._status.target,
+            detail=detail,
+            needs_selection=needs_selection,
+        )
         return self._status
 
     def reopen(self) -> DisplayStatus:
         """Overridden by the host. On its own this link opens no window."""
+
+        return self._status
+
+    def list_displays(self) -> dict[str, Any]:
+        """Overridden by the host. On its own this link enumerates nothing."""
+
+        return {
+            "displays": [],
+            "saved": None,
+            "match": None,
+            "status": self._status.to_dict(),
+        }
+
+    def select(self, key: Any) -> DisplayStatus:
+        """Overridden by the host. On its own this link chooses nothing."""
+
+        return self._status
+
+    def forget(self) -> DisplayStatus:
+        """Overridden by the host. On its own this link forgets nothing."""
 
         return self._status
 
@@ -494,6 +539,64 @@ class ScoreboardBridge:
                 self._display.mark_closed(f"The display could not be reopened: {exc}")
             return self._view()
 
+    def displays(self) -> dict[str, Any]:
+        """Which displays exist, which one is saved, and how it matched.
+
+        Read on demand rather than carried in the view model: enumerating
+        screens is a Windows call, and the view model is rebuilt four times a
+        second. Like every method in this group it is a host action -- it
+        advances no revision and writes nothing to the database.
+        """
+
+        with self._lock:
+            try:
+                payload = self._display.list_displays()
+            except Exception as exc:  # noqa: BLE001 - enumeration must not end a game
+                self._diagnostics.unhandled_error(context="list_displays", error=exc)
+                payload = {
+                    "displays": [],
+                    "saved": None,
+                    "match": None,
+                    "error": f"The displays could not be read: {exc}",
+                }
+            payload["status"] = self._display.status.to_dict()
+            payload["view"] = self._view()
+            return payload
+
+    def select_display(self, key: Any) -> dict[str, Any]:
+        """Put the spectator window on the chosen display and remember it.
+
+        This is the only thing that re-points the saved display. A match found
+        at startup refreshes what is stored about the *same* display; only an
+        operator standing at the screen can make it a different one, which is
+        what "no hidden auto-moves during live play" means in practice.
+        """
+
+        with self._lock:
+            try:
+                self._display.select(key)
+            except Exception as exc:  # noqa: BLE001
+                self._diagnostics.unhandled_error(context="select_display", error=exc)
+                self._display.mark_closed(
+                    f"That display could not be opened: {exc}", needs_selection=True
+                )
+            return self.displays()
+
+    def forget_display(self) -> dict[str, Any]:
+        """Forget the saved display without touching the window that is open.
+
+        The spectator window showing the game right now keeps showing it. This
+        only clears what the next launch will look for, exactly as **Use
+        standard folder** does for the data folder.
+        """
+
+        with self._lock:
+            try:
+                self._display.forget()
+            except Exception as exc:  # noqa: BLE001
+                self._diagnostics.unhandled_error(context="forget_display", error=exc)
+            return self.displays()
+
     # --- Host-side hooks ----------------------------------------------------
 
     def tick(self, now: float | None = None) -> dict[str, Any]:
@@ -547,9 +650,14 @@ class ScoreboardBridge:
             self._diagnostics.display_opened(target=target or "unknown")
             return self._view()
 
-    def display_closed(self, detail: str = "The spectator window is closed.") -> dict[str, Any]:
+    def display_closed(
+        self,
+        detail: str = "The spectator window is closed.",
+        *,
+        needs_selection: bool = False,
+    ) -> dict[str, Any]:
         with self._lock:
-            self._display.mark_closed(detail)
+            self._display.mark_closed(detail, needs_selection=needs_selection)
             self._diagnostics.display_closed(reason=detail)
             return self._view()
 

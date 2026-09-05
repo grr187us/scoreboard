@@ -125,7 +125,7 @@ A build script cannot establish any of these. None may be treated as passed on t
 - [ ] **No terminal.** Confirm nothing resembling a console window appears at any point.
 - [ ] **Missing WebView2.** On a machine without the runtime, confirm the dialog appears and names the remedy. This has been proven only by test double so far; the real absence has not been observed.
 - [ ] **SmartScreen.** Record exactly what the school's laptop shows on first launch and whether policy permits running it.
-- [ ] **Second display.** Spectator placement, fullscreen, close and reopen. This belongs to Task 10 and is not yet built.
+- [ ] **Second display.** Spectator placement, fullscreen, close and reopen, disconnect and reconnect, resolution and scaling changes. Built in Task 10 and covered by automated tests against a fake screen list; none of it has run on real two-display hardware. Work [the two-display checklist](DISPLAY_CHECKLIST.md), which is written for exactly this.
 - [ ] **Update during a season.** Replace the folder with a newer build between two games and confirm the previous game still recovers, this time on the target laptop.
 - [ ] **Startup time.** Time the shortcut to a usable operator window on the target laptop, cold and warm.
 
@@ -140,3 +140,17 @@ What has been verified here, and only here:
 - A non-editable wheel now contains all eleven view files. The previous metadata declared only `*.html`, which would have shipped the pages without their stylesheets or scripts.
 
 This host has one display, so nothing about second-display placement is claimed.
+
+## Rebuild after Task 10, September 5, 2026
+
+The build recorded above carried the Task 1-era display behaviour — a fixed `--display-index`, no saved display, no disconnect handling — because Task 11 was built before Task 10. **It has been rebuilt.** 152 files, 27.4 MB, version 0.1.0, and the build script's own verification passed: every page, stylesheet, and script present and non-empty, no bundled page referencing a remote resource, and the frozen executable running `--check` end to end.
+
+The rebuilt package was then confirmed to carry the new behaviour rather than the old, against an isolated data folder on this one-display host:
+
+- With no display saved, it **opened no spectator window** and logged `DISPLAY_CLOSED reason='No second display is connected, so the spectator board was not opened over your controls…'`. The old build would have used a fixed index. Exit 0, no orphan process.
+- With a display saved in `config.json`, it logged `DISPLAY_OPENED` and `DISPLAY_SELECTED … how=exact` and opened the fullscreen board on it. Exit 0.
+- With a deliberately corrupt `config.json`, it started normally and simply behaved as though nothing was saved — the tolerance rule, observed in the frozen build rather than only in a test.
+
+`--display-index` now defaults to "use the saved display" instead of `1`. A technician can still force an index from a terminal, and doing so does not overwrite the saved display.
+
+Second-display placement is still not claimed. Work [the two-display checklist](DISPLAY_CHECKLIST.md).

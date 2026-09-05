@@ -30,8 +30,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--display-index",
         type=int,
-        default=1,
-        help="Zero-based Windows display index for the spectator window (default: 1).",
+        default=None,
+        help=(
+            "Force a zero-based Windows display index for the spectator window. "
+            "The default is to use the display saved in config.json, and to open "
+            "nothing rather than cover the operator's screen when it is missing."
+        ),
     )
     choice = parser.add_mutually_exclusive_group()
     choice.add_argument(

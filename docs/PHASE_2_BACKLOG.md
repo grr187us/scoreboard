@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-9 and 11 implemented and verified locally; Tasks 1-9 audited against this backlog on September 5, 2026. Hardware and release evidence remains open in the roadmap. Task 10 and Task 12 are not started.
+**Status:** Tasks 1-11 implemented and verified locally; Tasks 1-9 audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started.
 **Last updated:** September 5, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
@@ -206,6 +206,18 @@ Each task is intended for one focused Codex session. Before starting, read the r
 - Reopened view shows the current revision immediately.
 - Stadium result and geometry are documented; no unsupported auto-recovery claim is made.
 
+**Implemented September 5, 2026.** The display is identified by Windows device name plus geometry in `config.json`, never by list position; matching is exact, then by name, then by geometry, with no fallback past that. A bounded periodic check reports a display appearing or disappearing and moves nothing. Selecting, reopening, losing, and forgetting a display are host actions that advance no revision. 73 tests cover the policy against injected screen lists, because this development host has one display.
+
+| Criterion | Status |
+|---|---|
+| Saved display selected predictably when present | ✅ Against fake screen lists, including resolution, scaling, and device-renumbering changes. 🧪 Unverified on real two-display hardware. |
+| Missing display never hides or blocks the operator | ✅ No window is opened, the operator view stays complete, clocks keep running, and the display panel is the explicit recovery. |
+| Close or disconnect does not stop clocks or corrupt state | ✅ Asserted for a hand-close and a simulated disconnect: revision unchanged, clock still running, database intact, no history row written. 🧪 A real HDMI unplug is unverified. |
+| Reopened view shows the current revision immediately | ✅ Including a play clock that never stopped (D-008). |
+| Stadium result and geometry documented; no unsupported auto-recovery claim | 🧪 Open. Depends on the Phase 0 HDMI gate. No auto-recovery is claimed anywhere: reopening is always an operator action. |
+
+The remaining two criteria need hardware. [`DISPLAY_CHECKLIST.md`](DISPLAY_CHECKLIST.md) is written for the person who has it.
+
 ## Task 11 — Windows packaging and one-action launch
 
 **Objective:** Produce a pinned, reproducible PyInstaller one-folder build that runs offline without development tools.
@@ -216,7 +228,7 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 **Dependencies:** Tasks 1–10; production-laptop constraints should be known before final acceptance.
 
-**Built out of order on September 5, 2026, before Task 10.** Task 10 needs a two-display machine; Task 11 needs none. The consequence is that the current package carries Task 1-era display behaviour and **must be rebuilt after Task 10 before any release**. See `PACKAGING.md` and the roadmap's Task 11 evidence.
+**Built out of order on September 5, 2026, before Task 10.** Task 10 needs a two-display machine; Task 11 needs none. The consequence was that the package carried Task 1-era display behaviour and had to be rebuilt after Task 10 before any release. **That rebuild was done on September 5, 2026**, immediately after Task 10; see `PACKAGING.md` and the roadmap's Task 10 evidence.
 
 **Verification:** Build on Windows; copy to a clean Windows account/machine without Python/Node/OBS; disable network; launch via shortcut; verify assets/data locations/logs/version; restart and failure recovery; scan `git status` for build products.
 
@@ -252,3 +264,11 @@ Each task is intended for one focused Codex session. Before starting, read the r
 ## Backlog guardrail
 
 If a task reveals a later-phase request, record it in the roadmap and continue the current acceptance criteria unless the new information invalidates the architecture or safety. A visually attractive addition is not a reason to bypass clock, persistence, recovery, or packaging verification.
+
+## Deferred scoreboard fields (not in Phase 2 MVP)
+
+Task 5 explicitly excluded down/distance, timeouts, and possession from the MVP command set. Noted here (2026-09-05) as fields the operator still wants, to be scoped as their own task once Phase 2 acceptance is complete:
+
+- Ball on (yard line)
+- Timeouts remaining (per team)
+- Current down (and distance)

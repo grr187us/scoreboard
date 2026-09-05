@@ -61,7 +61,11 @@ body {
 }
 
 .chip-button {
-  min-height: 28px;
+  /* The button an operator reaches for when the wall has gone dark, so it is
+     the largest thing the health strip can hold without pushing the live
+     board off a 1366x768 screen (U-001). The 44px accessibility target needs
+     a layout revisit, not a taller strip; recorded in UX_AND_LAYOUT.md. */
+  min-height: 32px;
   padding: 0 10px;
   border-color: var(--warn);
 }

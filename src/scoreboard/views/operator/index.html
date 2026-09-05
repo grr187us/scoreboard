@@ -172,6 +172,23 @@
                 data-arg-name="name" data-confirm="local" data-confirm-title="Change the AWAY team name?">Apply&hellip;</button>
       </div>
 
+      <!-- Which display the spectator board goes on. Like the row below it,
+           this is not a game correction; both are here because the drawer
+           overlays the page and scrolls inside itself, so nothing added here
+           can push a live control off a 1366x768 screen (U-001). One-click
+           Reopen Display stays in the health strip, where it is needed fast. -->
+      <div class="row section" id="display-row">
+        <span class="row-label">Spectator display</span>
+        <span class="folder-path" id="display-summary">&hellip;</span>
+        <button type="button" data-action="forget_display">Forget saved display</button>
+      </div>
+      <p class="hint" id="display-note">Choosing a display moves the board immediately and
+        remembers it for next time. A display that is not connected is never chosen for you.</p>
+      <div class="row" id="display-choices-row">
+        <span class="row-label">Available now</span>
+        <span class="quarter-choices" id="display-choices"></span>
+      </div>
+
       <!-- Where the game and its logs are written. Deliberately inside this
            overlay rather than on the board: the drawer scrolls inside itself,
            so nothing here can push a live control off screen (U-001). -->

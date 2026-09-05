@@ -183,7 +183,7 @@ Scoreboard/
     application.log
 ```
 
-- `config.json`: schema version, defaults, display identity/geometry, operator preferences, shortcut map.
+- `config.json`: schema version, defaults, display identity/geometry, operator preferences, shortcut map. In use since Task 10 for the display section; read tolerantly, so a damaged or newer-version file reads as "no preferences" and never stops a launch.
 - `scoreboard.db`: schema version, app version, state revision, lifecycle, teams/scores/quarter, materialized clock values, last command metadata, and append-only action history.
 - `scoreboard.backup.db`: automatically refreshed last-known-good database backup.
 - action history: append-only rows retaining accepted and rejected operator requests with timestamps, sequence, source, command, result, and relevant old/new values.
@@ -196,6 +196,8 @@ For every accepted state-changing command, validate in memory, update recoverabl
 Development startup will be one documented PowerShell command after environment setup. Production startup will be a shortcut to a PyInstaller one-folder executable; it starts both windows and no terminal is required.
 
 Task 1 enumerates `pywebview.screens`, shows the current name/geometry choices in the operator proof, and opens the spectator window on an explicitly chosen screen in borderless fullscreen. It deliberately stores no display preference. Task 10 will save a best-effort identity. If the selected screen is absent at startup, the proof keeps the operator available and shows `DISPLAY NOT FOUND`; it does not silently cover the operator screen.
+
+**Task 10, September 5, 2026.** The identity is now saved, in the `display` section of `config.json` — the first use of the file section 9 reserved for it. It holds the Windows device name plus geometry, never a list position. `host/displays.py` stays pure: it takes a screen list and a stored preference and returns a decision, so the whole policy is testable on a one-display machine. `host/app.py` owns the Windows calls — `pywebview.screens` for geometry and `WinForms.Screen.AllScreens` for device names, both injectable — and a bounded periodic check that reports a display appearing or disappearing without ever moving a window. Resolution order is an explicit operator choice, then `--display-index`, then the saved display, then the first non-primary display; there is no fallback past that, so an unrecognised preference reports `DISPLAY NOT FOUND` rather than covering the controls (D-002, D-006). Selecting, reopening, losing, and forgetting a display are host actions: they advance no revision and write nothing to the game database, the same contract as `reopen_display()` and the data-folder picker.
 
 The first Phase 2 task must prove on Windows:
 
@@ -221,8 +223,9 @@ A follow-up executable smoke check on September 4, 2026 ran the proof with displ
 
 | Failure | Required behavior |
 |---|---|
-| Spectator window closes/crashes | Core and operator continue; health strip reports failure; one-click recreate from latest snapshot |
-| HDMI/display disappears | Core continues; report missing display; explicit reselection/reopen after Windows re-enumerates it |
+| Spectator window closes/crashes | Core and operator continue; health strip reports `DISPLAY CLOSED`; one-click recreate from latest snapshot |
+| HDMI/display disappears | Core continues; the periodic display check reports `DISPLAY NOT FOUND` and names what is still true (running, saving); explicit reselection/reopen after Windows re-enumerates it, never an automatic move |
+| The display list cannot be read at all | The check is switched off for the session and logged; the game, the operator, and the manual display panel all continue |
 | Operator view closes | Ask for confirmation during normal close; if it is lost unexpectedly, clocks/core continue only if a visible recovery path remains, otherwise fail closed and persist stopped state |
 | Persistence write fails | Keep in-memory operation, show persistent warning, write diagnostic log if possible, retry on next command; never claim `SAVED` |
 | Primary database corrupt | Validate and load database backup; show recovery banner and log the fallback |

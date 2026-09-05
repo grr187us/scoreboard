@@ -176,6 +176,18 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 - Reopen creates the view using current authoritative state, on the saved display if available.
 - If the saved display is absent, show an explicit display selector; do not silently steal the operator monitor during live play.
 
+Built in Task 10. The strip distinguishes two states, because one is fixed by a
+click and the other is not:
+
+| Strip reads | Means | Recovery |
+|---|---|---|
+| `DISPLAY CLOSED` | The window is gone; the display it was on is still there. | `Reopen Display` — one click, same monitor. |
+| `DISPLAY NOT FOUND` | The display itself is gone, or none was ever chosen. | `Reopen Display` opens no window and shows the display panel instead. Only the operator says which screen the board goes to. |
+
+`Reopen Display` stays in the health strip and stays one click, because a dark
+wall is not the moment to go looking through a drawer. The panel it falls back
+to is **Corrections → Spectator display**.
+
 ### 6.9 End a game
 
 1. Click `End Game…` in the separated danger area.
@@ -188,6 +200,29 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 Windows may re-enumerate displays after an HDMI disconnect. The application should store a best-effort display identity (name/device identifier plus geometry), detect that the selected display disappeared, and report it. It should not attempt HDMI source switching or interact with the LED processor.
 
 After reconnection, the operator uses `Reopen Display` or selects the returned display. Automatic moves are deferred until ordinary monitor tests show they are predictable.
+
+### How the saved display is recognised (Task 10)
+
+The identity is the Windows device name plus the geometry, stored in
+`config.json`. A list position is never used to recognise a display: unplug a
+cable and index 1 becomes a different monitor, or the operator's own screen.
+
+Three tiers, most specific first, and the panel says which one happened:
+
+| Tier | What changed | Typical cause |
+|---|---|---|
+| Exact | Nothing | Normal restart |
+| Name | Size, position, or scaling | The processor renegotiated HDMI and came back at a different resolution |
+| Geometry | The device name | Windows renumbered the displays after a replug |
+
+There is deliberately no fourth tier. An unmatched preference reports
+`DISPLAY NOT FOUND` and opens nothing (D-002).
+
+The host checks the connected displays about every two seconds. That check only
+ever *reports*: a display coming back is announced, and reopening onto it stays
+an operator action (D-006). Choosing, reopening, losing, and forgetting a
+display all advance no revision and write nothing to the game database, so none
+of them can disturb a running clock.
 
 ### Keyboard input safety (Task 9)
 
@@ -203,7 +238,7 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 
 ## 8. Accessibility and rehearsal checklist
 
-- Minimum 44×44 CSS-pixel hit targets; clock and preset controls substantially larger.
+- Minimum 44×44 CSS-pixel hit targets; clock and preset controls substantially larger. **`Reopen Display` does not meet this.** It is 32 px tall, raised from 28 px in Task 10, which is the most the health strip can hold without pushing a live control off a 1366×768 screen. Reaching 44 px needs the operator layout re-flowed, not a taller strip, so it belongs with the Settings-surface revisit below.
 - Keyboard focus ring always visible; logical tab order; labels connected to inputs.
 - Contrast target of at least WCAG AA for operator text where practical.
 - Do not encode home/away or running/stopped solely by red/green.
@@ -218,12 +253,12 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 - Verify fullscreen placement and recovery when the processor input is reselected.
 - Decide whether the logical 16:9 canvas is correct or whether a custom aspect-ratio profile is required.
 
-## Where the game is saved
+## Where the game is saved, and which display it is on
 
-The corrections drawer carries one row that is not a game correction: **Saved to**, showing the current data folder with **Choose folder…** and **Use standard folder**.
+The corrections drawer carries two rows that are not game corrections: **Spectator display**, listing the displays Windows is reporting with the saved one named, and **Saved to**, showing the current data folder with **Choose folder…** and **Use standard folder**.
 
 It lives there rather than on the board for a layout reason and a safety reason. The drawer overlays the page and scrolls inside itself, so adding to it cannot push a live control off a 1366x768 screen and does not invalidate the U-001 measurement. And a control that changes where a game is written does not belong beside the scoring buttons.
 
-The placement is the least-bad option available today, not a considered information architecture: the drawer is titled CORRECTIONS, and this is not a correction. If the operator layout is ever revisited, an explicit Settings surface is the better home. Raised here so it is reviewed with the rest of the layout rather than settling by default.
+The placement is the least-bad option available today, not a considered information architecture: the drawer is titled CORRECTIONS, and neither of these is a correction. Task 10 put the display panel in the same place for the same reason and made the problem twice as large; that is an argument for the revisit, not for the drawer. If the operator layout is ever revisited, an explicit Settings surface is the better home for both, along with the 44 px `Reopen Display` target noted in section 8. Raised here so it is reviewed with the rest of the layout rather than settling by default.
 
 The row states that the running game keeps saving where it is and that a new folder applies at the next start. That sentence is the whole safety story for this control and must not be dropped in a redesign.

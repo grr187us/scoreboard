@@ -18,6 +18,7 @@
   var api = null;
   var model = null;
   var pending = null; // the command a confirmation dialog is waiting on
+  var lastDisplayLabel = null; // last rendered display health, to avoid re-reads
 
   var alertLine = document.getElementById('alert');
   var dialog = document.getElementById('confirm-dialog');
@@ -73,6 +74,15 @@
 
   function renderHealth(health) {
     var displayChip = document.getElementById('chip-display');
+    // Re-read the display list only when the health strip actually changed and
+    // the panel is on screen. Enumerating monitors is a Windows call and this
+    // function runs four times a second.
+    if (health.display.label !== lastDisplayLabel) {
+      lastDisplayLabel = health.display.label;
+      if (!document.getElementById('corrections').hidden) {
+        refreshDisplays();
+      }
+    }
     R.setText(displayChip, health.display.label);
     R.setFlag(displayChip, 'bad', !health.display.open);
     R.setFlag(displayChip, 'good', health.display.open);
@@ -281,6 +291,22 @@
       handleAction(button.dataset.action);
       return;
     }
+    if (button.dataset.displayKey) {
+      // Choosing a display is a host action, not a game command: no revision
+      // is sent and nothing about the game changes.
+      Promise.resolve(api.select_display(button.dataset.displayKey))
+        .then(function (payload) {
+          renderDisplays(payload);
+          if (payload && payload.status && !payload.status.open) {
+            showAlert(payload.status.detail || 'That display could not be opened.');
+          } else {
+            clearAlert();
+          }
+        }).catch(function (error) {
+          showAlert('That display could not be opened: ' + error);
+        });
+      return;
+    }
     if (!button.dataset.command) {
       return;
     }
@@ -302,6 +328,58 @@
     }
     submit(name, args, { title: button.dataset.confirmTitle, source: source });
   });
+
+  /* --- Which display the board is on ------------------------------------ */
+
+  /**
+   * Render the display panel. Like the data folder, this is read on demand
+   * rather than carried in the view model: enumerating monitors is a Windows
+   * call and the view model is rebuilt four times a second.
+   */
+  function refreshDisplays() {
+    if (!api || !api.displays) {
+      return;
+    }
+    Promise.resolve(api.displays()).then(renderDisplays).catch(function (error) {
+      R.setText(document.getElementById('display-summary'),
+        'could not be read: ' + error);
+    });
+  }
+
+  function renderDisplays(payload) {
+    if (!payload) {
+      return;
+    }
+    if (payload.view) {
+      render(payload.view);
+    }
+    R.setText(document.getElementById('display-summary'),
+      payload.saved_label ? 'Saved: ' + payload.saved_label : 'No display saved yet.');
+    var note = document.getElementById('display-note');
+    if (note && payload.match) {
+      note.textContent = payload.error ? payload.error : payload.match.message;
+    }
+
+    var host = document.getElementById('display-choices');
+    if (!host) {
+      return;
+    }
+    host.replaceChildren();
+    (payload.displays || []).forEach(function (display) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = display.description +
+        (display.key === payload.current_key ? ' — in use' : '');
+      button.setAttribute('data-display-key', display.key);
+      button.classList.toggle('is-current', display.key === payload.current_key);
+      host.appendChild(button);
+    });
+    if (!host.childElementCount) {
+      var empty = document.createElement('span');
+      empty.textContent = 'Windows is reporting no display.';
+      host.appendChild(empty);
+    }
+  }
 
   /* --- Where the game is saved ------------------------------------------ */
 
@@ -356,9 +434,19 @@
         });
       return;
     }
+    if (action === 'forget_display') {
+      Promise.resolve(api.forget_display()).then(function (payload) {
+        renderDisplays(payload);
+        showAlert('The saved display was forgotten. The board on screen is unchanged.');
+      }).catch(function (error) {
+        showAlert('The saved display could not be cleared: ' + error);
+      });
+      return;
+    }
     if (action === 'open_corrections') {
       openDrawer('corrections');
       refreshDataFolder();
+      refreshDisplays();
     } else if (action === 'open_event') {
       openDrawer('event-drawer');
     } else if (action === 'open_help') {
@@ -366,7 +454,23 @@
     } else if (action === 'close_drawer') {
       closeDrawers();
     } else if (action === 'reopen_display') {
-      Promise.resolve(api.reopen_display()).then(render);
+      Promise.resolve(api.reopen_display()).then(function (view) {
+        render(view);
+        // One click reopens on the saved display whenever it is there. When it
+        // is not, no window is opened over the controls; the operator is shown
+        // the display panel instead, because only they can say which screen
+        // the board should go to (D-002, UX section 6.8).
+        if (view && view.health && view.health.display.needs_selection) {
+          showAlert(view.health.display.detail || 'Choose a display.');
+          openDrawer('corrections');
+          refreshDataFolder();
+          refreshDisplays();
+          var row = document.getElementById('display-row');
+          if (row && row.scrollIntoView) {
+            row.scrollIntoView({block: 'nearest'});
+          }
+        }
+      });
     }
   }
 
