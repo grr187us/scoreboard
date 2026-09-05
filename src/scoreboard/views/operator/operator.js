@@ -191,6 +191,8 @@
   /* --- Submitting ------------------------------------------------------- */
 
   function submit(name, args, options) {
+    options = options || {};
+    args = Object.assign({}, args, {source: options.source || args.source || "operator-mouse"});
     if (!api) {
       showAlert('The control bridge is not connected. Restart the application.');
       return;
@@ -198,6 +200,7 @@
     // The expected revision comes from what is on screen, so a control the
     // operator saw before someone else changed the board is refused.
     var expected = model ? model.revision : null;
+    if (options.expectedRevision !== undefined) expected = options.expectedRevision;
     Promise.resolve(api.command(name, args, expected)).then(function (result) {
       handleResult(name, args, result, options || {});
     }).catch(function (error) {
@@ -219,7 +222,9 @@
         detail: result.error ? result.error.message : '',
         change: '',
         command: name,
-        args: args
+        args: args,
+        source: options.source || args.source,
+        expectedRevision: result.view.revision
       });
       return;
     }
@@ -231,6 +236,8 @@
   /* --- Confirmation dialog --------------------------------------------- */
 
   function openDialog(request) {
+    request.restoreFocus = document.activeElement;
+    request.expectedRevision = request.expectedRevision === undefined ? model.revision : request.expectedRevision;
     pending = request;
     R.setText(dialogTitle, request.title);
     R.setText(dialogDetail, request.detail || '');
@@ -241,8 +248,10 @@
   }
 
   function closeDialog() {
+    var focus = pending && pending.restoreFocus;
     pending = null;
     dialog.hidden = true;
+    if (focus && focus.isConnected) focus.focus();
   }
 
   document.getElementById('confirm-cancel').addEventListener('click', function () {
@@ -257,7 +266,8 @@
     var request = pending;
     closeDialog();
     var args = Object.assign({}, request.args, { confirmed: true });
-    submit(request.command, args, { title: request.title });
+    submit(request.command, args, { title: request.title, source: request.source,
+      expectedRevision: request.expectedRevision });
   });
 
   /* --- Control wiring --------------------------------------------------- */
@@ -276,6 +286,7 @@
     }
     var name = button.dataset.command;
     var args = argumentsFor(button);
+    var source = clickEvent.detail === 0 ? 'operator-keyboard' : 'operator-mouse';
 
     if (button.dataset.confirm === 'local') {
       // A direct correction shows old and new values before anything is sent.
@@ -284,11 +295,12 @@
         detail: button.dataset.confirmDetail || '',
         change: describeChange(button, args),
         command: name,
+        source: source,
         args: args
       });
       return;
     }
-    submit(name, args, { title: button.dataset.confirmTitle });
+    submit(name, args, { title: button.dataset.confirmTitle, source: source });
   });
 
   function handleAction(action) {
@@ -296,6 +308,8 @@
       openDrawer('corrections');
     } else if (action === 'open_event') {
       openDrawer('event-drawer');
+    } else if (action === 'open_help') {
+      openDrawer('shortcut-help');
     } else if (action === 'close_drawer') {
       closeDrawers();
     } else if (action === 'reopen_display') {
@@ -312,7 +326,7 @@
   }
 
   function closeDrawers() {
-    ['corrections', 'event-drawer'].forEach(function (id) {
+    ['corrections', 'event-drawer', 'shortcut-help'].forEach(function (id) {
       var drawer = document.getElementById(id);
       if (drawer) {
         drawer.hidden = true;
@@ -320,16 +334,24 @@
     });
   }
 
-  document.addEventListener('keydown', function (keyEvent) {
-    // Escape closes a dialog or drawer. It never closes the spectator window
-    // or the application.
-    if (keyEvent.key !== 'Escape') {
-      return;
+  window.ScoreboardKeyboard.install({
+    snapshot: function () { return model; },
+    blocked: function () { return !api || !dialog.hidden || !document.getElementById('shortcut-help').hidden; },
+    submit: submit,
+    close: function () {
+      if (!dialog.hidden) closeDialog();
+      else closeDrawers();
     }
-    if (!dialog.hidden) {
-      closeDialog();
-    } else {
-      closeDrawers();
+  });
+
+  dialog.addEventListener('keydown', function (event) {
+    if (event.key !== 'Tab') return;
+    var cancel = document.getElementById('confirm-cancel');
+    var accept = document.getElementById('confirm-accept');
+    if (event.shiftKey && document.activeElement === cancel) {
+      event.preventDefault(); accept.focus();
+    } else if (!event.shiftKey && document.activeElement === accept) {
+      event.preventDefault(); cancel.focus();
     }
   });
 

@@ -136,8 +136,9 @@ The exact key map may change after operator rehearsal, but the following provisi
 | Key | Action | Safety rule |
 |---|---|---|
 | `Space` | Toggle game clock start/stop | Disabled while editing text; state is always visible |
-| `2` | Play clock reset/start 25 | Top-row and numpad mapping verified |
-| `4` | Play clock reset/start 40 | Top-row and numpad mapping verified |
+| `2` | Load 25-second play preset, stopped | Top-row and numpad key values; target-laptop rehearsal pending |
+| `4` | Load 40-second play preset, stopped | Top-row and numpad key values; target-laptop rehearsal pending |
+| `P` / `S` | Play clock Start / Stop | Separate explicit actions; suppressed while editing |
 | `Q` / `Shift+Q` | Quarter forward/back | Confirmation if a clock is running |
 | `Z`, `X`, `C`, `V` | Home +1/+2/+3/+6 | Disabled in text fields |
 | `N`, `M`, `,`, `.` | Away +1/+2/+3/+6 | Disabled in text fields |
@@ -146,10 +147,18 @@ The exact key map may change after operator rehearsal, but the following provisi
 
 | ID | Requirement | Verification |
 |---|---|---|
-| K-001 | Mouse access MUST exist for every keyboard action. | Control inventory check. |
+| K-001 | Mouse access MUST exist for every keyboard action. Keyboard commands MUST record source `operator-keyboard`; mouse commands record `operator-mouse`. | Control inventory check. |
 | K-002 | Shortcuts MUST act on key-down once; held keys and OS key-repeat MUST NOT produce repeated scores. | Hold-key test. |
 | K-003 | The application MUST ignore unrecognized shortcuts and MUST NOT intercept normal Windows shortcuts outside its focused windows. | Manual keyboard test. |
 | K-004 | A help panel MUST show the active shortcut map. | UI inspection. |
+
+Space selects the existing Start or Stop command from the rendered snapshot;
+JavaScript does not maintain another running flag. The help panel is generated
+from the handler table. All inputs, textareas, selects and contenteditable regions
+suppress live shortcuts, as do open confirmation dialogs. Esc closes the top
+confirmation or drawer even while editing. Held/repeated keys, composing input,
+Alt/Meta combinations and unlisted modifier combinations produce no command.
+Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 ## 7. Spectator-display requirements
 

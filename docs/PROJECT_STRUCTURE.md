@@ -65,7 +65,7 @@ scoreboard/
 │  │  └─ displays.py               # enumeration, selection, reopen/fullscreen
 │  ├─ views/
 │  │  ├─ shared/                   # base.css tokens/reset, render.js helpers
-│  │  ├─ operator/                 # index.html, operator.css, operator.js
+│  │  ├─ operator/                 # index.html, operator.css, operator.js, keyboard.js
 │  │  ├─ startup/                  # recovery preview and explicit choices
 │  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer
 │  └─ integrations/                # empty/uncreated until a later phase needs it
@@ -134,7 +134,7 @@ Tests should normally sit at the lowest layer that can prove the behavior:
 - Clock drift, pause/resume, expiry, score bounds, quarter behavior: unit tests with fake time.
 - Atomic replace, corrupt-primary fallback, and event ordering: integration tests with temporary directories.
 - Bridge payload and stale revision behavior: contract/integration tests.
-- Button hierarchy, focus suppression, display placement, fullscreen, disconnect/reopen: narrow automated UI checks plus documented Windows manual tests.
+- Button hierarchy, focus suppression, display placement, fullscreen, disconnect/reopen: narrow automated UI checks plus documented Windows manual tests. `tests/ui/` runs Edge via development-only Playwright; the keyboard harness sends browser requests to a real bridge backed by an isolated temporary SQLite store.
 - Packaging, offline launch, sustained rehearsal: release acceptance scripts/checklists, not unit tests.
 
 ## 7. Creation sequence

@@ -68,7 +68,7 @@ Visual priorities are scores first, game clock second, team names third, then qu
 │                          │ STOPPED                  │                        │
 │                          │                          │                        │
 │                          │ PLAY CLOCK      40       │                        │
-│                          │ [ 25 + START ] [40+START]│                        │
+│                          │ [ 25 LOAD ]   [40 LOAD]│                        │
 │                          │ [ START ]      [ STOP ]  │                        │
 ├──────────────────────────┴──────────────────────────┴────────────────────────┤
 │ QUARTER  [ ◀ ]   1st   [ ▶ ]    LAST: Away +6 (7)       [ UNDO ]            │
@@ -188,6 +188,18 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 Windows may re-enumerate displays after an HDMI disconnect. The application should store a best-effort display identity (name/device identifier plus geometry), detect that the selected display disappeared, and report it. It should not attempt HDMI source switching or interact with the LED processor.
 
 After reconnection, the operator uses `Reopen Display` or selects the returned display. Automatic moves are deferred until ordinary monitor tests show they are predictable.
+
+### Keyboard input safety (Task 9)
+
+Shortcut Help opens from the toolbar and is generated from the active bindings.
+Space reads the displayed running flag; 2/4 load stopped presets, P starts and S
+stops the play clock. Q/Shift+Q advances/reverses quarter; ZXCV and NM comma period
+add the documented team points; Ctrl+Z undoes; Esc closes the top dialog/drawer.
+Editable fields suppress live shortcuts. Confirmation/help blocks live shortcuts;
+Cancel is focused, Tab stays inside confirmation, and closing restores focus.
+Held shortcut keys and held Enter on a focused button cannot repeat scores.
+Mouse and keyboard confirmations preserve the reviewed revision and original
+input source. Real numpad and Windows repeat timing require target-laptop rehearsal.
 
 ## 8. Accessibility and rehearsal checklist
 

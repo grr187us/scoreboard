@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Ordered implementation plan; no task is implemented
+**Status:** Tasks 1-9 implemented and verified locally; hardware/release evidence remains open in the roadmap. Tasks 10-12 are not started.
 **Last updated:** September 4, 2026
 
 Each task is intended for one focused Codex session. Before starting, read the roadmap, requirements, architecture, and this task's dependencies. Afterward, update tests, documentation, and the roadmap with evidence.

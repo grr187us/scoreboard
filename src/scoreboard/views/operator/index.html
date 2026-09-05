@@ -93,13 +93,14 @@
   <footer class="tools">
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
     <button type="button" id="open-event" data-action="open_event">Pregame / Halftime &#9656;</button>
+    <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
     <span class="spacer"></span>
     <button type="button" class="danger" data-command="game_clock_reset" data-confirm="local"
             data-confirm-title="Reset the game clock?"
             data-confirm-detail="The game clock returns to 12:00 and stays stopped.">Reset Game Clock&hellip;</button>
     <button type="button" class="danger" data-command="end_game" data-confirm="local"
             data-confirm-title="End the game?"
-            data-confirm-detail="Both clocks stop and the quarter becomes FINAL. Scores and names are kept.">End Game&hellip;</button>
+            data-confirm-detail="Both clocks stop and the game is marked FINAL. Scores and names are kept.">End Game&hellip;</button>
     <button type="button" class="danger" data-command="new_game">New Game&hellip;</button>
   </footer>
 
@@ -221,6 +222,16 @@
     </div>
   </div>
 
+  <div class="drawer" id="shortcut-help" hidden aria-label="Keyboard shortcuts">
+    <div class="drawer-panel">
+      <h2>SHORTCUT HELP</h2>
+      <p>Shortcuts work in this control window. Release each key before pressing again.
+        All editable fields and confirmation dialogs suppress live shortcuts.</p>
+      <table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody id="shortcut-list"></tbody></table>
+      <button type="button" data-action="close_drawer">Close</button>
+    </div>
+  </div>
+
   <!-- One dialog serves both confirmation paths: a local confirmation before a
        direct correction, and the service's CONFIRMATION_REQUIRED answer. Cancel
        does nothing at all; Confirm resubmits the same command. -->
@@ -237,6 +248,7 @@
   </div>
 
   <script src="../shared/render.js"></script>
+  <script src="keyboard.js"></script>
   <script src="operator.js"></script>
 </body>
 </html>

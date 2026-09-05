@@ -388,3 +388,6 @@ button.danger:hover:not(:disabled) {
 #confirm-cancel {
   border-color: var(--accent);
 }
+
+#shortcut-help table { width: 100%; border-collapse: collapse; margin-block: 1rem; }
+#shortcut-help th, #shortcut-help td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--edge); }

@@ -48,9 +48,9 @@ from scoreboard.domain.state import GameState, QUARTER_LABELS, SCHEMA_VERSION
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.persistence import GameStore, PersistenceStatus
 
-#: Identifies the operator's mouse path in the durable action history. Task 9
-#: adds a keyboard source; both reach exactly the same commands (K-001).
+#: The two local input adapters share every command and retain their source.
 OPERATOR_MOUSE_SOURCE: Final[str] = "operator-mouse"
+OPERATOR_KEYBOARD_SOURCE: Final[str] = "operator-keyboard"
 
 #: Returned when JavaScript asks for something that is not a command at all.
 #: This never reaches the service: an unknown name is not a game event.
@@ -177,7 +177,10 @@ def build_command(
         return CommandError(INVALID_ARGUMENTS, "Command arguments must be a dictionary.")
 
     allowed = _ALLOWED_ARGUMENTS[command_type]
-    supplied = {key: value for key, value in args.items() if key != "confirmed"}
+    source = args.get("source", source)
+    if source not in (OPERATOR_MOUSE_SOURCE, OPERATOR_KEYBOARD_SOURCE):
+        return CommandError(INVALID_ARGUMENTS, "Unknown operator input source.")
+    supplied = {key: value for key, value in args.items() if key not in ("confirmed", "source")}
     unexpected = set(supplied) - allowed
     if unexpected:
         return CommandError(
@@ -523,6 +526,7 @@ class ScoreboardBridge:
 __all__ = [
     "INVALID_ARGUMENTS",
     "OPERATOR_MOUSE_SOURCE",
+    "OPERATOR_KEYBOARD_SOURCE",
     "UNKNOWN_COMMAND",
     "DisplayLink",
     "DisplayStatus",

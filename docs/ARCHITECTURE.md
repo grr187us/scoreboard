@@ -151,6 +151,14 @@ The one deliberate game/play-clock coupling is a game-clock transition from stop
 
 ## 8. View bridge and process model
 
+The existing `command(name, args, expected_revision)` argument envelope accepts
+`source` metadata restricted to `operator-mouse` or `operator-keyboard` (mouse is
+the compatibility default). It is removed before validating command arguments.
+The keyboard adapter reads the rendered snapshot for Space and uses the same
+submission/confirmation function as mouse controls. Confirmation retains the
+revision shown when it was opened; a later state change makes it stale instead
+of silently confirming against new values. No new command/API method is added.
+
 Startup recovery uses a separate `StartupBridge` with report/resume/new methods. Only after an explicit choice does the host create the operator with `ScoreboardBridge`; the startup window is retired. Non-interactive launches retain `RecoveryChoiceRequired`.
 
 - One Python process creates both webview windows and starts the application event loop.

@@ -108,6 +108,14 @@ Task 6's "checkpoint once per displayed second" policy and every Task 7 readout 
 - `StartupBridge` exposes only recovery inspection/resume/new; handoff creates the normal operator with the existing `ScoreboardBridge`. Duplicate choices create one session. Non-interactive `WindowHost.run` retains `RecoveryChoiceRequired`.
 - Five focused startup tests passed; full suite 250/250, `compileall`, `pip check`, and diff whitespace checks passed. Native recovery-window interaction remains a target-laptop rehearsal item.
 
+### Phase 2 Task 9 evidence
+
+- Added a focused operator keyboard adapter and table-generated Shortcut Help. Map: Space game Start/Stop from rendered snapshot; 2/4 load stopped 25/40 presets; P/S play Start/Stop; Q/Shift+Q quarter forward/back; ZXCV home +1/+2/+3/+6; NM comma period away +1/+2/+3/+6; Ctrl+Z Undo; Esc close dialog/drawer. Requirements section 6 now matches the confirmed preset decision.
+- Every mapped game action reaches the existing `command()` signature with restricted `source` metadata in its args envelope. The same operator submission and confirmation functions serve both inputs, preserve the reviewed expected revision through confirmation, and retain source in durable accepted/rejected/prompt history. No toggle command or separate clock state exists in JavaScript.
+- Real-browser-to-real-bridge test verifies all 16 command bindings plus Esc, exact arguments/revisions, repeat and duplicate keydown suppression, focused-button Space/held Enter safety, all nine existing fields plus textarea/select/contenteditable, ignored modifiers/composition, confirmation suppression/cancel, identical mouse/keyboard running-clock quarter round trips, stale confirmation, recovery-screen isolation, table-generated help, and live control bounds at 1366x768 and 1093x614 CSS viewports. Two source contract tests reject invalid source metadata and check durable history.
+- Focused Task 9 tests 3/3; full suite 261/261. `compileall`, `pip check`, JavaScript syntax, diff whitespace, UTF-8 and relative Markdown file-link checks passed. No runtime database or log is in the repository. [Complete change inventory](docs/TASK_8_9_CHANGE_REPORT.md).
+- Numpad behavior, actual Windows repeat timing, novice rehearsal and physical WebView2 scaling remain release evidence. Browser automation cannot establish these results. No Task 10, packaging, OBS, controller or networking work was started.
+
 ### Phase 2 Task 8 evidence
 
 - Spectator page now renders mutually exclusive game/event presentations inside a centered logical 16:9 canvas with configurable 4% inset, proportional type and local fonts. Only documented fields appear; blank play-clock space differs from expired `0.0`.
@@ -507,6 +515,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 4, 2026 | Persist an additive play_clock_cleared flag; retain old blank-zero interpretation for legacy snapshots lacking it. | The old model erased expiry versus clear intent; the renderer cannot recreate it safely. | Recovery compatibility/rehearsal. |
 | September 4, 2026 | Task 8 gap 2: publish after accepted commands under the existing serialization lock, retaining ticks for timed refresh/checkpoint work. | Removes the 250 ms scheduler wait; push-count tests prove delivery without a tick. Physical latency remains release evidence. | Target laptop measurement. |
 | September 4, 2026 | Task 9 gap 3: 2/4 load stopped 25/40 presets; P starts and S stops the play clock. Space, Q/Shift+Q, ZXCV, NM comma period, Ctrl+Z and Esc retain their documented purposes. | Matches confirmed mouse/preset behavior. Requirements change precedes keyboard code. | Operator/numpad rehearsal. |
+| September 4, 2026 | Carry source as restricted metadata in the existing command args envelope; preserve original source and reviewed revision through confirmation. | Distinguishes keyboard/mouse in durable history without widening command() or creating keyboard-only commands. | Input adapter contract changes. |
 | September 4, 2026 | Task 9 gap 4: Space reads the rendered snapshot and submits existing game_clock_start or game_clock_stop. | No JavaScript running-state copy or toggle command; existing action history stays explicit. | Only if command semantics change. |
 | September 4, 2026 | Task 8 gap 5: build and commit an in-window recovery prerequisite before spectator work. A separate startup API offers report/resume/new and creates the normal operator with ScoreboardBridge after choice. | Keeps command() narrow; no clock or service starts before choice. RecoveryChoiceRequired remains the non-interactive guard. | Recovery rehearsal. |
 
@@ -557,21 +566,22 @@ Record decisions here so later implementation work does not silently reverse the
 | September 4, 2026 | Phase 2 Task 7 operator interface and bridge | 68 new tests. Bridge contract: all 25 commands reachable by mouse and asserted against the operator page's `data-command` attributes; every command accepted through the bridge with one revision each; unknown names, wrong argument names, wrong types, `NaN`, and bad expected revisions refused before the service; JSON-only payloads for every command result and snapshot with no domain object anywhere; the spectator bridge exposing only `get_snapshot`. Behaviour: typing without Apply changing nothing and no `input`/`change` listener existing; local confirmation showing old and new values; `New Game` and a running-clock quarter change asking first, cancel doing nothing, confirm resubmitting with `confirmed=True`; rejections surfacing a plain-language message with the board unchanged; stale revisions refused; a simulated write failure showing `NOT SAVED` while play continues and recovering to `SAVED`; simulated display close/reopen updating the health strip without stopping a clock; a failing reopen and a failing spectator push both survived by the engine. Host: one service and store behind the bridge, a second instance refused, a recoverable game reported but never started, resume restoring 11:40 stopped, ticks publishing to both windows without advancing a revision, and shutdown saving and releasing the lock. Full suite 245/245; `compileall` and `pip check` passed. | `src/scoreboard/host/bridge.py`; `src/scoreboard/host/app.py`; `src/scoreboard/views/`; `tests/integration/test_bridge.py`; `tests/integration/test_host_application.py` | Task 7 acceptance criteria are met at the bridge boundary. Keyboard shortcuts, spectator layout, display-selection hardening, packaging, OBS, and networking remain out of scope. The in-window recovery screen and the physical 1366x768 WebView2 display check remain open. |
 | September 4, 2026 | Task 8 recovery prerequisite | Five focused tests; full suite 250/250; compileall, pip check, diff checks passed. | `tests/integration/test_startup.py`; prerequisite evidence above | Native recovery interaction remains release evidence. |
 | September 4, 2026 | Task 8 spectator foundation | Full suite 258/258; 36 browser layout cases; syntax/compileall/pip/diff checks passed. | `tests/integration/test_spectator.py`; `tests/ui/`; `docs/evidence/task8/` | Browser observations only; LED/two-display and end-to-end latency remain pending. |
+| September 4, 2026 | Task 9 keyboard/input safety | Full suite 261/261, including real browser to real bridge/storage input tests; compileall/pip/syntax/diff/link checks passed. | `tests/ui/keyboard.cjs`; `tests/integration/test_keyboard_source.py`; Task 9 evidence above | Real OS repeat, numpad and novice rehearsal remain pending. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
 ## Current Status
 
 | Item | Current state |
 |---|---|
-| Active phase | Phase 2 Task 8 spectator foundation implemented; Phase 0 hardware gate remains open in parallel |
+| Active phase | Phase 2 Tasks 8-9 implemented; Phase 0 hardware gate remains open in parallel |
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
-| Implementation status | Tasks 1-8 implemented and verified locally, including in-window recovery, command-driven lifecycle, immediate spectator publication and responsive game/countdown display. Task 9 keyboard controls are next; Task 10 and later remain unstarted. |
+| Implementation status | Tasks 1-9 implemented and verified locally: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator game/countdown layout, keyboard safety and generated shortcut help. Task 10 and later remain unstarted. |
 | Repository status | `main` tracks `origin/main`; Phase 1 foundation commit `6f9fc18` pushed and independently cloned cleanly |
 
 ## Next Action
 
-Task 8 is verified; commit it before starting Task 9 keyboard controls and input safety. Separately, on Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.
+Tasks 8 and 9 are verified locally and committed in order after the recovery prerequisite. Next collect target-laptop keyboard/recovery/scaling rehearsal evidence; do not infer hardware acceptance from browser tests. Task 10 remains a separate future task. Separately, on Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.
 
 Carried forward as open items, none of which may be treated as completed on the strength of a passing automated suite:
 
@@ -579,3 +589,6 @@ Carried forward as open items, none of which may be treated as completed on the 
 2. **The physical 1366×768 check.** The layout was measured in Chromium at the equivalent CSS viewports, not on a 1366×768 Windows display at 100% and 125% scaling under WebView2.
 3. **Two-display behaviour.** This host exposes one display, so second-display placement, manual spectator close/reopen, and fullscreen exit/re-entry remain unverified. Task 10 owns the production work.
 4. **Real operating-system failure behaviour.** Interrupted transactions, write failures, and forced termination are proven as code paths against simulated failures; a real power loss or full disk on the target laptop is release evidence.
+
+5. **Keyboard release evidence.** Verify numpad, real Windows repeat timing, novice shortcut rehearsal and focused-window behavior on the target laptop.
+6. **Visible latency.** Measure command-to-visible-pixels latency on the target laptop; immediate push counts remove scheduler waiting but do not prove D-004 end-to-end.
