@@ -22,7 +22,7 @@ class SpectatorFoundationTests(ApplicationTestCase):
         app = self.make_application()
         bridge = app.start_new()
         bridge.command('game_clock_start')
-        self.assertEqual(bridge.spectator_snapshot()['clocks']['play']['display'], '')
+        self.assertEqual(bridge.spectator_snapshot()['clocks']['play']['display'], '—')
         bridge.command('play_clock_preset', {'seconds': 25})
         bridge.command('play_clock_start')
         self.monotonic.advance(26)
@@ -37,7 +37,24 @@ class SpectatorFoundationTests(ApplicationTestCase):
         recovered = self.make_application().resume()
         self.assertEqual(recovered.spectator_snapshot()['clocks']['play']['display'], '0.0')
         recovered.command('play_clock_clear')
-        self.assertEqual(recovered.spectator_snapshot()['clocks']['play']['display'], '')
+        self.assertEqual(recovered.spectator_snapshot()['clocks']['play']['display'], '—')
+
+    def test_spectator_uses_clear_wording_and_expanded_live_quarter(self):
+        app = self.make_application()
+        bridge = app.start_new()
+        bridge.command('set_quarter', {'label': '2nd'})
+        view = bridge.spectator_snapshot()
+
+        self.assertEqual(view['quarter'], '2nd')
+        self.assertEqual(view['quarter_display'], '2nd Quarter')
+        self.assertEqual(view['clocks']['play']['display'], '—')
+
+        bridge.command('game_clock_start')
+        bridge.command('play_clock_preset', {'seconds': 25})
+        bridge.command('play_clock_start')
+        running = bridge.spectator_snapshot()
+        self.assertTrue(running['clocks']['game']['running'])
+        self.assertTrue(running['clocks']['play']['running'])
 
     def test_active_play_clock_reopen_has_current_complete_snapshot(self):
         app = self.make_application()
@@ -66,7 +83,7 @@ class SpectatorFoundationTests(ApplicationTestCase):
         self.monotonic.advance(5)
         result = bridge.command('add_score', {'team': 'home', 'points': 3})
         self.assertTrue(result['accepted'])
-        self.assertEqual(result['view']['clocks']['game']['display'], '11:55')
+        self.assertEqual(result['view']['clocks']['game']['display'], '29:55')
         self.assertTrue(result['view']['clocks']['game']['running'])
         self.assertFalse(result['view']['health']['display']['open'])
 

@@ -78,6 +78,9 @@ async function main(data) {
       ['Control+z','undo',{},'Ctrl+Z','Undo last reversible command']
     ];
     for (const [key,command,args] of map) {
+      // Quarter actions always open a confirmation now; their dedicated block
+      // below verifies that two-step path for both input adapters.
+      if (key === 'q' || key === 'Shift+Q' || key === 'Control+z') continue;
       const model = await reset(); await press(key);
       assert.deepEqual(calls,[[command,{...args,source:'operator-keyboard'},model.revision]],key);
       assert.equal(results[0].accepted,true,key);
@@ -85,6 +88,13 @@ async function main(data) {
     }
     await reset(); await press('Space'); calls.length=0;
     await press('Space'); assert.equal(calls[0][0],'game_clock_stop');
+
+    await reset(); await press('Space');
+    assert.equal(await page.locator('#game-display').evaluate(el=>el.classList.contains('running-game')),true);
+    assert.equal(await page.locator('#game-state').evaluate(el=>el.classList.contains('running-game')),true);
+    await reset(); await press('2'); await press('p');
+    assert.equal(await page.locator('#play-display').evaluate(el=>el.classList.contains('running-play')),true);
+    assert.equal(await page.locator('#play-state').evaluate(el=>el.classList.contains('running-play')),true);
 
     // OS repeat plus duplicate non-repeat keydowns; focused button must not also click.
     await reset(); await page.locator('[data-command="add_score"][data-team="home"][data-points="6"]').first().focus();
@@ -147,6 +157,20 @@ async function main(data) {
       assert.deepEqual(calls,[['quarter_forward',{source},before.revision],
         ['quarter_forward',{source,confirmed:true},before.revision]]);
       assert.equal(results[1].accepted,true); assert.equal(results[1].view.clocks.game.running,false);
+    }
+    // PRE's stronger confirmation is identical for keyboard and direct
+    // selection; the exact accepting label is an owner decision.
+    for (const path of ['keyboard','direct']) {
+      const pregame=await rpc({op:'pregame'}); await render(pregame);
+      calls.length=0;results.length=0;
+      if(path==='keyboard') await press('q');
+      else { await page.locator('#open-corrections').click();
+        await page.locator('[data-command="set_quarter"][data-label="1st"]').click(); await expectResult(0); }
+      assert.equal(results[0].confirmation_required,true);
+      assert.equal(await page.locator('#confirm-accept').textContent(),
+        'Start 1st quarter — discard remaining pregame time');
+      const count=calls.length; await page.locator('#confirm-cancel').click();
+      assert.equal(calls.length,count);
     }
     await reset();await press('Space');await press('q');
     const cancelCount=calls.length;await page.keyboard.press('Escape');

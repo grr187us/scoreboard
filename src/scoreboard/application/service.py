@@ -71,6 +71,8 @@ from scoreboard.domain.state import (
     QUARTER_LABELS,
     ClockValue,
     GameState,
+    MAX_GAME_CLOCK_SECONDS,
+    MAX_PREGAME_CLOCK_SECONDS,
     StateValidationError,
     default_state,
 )
@@ -214,11 +216,16 @@ class ScoreboardService:
 
         if game_expired:
             self._game_clock = self._game_clock.expire(now=current)
-            next_play_clock = clear_play_clock_on_game_clock_stop(
-                self._play_clock,
-                game_clock_is_running=False,
-                now=current,
-            )
+            # PRE is a kickoff countdown, not football game time. Its natural
+            # expiry intentionally remains PRE and never invokes the normal
+            # game/play-clock stop coupling.
+            next_play_clock = self._play_clock
+            if self._state.quarter != "PRE":
+                next_play_clock = clear_play_clock_on_game_clock_stop(
+                    self._play_clock,
+                    game_clock_is_running=False,
+                    now=current,
+                )
             if next_play_clock is not self._play_clock:
                 self._play_clock = next_play_clock
                 # This is deliberately not ``evolve``: it records a system
@@ -282,12 +289,21 @@ class ScoreboardService:
         handler = self._HANDLERS[command.type]
         outcome = handler(self, command, now)
         if isinstance(outcome, CommandError):
-            return self._reject(outcome)
+            confirmation = None
+            if outcome.code == CONFIRMATION_REQUIRED and command.type in (
+                CommandType.QUARTER_FORWARD,
+                CommandType.QUARTER_BACK,
+                CommandType.SET_QUARTER,
+            ):
+                confirmation = self._quarter_confirmation(command, now)
+            return self._reject(outcome, confirmation=confirmation)
         return self._commit(command, outcome, now)
 
     # --- Commit and rejection ----------------------------------------------
 
-    def _reject(self, error: CommandError) -> CommandResult:
+    def _reject(
+        self, error: CommandError, *, confirmation: dict[str, str] | None = None
+    ) -> CommandResult:
         return CommandResult(
             accepted=False,
             state=self._state,
@@ -295,6 +311,7 @@ class ScoreboardService:
             event=None,
             error=error,
             confirmation_required=error.code == CONFIRMATION_REQUIRED,
+            confirmation=confirmation,
         )
 
     def _commit(
@@ -321,11 +338,8 @@ class ScoreboardService:
                     if phase != previous:
                         event_clock = event_clock.select(phase, now=now)
                     changes["event_phase"] = phase
-            if (command.type is CommandType.GAME_CLOCK_START
-                    and game_clock.current_value(now).running
-                    and self._state.lifecycle in ("PRE_GAME", "HALFTIME")):
-                changes["lifecycle"] = "IN_PROGRESS"
             if command.type is CommandType.GAME_CLOCK_START and (
+                    self._state.quarter != "PRE" and
                     not self._game_clock.current_value(now).running
                     and game_clock.current_value(now).running):
                 changes["play_clock_cleared"] = True
@@ -534,14 +548,14 @@ class ScoreboardService:
         a_clock_is_running = (
             self._game_clock.current_value(now).running
             or self._play_clock.current_value(now).running
+            or self._event_clock.current_value(now).running
         )
-        if a_clock_is_running and not command.confirmed:
-            # Nothing is stopped and nothing changes yet: the operator must
-            # resubmit the same command with confirmed=True (F-022).
+        if not command.confirmed:
+            # Every quarter move is a major lifecycle action. Nothing is
+            # stopped and nothing changes until the same revision is accepted.
             return CommandError(
                 CONFIRMATION_REQUIRED,
-                f"A clock is running. Confirm to stop both clocks and change the quarter "
-                f"from {self._state.quarter} to {target}.",
+                self._quarter_confirmation(command, now)["detail"],
             )
 
         old_value = self._state.quarter
@@ -552,9 +566,24 @@ class ScoreboardService:
             new_value=target,
             source=command.source,
         )
-        next_game_clock = (
-            self._game_clock.stop(now=now) if a_clock_is_running else self._game_clock
-        )
+        next_game_clock = self._game_clock.stop(now=now)
+        # Moving out of PRE abandons the kickoff countdown deliberately. A
+        # live target receives its stopped regulation period; HALF/FINAL have
+        # no playable game time to carry forward. Moving back to PRE reloads a
+        # stopped full kickoff countdown rather than exposing a 12:00 value.
+        left_pregame = old_value == "PRE" and target != "PRE"
+        entered_pregame = old_value != "PRE" and target == "PRE"
+        if left_pregame:
+            seconds = MAX_GAME_CLOCK_SECONDS if target in LIVE_QUARTER_LABELS else 0.0
+            next_game_clock = GameClock(
+                value=ClockValue(seconds, False, MAX_GAME_CLOCK_SECONDS),
+                monotonic_clock=self._monotonic,
+            )
+        elif entered_pregame:
+            next_game_clock = GameClock(
+                value=ClockValue(MAX_PREGAME_CLOCK_SECONDS, False, MAX_PREGAME_CLOCK_SECONDS),
+                monotonic_clock=self._monotonic,
+            )
         auto_reset_game_clock = (
             target in LIVE_QUARTER_LABELS
             and next_game_clock.current_value(now).seconds <= 0.0
@@ -564,7 +593,7 @@ class ScoreboardService:
             # but a nonzero correction always remains the operator's choice.
             next_game_clock = next_game_clock.reset()
 
-        if a_clock_is_running or auto_reset_game_clock:
+        if a_clock_is_running or auto_reset_game_clock or left_pregame or entered_pregame:
             # Either stopping a clock or loading a fresh quarter clock makes a
             # simple quarter-only Undo misleading: it could not restore the
             # clock value that existed before this transition.
@@ -572,9 +601,8 @@ class ScoreboardService:
                 changes={"quarter": target},
                 event=event,
                 game_clock=next_game_clock,
-                play_clock=self._play_clock.stop(now=now)
-                if a_clock_is_running
-                else self._play_clock,
+                play_clock=self._play_clock.stop(now=now),
+                event_clock=self._event_clock.stop(now=now),
                 clears_undo=True,
             )
         return _Transition(
@@ -659,10 +687,12 @@ class ScoreboardService:
         # The service is the first component that knows whether this Start was a
         # real stopped-to-running transition, so it applies the documented
         # coupling here (F-048). A redundant Start leaves the play clock alone.
-        next_play_clock = clear_play_clock_on_game_clock_start(
-            self._play_clock,
-            game_clock_was_running=not became_running,
-            now=now,
+        next_play_clock = self._play_clock if self._state.quarter == "PRE" else (
+            clear_play_clock_on_game_clock_start(
+                self._play_clock,
+                game_clock_was_running=not became_running,
+                now=now,
+            )
         )
         return self._game_clock_transition(command, now, next_clock, next_play_clock)
 
@@ -672,7 +702,7 @@ class ScoreboardService:
         was_running = self._game_clock.current_value(now).running
         next_clock = self._game_clock.stop(now=now)
         next_play_clock = self._play_clock
-        if was_running:
+        if was_running and self._state.quarter != "PRE":
             next_play_clock = clear_play_clock_on_game_clock_stop(
                 self._play_clock,
                 game_clock_is_running=next_clock.current_value(now).running,
@@ -698,6 +728,53 @@ class ScoreboardService:
         except StateValidationError as exc:
             return CommandError(INVALID_CLOCK_TIME, f"Game clock correction rejected: {exc}.")
         return self._game_clock_transition(command, now, corrected)
+
+    def _quarter_confirmation(self, command: Command, now: float) -> dict[str, str]:
+        """Describe a pending quarter move without mutating any clock.
+
+        This data crosses the bridge so mouse, keyboard, and direct selection
+        get precisely the same words and the same authoritative revision check.
+        """
+
+        target = self._quarter_target(command)
+        assert not isinstance(target, CommandError)
+        source = self._state.quarter
+        game = self._game_clock.current_value(now)
+        active = [
+            name for name, running in (
+                ("game clock", game.running),
+                ("play clock", self._play_clock.current_value(now).running),
+                ("halftime countdown", self._event_clock.current_value(now).running),
+            ) if running
+        ]
+        clocks = (
+            "The " + ", ".join(active) + " will stop."
+            if active else "All clocks are already stopped."
+        )
+        if source == "PRE" and target == "1st" and game.seconds > 0.0:
+            return {
+                "title": "Discard remaining pregame time?",
+                "detail": (
+                    f"Change quarter from {source} to {target}. {clocks} "
+                    f"The {game.seconds:.1f}-second pregame countdown will be discarded. "
+                    "The game clock will load 12:00 stopped."
+                ),
+                "accept_label": "Start 1st quarter — discard remaining pregame time",
+            }
+        if source == "PRE" and target != "PRE":
+            load = "12:00" if target in LIVE_QUARTER_LABELS else "0:00"
+            clock_plan = f"The game clock will load {load} stopped."
+        elif target == "PRE" and source != "PRE":
+            clock_plan = "The game clock will load 30:00 stopped."
+        elif target in LIVE_QUARTER_LABELS and game.seconds <= 0.0:
+            clock_plan = "The game clock will load 12:00 stopped."
+        else:
+            clock_plan = f"The game clock will remain {game.seconds / 60:.0f}:{int(game.seconds % 60):02d} stopped."
+        return {
+            "title": "Confirm quarter change",
+            "detail": f"Change quarter from {source} to {target}. {clocks} {clock_plan}",
+            "accept_label": f"Change to {target}",
+        }
 
     # --- Play clock ---------------------------------------------------------
 

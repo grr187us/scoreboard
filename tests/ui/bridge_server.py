@@ -21,7 +21,10 @@ def main():
                 operation = request['op']
                 if operation == 'reset':
                     bridge.command('new_game', {'confirmed': True})
-                    bridge.command('set_quarter', {'label': '1st'})
+                    bridge.command('set_quarter', {'label': '1st', 'confirmed': True})
+                    result = bridge.get_snapshot()
+                elif operation == 'pregame':
+                    bridge.command('new_game', {'confirmed': True})
                     result = bridge.get_snapshot()
                 elif operation == 'command':
                     result = bridge.command(*request['args'])

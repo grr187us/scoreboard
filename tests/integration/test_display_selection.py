@@ -264,7 +264,7 @@ class MissingDisplayTests(DisplayHostTestCase):
         view = self.bridge.get_snapshot()
 
         self.assertTrue(view["clocks"]["game"]["running"])
-        self.assertEqual(view["clocks"]["game"]["display"], "11:55")
+        self.assertEqual(view["clocks"]["game"]["display"], "29:55")
         self.assertEqual(view["revision"], revision)
 
     def test_one_display_and_nothing_saved_never_covers_the_operator(self) -> None:
@@ -369,7 +369,7 @@ class DisconnectTests(DisplayHostTestCase):
         # pass by simply never detecting anything.
         self.assertTrue(view["health"]["display"]["needs_selection"])
         self.assertTrue(view["clocks"]["game"]["running"])
-        self.assertEqual(view["clocks"]["game"]["display"], "11:50")
+        self.assertEqual(view["clocks"]["game"]["display"], "29:50")
         self.assertEqual(view["revision"], revision)
         self.assertEqual(view["teams"]["away"]["score"], 3)
         self.assertTrue(view["health"]["persistence"]["saved"])
@@ -439,7 +439,7 @@ class DisconnectTests(DisplayHostTestCase):
 
         self.assertIsNotNone(view)
         self.assertTrue(view["clocks"]["game"]["running"])  # type: ignore[index]
-        self.assertEqual(view["clocks"]["game"]["display"], "11:55")  # type: ignore[index]
+        self.assertEqual(view["clocks"]["game"]["display"], "29:55")  # type: ignore[index]
 
     def test_closing_the_spectator_window_by_hand_keeps_one_click_recovery(self) -> None:
         host = self.make_host()
@@ -602,7 +602,7 @@ class HostActionTests(DisplayHostTestCase):
         view = self.bridge.get_snapshot()
         self.assertEqual(view["revision"], revision)
         self.assertTrue(view["clocks"]["game"]["running"])
-        self.assertEqual(view["clocks"]["game"]["display"], "11:56")
+        self.assertEqual(view["clocks"]["game"]["display"], "29:56")
         self.assertEqual(len(read_action_history(self.paths.database)), before)
         self.assertTrue(payload["status"]["open"])
 

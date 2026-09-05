@@ -29,7 +29,7 @@ class StateTests(unittest.TestCase):
         self.assertEqual((state.home_score, state.away_score), (0, 0))
         self.assertEqual(state.quarter, "PRE")
         self.assertEqual(state.lifecycle, "PRE_GAME")
-        self.assertEqual(state.game_clock.seconds, 720)
+        self.assertEqual(state.game_clock.seconds, 1800)
         self.assertFalse(state.game_clock.running)
         self.assertEqual(state.event_countdown.seconds, 1800)
         self.assertEqual(state.event_phase, "PREGAME")

@@ -47,8 +47,12 @@
       play.display === '' ? '—' : play.display);
     R.setText(document.getElementById('chip-revision'), 'Rev ' + model.revision);
 
-    R.setFlag(document.getElementById('game-state'), 'running', game.running);
-    R.setFlag(document.getElementById('play-state'), 'running', play.running);
+    // Colour is a rapid visual cue; the RUNNING/STOPPED text remains the
+    // accessible, non-colour-only source of truth.
+    R.setFlag(document.getElementById('game-display'), 'running-game', game.running);
+    R.setFlag(document.getElementById('play-display'), 'running-play', play.running);
+    R.setFlag(document.getElementById('game-state'), 'running-game', game.running);
+    R.setFlag(document.getElementById('play-state'), 'running-play', play.running);
 
     // The action that is already true is de-emphasised, never removed, so the
     // operator can always see both Start and Stop (U-002).
@@ -58,6 +62,15 @@
     markState('play-stop', !play.running);
     markState('event-start', event.running);
     markState('event-stop', !event.running);
+
+    // The same correction controls serve the authoritative pregame countdown.
+    // JavaScript only adjusts form affordances; Python validates and owns time.
+    var gameMinutes = document.getElementById('game-minutes');
+    if (gameMinutes) gameMinutes.max = model.quarter === 'PRE' ? '30' : '12';
+    var gameReset = document.querySelector('[data-command="game_clock_reset"]');
+    if (gameReset) gameReset.dataset.confirmDetail = model.quarter === 'PRE' ?
+      'The pregame countdown returns to 30:00 and stays stopped.' :
+      'The game clock returns to 12:00 and stays stopped.';
 
     renderHealth(model.health);
     renderLastAction(model);
@@ -229,8 +242,9 @@
       // with confirmed=true only if the operator confirms.
       openDialog({
         title: options.title || 'Confirm this change',
-        detail: result.error ? result.error.message : '',
+        detail: result.confirmation ? result.confirmation.detail : (result.error ? result.error.message : ''),
         change: '',
+        acceptLabel: result.confirmation ? result.confirmation.accept_label : null,
         command: name,
         args: args,
         source: options.source || args.source,
@@ -252,6 +266,7 @@
     R.setText(dialogTitle, request.title);
     R.setText(dialogDetail, request.detail || '');
     R.setText(dialogChange, request.change || '');
+    R.setText(document.getElementById('confirm-accept'), request.acceptLabel || 'Confirm');
     dialogChange.hidden = !request.change;
     dialog.hidden = false;
     document.getElementById('confirm-cancel').focus();

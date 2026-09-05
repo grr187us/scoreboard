@@ -18,6 +18,9 @@ MAX_SCORE: Final[int] = 199
 MAX_GAME_CLOCK_SECONDS: Final[float] = 12 * 60
 MAX_PLAY_CLOCK_SECONDS: Final[float] = 40
 MAX_EVENT_COUNTDOWN_SECONDS: Final[float] = 30 * 60
+#: In ``PRE`` the single authoritative game-clock engine is a kickoff
+#: countdown.  The interval engine remains separate for halftime.
+MAX_PREGAME_CLOCK_SECONDS: Final[float] = 30 * 60
 
 QUARTER_LABELS: Final[tuple[str, ...]] = (
     "PRE",
@@ -148,7 +151,7 @@ class GameState:
     away_score: int = 0
     quarter: str = "PRE"
     lifecycle: str = "PRE_GAME"
-    game_clock: ClockValue = ClockValue(MAX_GAME_CLOCK_SECONDS)
+    game_clock: ClockValue = ClockValue(MAX_PREGAME_CLOCK_SECONDS, False, MAX_PREGAME_CLOCK_SECONDS)
     play_clock: ClockValue = ClockValue(0.0, False, MAX_PLAY_CLOCK_SECONDS)
     event_countdown: ClockValue = ClockValue(
         MAX_EVENT_COUNTDOWN_SECONDS, False, MAX_EVENT_COUNTDOWN_SECONDS
@@ -174,7 +177,14 @@ class GameState:
             raise StateValidationError(f"invalid event phase: {self.event_phase!r}")
         if not isinstance(self.game_clock, ClockValue):
             raise StateValidationError("game_clock must be a ClockValue")
-        if self.game_clock.maximum_seconds != MAX_GAME_CLOCK_SECONDS:
+        # Older persisted games and deliberately constructed test/recovery
+        # states may retain the previous 12:00 maximum while labelled PRE.
+        # New games always use 30:00 there; accepting both known maxima keeps a
+        # version upgrade from making an otherwise recoverable game unreadable.
+        if self.game_clock.maximum_seconds not in (
+            MAX_GAME_CLOCK_SECONDS,
+            MAX_PREGAME_CLOCK_SECONDS,
+        ):
             raise StateValidationError("game_clock has an invalid maximum")
         if not isinstance(self.play_clock, ClockValue):
             raise StateValidationError("play_clock must be a ClockValue")

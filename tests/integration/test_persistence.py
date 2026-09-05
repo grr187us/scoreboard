@@ -374,7 +374,7 @@ class ShutdownTests(TemporaryDataDirectoryTest):
         self.assertTrue(status.saved)
         stored = read_stored_game(self.paths.database)
         self.assertEqual(stored.checkpoint_kind, "SHUTDOWN")
-        self.assertAlmostEqual(stored.state.game_clock.seconds, 720.0 - 12.5, places=6)
+        self.assertAlmostEqual(stored.state.game_clock.seconds, 1800.0 - 12.5, places=6)
         self.assertEqual(read_action_history(self.paths.database)[-1]["command"], "session_shutdown")
 
 

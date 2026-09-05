@@ -53,13 +53,13 @@ class AcceptedCommandContractTests(unittest.TestCase):
             ),
             ("home direct set", lambda s, f: None, cmd.set_score("home", 21)),
             ("home name", lambda s, f: None, cmd.set_team_name("home", "Tigers")),
-            ("quarter forward", lambda s, f: None, cmd.quarter_forward()),
+            ("quarter forward", lambda s, f: None, cmd.quarter_forward(confirmed=True)),
             (
                 "quarter back",
-                lambda s, f: s.submit(cmd.set_quarter("2nd")),
-                cmd.quarter_back(),
+                lambda s, f: s.submit(cmd.set_quarter("2nd", confirmed=True)),
+                cmd.quarter_back(confirmed=True),
             ),
-            ("quarter direct", lambda s, f: None, cmd.set_quarter("3rd")),
+            ("quarter direct", lambda s, f: None, cmd.set_quarter("3rd", confirmed=True)),
             (
                 "undo",
                 lambda s, f: s.submit(cmd.add_score("home", 6)),
@@ -155,7 +155,7 @@ class RejectedCommandContractTests(unittest.TestCase):
             ("quarter back from PRE", lambda s, f: None, cmd.quarter_back(), cmd.QUARTER_OUT_OF_RANGE),
             (
                 "quarter forward from FINAL",
-                lambda s, f: s.submit(cmd.set_quarter("FINAL")),
+                lambda s, f: s.submit(cmd.set_quarter("FINAL", confirmed=True)),
                 cmd.quarter_forward(),
                 cmd.QUARTER_OUT_OF_RANGE,
             ),
@@ -175,7 +175,7 @@ class RejectedCommandContractTests(unittest.TestCase):
             (
                 "game clock above the quarter length",
                 lambda s, f: None,
-                cmd.game_clock_correct(800.0),
+                cmd.game_clock_correct(1801.0),
                 cmd.INVALID_CLOCK_TIME,
             ),
             (
@@ -334,8 +334,8 @@ class UndoTests(unittest.TestCase):
 
     def test_undo_restores_the_previous_quarter(self) -> None:
         service, _ = make_service()
-        service.submit(cmd.set_quarter("2nd"))
-        service.submit(cmd.quarter_forward())
+        service.submit(cmd.set_quarter("2nd", confirmed=True))
+        service.submit(cmd.quarter_forward(confirmed=True))
         self.assertEqual(service.state.quarter, "HALF")
 
         result = service.submit(cmd.undo())
@@ -382,7 +382,7 @@ class UndoTests(unittest.TestCase):
 
     def test_a_confirmed_quarter_change_cannot_be_undone(self) -> None:
         service, fake = make_service()
-        service.submit(cmd.set_quarter("2nd"))
+        service.submit(cmd.set_quarter("2nd", confirmed=True))
         service.submit(cmd.game_clock_start())
         fake.advance(30.0)
         service.submit(cmd.quarter_forward(confirmed=True))
@@ -396,13 +396,14 @@ class UndoTests(unittest.TestCase):
 
 
 class QuarterTests(unittest.TestCase):
-    def test_quarter_change_applies_immediately_while_both_clocks_are_stopped(self) -> None:
+    def test_quarter_change_confirms_while_both_clocks_are_stopped(self) -> None:
         service, fake = make_service()
 
-        result = service.submit(cmd.quarter_forward())
+        prompt = service.submit(cmd.quarter_forward())
+        result = service.submit(cmd.quarter_forward(confirmed=True))
 
         self.assertTrue(result.accepted)
-        self.assertFalse(result.confirmation_required)
+        self.assertTrue(prompt.confirmation_required)
         self.assertEqual(result.state.quarter, "1st")
         self.assertFalse(result.state.game_clock.running)
         self.assertFalse(result.state.play_clock.running)
@@ -412,7 +413,7 @@ class QuarterTests(unittest.TestCase):
             with self.subTest(label=label):
                 service, _ = make_service()
 
-                result = service.submit(cmd.set_quarter(label))
+                result = service.submit(cmd.set_quarter(label, confirmed=True))
 
                 self.assertTrue(result.accepted)
                 self.assertEqual(result.state.quarter, label)
@@ -440,7 +441,7 @@ class QuarterTests(unittest.TestCase):
         self.assertEqual(second.state.quarter, "1st")
         self.assertFalse(second.state.game_clock.running)
         self.assertFalse(second.state.play_clock.running)
-        self.assertAlmostEqual(second.state.game_clock.seconds, 700.0)
+        self.assertAlmostEqual(second.state.game_clock.seconds, 720.0)
 
     def test_running_play_clock_alone_also_requires_confirmation(self) -> None:
         service, fake = make_service()
@@ -463,10 +464,10 @@ class QuarterTests(unittest.TestCase):
 
     def test_live_quarter_transition_at_zero_loads_the_full_stopped_clock_and_blocks_undo(self) -> None:
         service, _ = make_service()
-        service.submit(cmd.set_quarter("1st"))
+        service.submit(cmd.set_quarter("1st", confirmed=True))
         service.submit(cmd.game_clock_correct(0.0))
 
-        result = service.submit(cmd.quarter_forward())
+        result = service.submit(cmd.quarter_forward(confirmed=True))
 
         self.assertTrue(result.accepted)
         self.assertEqual(result.state.quarter, "2nd")
@@ -478,10 +479,10 @@ class QuarterTests(unittest.TestCase):
 
     def test_live_quarter_transition_preserves_a_nonzero_game_clock(self) -> None:
         service, _ = make_service()
-        service.submit(cmd.set_quarter("1st"))
+        service.submit(cmd.set_quarter("1st", confirmed=True))
         service.submit(cmd.game_clock_correct(5 * 60 + 30))
 
-        result = service.submit(cmd.quarter_forward())
+        result = service.submit(cmd.quarter_forward(confirmed=True))
 
         self.assertTrue(result.accepted)
         self.assertEqual(result.state.quarter, "2nd")
@@ -489,15 +490,15 @@ class QuarterTests(unittest.TestCase):
 
     def test_non_live_quarter_does_not_reset_but_halftime_to_live_does(self) -> None:
         service, _ = make_service()
-        service.submit(cmd.set_quarter("2nd"))
+        service.submit(cmd.set_quarter("2nd", confirmed=True))
         service.submit(cmd.game_clock_correct(0.0))
 
-        halftime = service.submit(cmd.quarter_forward())
+        halftime = service.submit(cmd.quarter_forward(confirmed=True))
         self.assertTrue(halftime.accepted)
         self.assertEqual(halftime.state.quarter, "HALF")
         self.assertAlmostEqual(halftime.state.game_clock.seconds, 0.0)
 
-        second_half = service.submit(cmd.set_quarter("3rd"))
+        second_half = service.submit(cmd.set_quarter("3rd", confirmed=True))
         self.assertTrue(second_half.accepted)
         self.assertEqual(second_half.state.quarter, "3rd")
         self.assertFalse(second_half.state.game_clock.running)
@@ -505,10 +506,10 @@ class QuarterTests(unittest.TestCase):
 
     def test_quarter_back_applies_the_same_live_quarter_zero_rule(self) -> None:
         service, _ = make_service()
-        service.submit(cmd.set_quarter("HALF"))
+        service.submit(cmd.set_quarter("HALF", confirmed=True))
         service.submit(cmd.game_clock_correct(0.0))
 
-        result = service.submit(cmd.quarter_back())
+        result = service.submit(cmd.quarter_back(confirmed=True))
 
         self.assertTrue(result.accepted)
         self.assertEqual(result.state.quarter, "2nd")
@@ -534,7 +535,7 @@ class LifecycleTests(unittest.TestCase):
         service.submit(cmd.set_team_name("home", "Tigers"))
         service.submit(cmd.set_team_name("away", "Eagles"))
         self.assertTrue(service.submit(cmd.set_score("home", 21)).accepted)
-        service.submit(cmd.set_quarter("3rd"))
+        service.submit(cmd.set_quarter("3rd", confirmed=True))
         service.submit(cmd.game_clock_start())
         running_play_clock(service, fake, 25.0)
         fake.advance(12.0)
@@ -567,7 +568,7 @@ class LifecycleTests(unittest.TestCase):
         service.submit(cmd.set_team_name("home", "Tigers"))
         self.assertTrue(service.submit(cmd.set_score("home", 21)).accepted)
         self.assertTrue(service.submit(cmd.set_score("away", 14)).accepted)
-        service.submit(cmd.set_quarter("4th"))
+        service.submit(cmd.set_quarter("4th", confirmed=True))
         service.submit(cmd.game_clock_start())
         running_play_clock(service, fake, 25.0)
         fake.advance(10.0)
@@ -676,7 +677,7 @@ class GameClockCommandTests(unittest.TestCase):
         self.assertTrue(result.accepted)
         self.assertFalse(result.state.game_clock.running)
         self.assertAlmostEqual(
-            result.state.game_clock.seconds, GameClock().reset().remaining_at(0.0)
+            result.state.game_clock.seconds, 1800.0
         )
 
     def test_correction_stops_the_clock_and_applies_the_validated_value(self) -> None:
@@ -709,10 +710,10 @@ class GameClockCommandTests(unittest.TestCase):
         self.assertTrue(second.accepted)
         self.assertEqual(service.revision, revision_before + 2)
         self.assertTrue(service.state.game_clock.running)
-        self.assertAlmostEqual(first.state.game_clock.seconds, 715.0)
-        self.assertAlmostEqual(second.state.game_clock.seconds, 715.0)
+        self.assertAlmostEqual(first.state.game_clock.seconds, 1795.0)
+        self.assertAlmostEqual(second.state.game_clock.seconds, 1795.0)
         fake.advance(10.0)
-        self.assertAlmostEqual(service.game_clock.remaining_at(), 705.0)
+        self.assertAlmostEqual(service.game_clock.remaining_at(), 1785.0)
 
     def test_repeated_stop_is_idempotent(self) -> None:
         service, fake = make_service()
@@ -724,7 +725,7 @@ class GameClockCommandTests(unittest.TestCase):
 
         self.assertTrue(result.accepted)
         self.assertFalse(result.state.game_clock.running)
-        self.assertAlmostEqual(result.state.game_clock.seconds, 712.75)
+        self.assertAlmostEqual(result.state.game_clock.seconds, 1792.75)
 
 
 class PlayClockCommandTests(unittest.TestCase):
@@ -923,12 +924,12 @@ class SerializationAndTimeSourceTests(unittest.TestCase):
         # Without advancing the fake clock, no time passes at all.
         for _ in range(5):
             result = service.submit(cmd.add_score("home", 1))
-            self.assertAlmostEqual(result.state.game_clock.seconds, 720.0)
+            self.assertAlmostEqual(result.state.game_clock.seconds, 1800.0)
             self.assertAlmostEqual(result.state.play_clock.seconds, 25.0)
 
         fake.advance(9.0)
         result = service.submit(cmd.add_score("home", 1))
-        self.assertAlmostEqual(result.state.game_clock.seconds, 711.0)
+        self.assertAlmostEqual(result.state.game_clock.seconds, 1791.0)
         self.assertAlmostEqual(result.state.play_clock.seconds, 16.0)
 
     def test_engines_are_replaced_not_mutated(self) -> None:

@@ -319,6 +319,12 @@ def _clock_view(seconds: float, running: bool, display: str) -> dict[str, Any]:
     }
 
 
+def _spectator_quarter_label(label: str) -> str:
+    """Expand only live-period labels; state keeps the compact football code."""
+
+    return f"{label} Quarter" if label in {"1st", "2nd", "3rd", "4th"} else label
+
+
 def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
     """The previous reversible command and whether Undo can reverse it (U-008)."""
 
@@ -343,7 +349,17 @@ def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
 def spectator_view_model(state: GameState) -> dict[str, Any]:
     """Everything the spectator window renders. It requests nothing else."""
 
-    countdown_phase = event_phase_for(state.event_phase, state.event_countdown.seconds)
+    # PRE has one authoritative countdown: the game-clock engine. The event
+    # engine remains the independent halftime interval timer.
+    pregame = state.lifecycle == "PRE_GAME"
+    event_value = state.game_clock if pregame else state.event_countdown
+    countdown_phase = "PREGAME" if pregame else event_phase_for(
+        state.event_phase, event_value.seconds
+    )
+    play_display = format_play_clock(
+        state.play_clock.seconds,
+        blank_at_zero=state.play_clock_cleared,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "revision": state.revision,
@@ -352,6 +368,9 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
             "away": {"name": state.away_name, "score": state.away_score},
         },
         "quarter": state.quarter,
+        # The saved/game-rule label remains compact (for example, ``2nd``),
+        # while this spectator-only field carries the complete human wording.
+        "quarter_display": _spectator_quarter_label(state.quarter),
         "lifecycle": state.lifecycle,
         "clocks": {
             "game": _clock_view(
@@ -362,17 +381,15 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
             "play": _clock_view(
                 state.play_clock.seconds,
                 state.play_clock.running,
-                # A cleared play clock is a blank area, not a zero (F-048).
-                format_play_clock(
-                    state.play_clock.seconds,
-                    blank_at_zero=state.play_clock_cleared,
-                ),
+                # A cleared clock is visually distinct from a naturally
+                # expired 0.0, but its label always remains on the board.
+                play_display if play_display else "—",
             ),
             "event": {
                 **_clock_view(
-                    state.event_countdown.seconds,
-                    state.event_countdown.running,
-                    format_event_countdown(state.event_countdown.seconds),
+                    event_value.seconds,
+                    event_value.running,
+                    format_event_countdown(event_value.seconds),
                 ),
                 "phase": countdown_phase,
                 "title": "KICKOFF IN" if countdown_phase == "PREGAME" else "UNTIL SECOND HALF",
@@ -767,6 +784,7 @@ class ScoreboardBridge:
                 "old_value": result.event.old_value,
                 "new_value": result.event.new_value,
             },
+            "confirmation": None if result is None else result.confirmation,
             "view": self._view(),
         }
 

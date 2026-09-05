@@ -193,6 +193,9 @@ class CommandResult:
     event: EventIntent | None = None
     error: CommandError | None = None
     confirmation_required: bool = False
+    #: Presentation metadata for a server-required confirmation.  It is
+    #: descriptive only: Python still validates the resubmitted command.
+    confirmation: dict[str, str] | None = None
 
     @property
     def revision(self) -> int:

@@ -294,7 +294,7 @@ class BridgeFolderTests(TemporaryDataDirectoryTest):
         payload = self.bridge.choose_data_folder()
 
         self.assertTrue(payload["view"]["clocks"]["game"]["running"])
-        self.assertEqual(payload["view"]["clocks"]["game"]["display"], "11:58")
+        self.assertEqual(payload["view"]["clocks"]["game"]["display"], "29:58")
 
     def test_the_payload_carries_the_current_location(self) -> None:
         payload = self.bridge.choose_data_folder()

@@ -278,7 +278,7 @@ class ConfirmationTests(BridgeTestCase):
         result = self.send("quarter_forward", {})
 
         self.assertTrue(result["confirmation_required"])
-        self.assertIn("stop both clocks", result["error"]["message"])
+        self.assertIn("will stop", result["error"]["message"])
         self.assertEqual(self.service.revision, before)
         self.assertTrue(result["view"]["clocks"]["game"]["running"])
         self.assertEqual(result["view"]["quarter"], "PRE")
@@ -294,11 +294,13 @@ class ConfirmationTests(BridgeTestCase):
         self.assertFalse(result["view"]["clocks"]["game"]["running"])
         self.assertFalse(result["view"]["clocks"]["play"]["running"])
 
-    def test_a_quarter_change_while_stopped_needs_no_confirmation(self) -> None:
+    def test_a_quarter_change_while_stopped_still_needs_confirmation(self) -> None:
         result = self.send("quarter_forward", {})
 
-        self.assertTrue(result["accepted"])
-        self.assertEqual(result["view"]["quarter"], "1st")
+        self.assertFalse(result["accepted"])
+        self.assertTrue(result["confirmation_required"])
+        self.assertEqual(result["confirmation"]["accept_label"],
+                         "Start 1st quarter — discard remaining pregame time")
 
     def test_the_page_offers_a_cancel_and_a_confirm(self) -> None:
         self.assertIn('id="confirm-cancel"', OPERATOR_HTML)
@@ -423,7 +425,7 @@ class HealthStripTests(BridgeTestCase):
         view = self.bridge.get_snapshot()
 
         self.assertTrue(view["clocks"]["game"]["running"])
-        self.assertEqual(view["clocks"]["game"]["display"], "11:55")
+        self.assertEqual(view["clocks"]["game"]["display"], "29:55")
 
     def test_reopening_marks_the_display_open_again(self) -> None:
         self.bridge.display_closed()
@@ -560,7 +562,7 @@ class JsonBoundaryTests(BridgeTestCase):
     def test_clock_values_are_formatted_by_python_not_javascript(self) -> None:
         view = self.bridge.get_snapshot()
 
-        self.assertEqual(view["clocks"]["game"]["display"], "12:00")
+        self.assertEqual(view["clocks"]["game"]["display"], "30:00")
         self.assertEqual(view["clocks"]["event"]["display"], "30:00")
         self.assertEqual(view["clocks"]["event"]["title"], "KICKOFF IN")
         # The page renders these strings; it does not build them.
@@ -586,7 +588,7 @@ class SpectatorBridgeTests(BridgeTestCase):
 
         json.dumps(snapshot, allow_nan=False)
         self.assertEqual(snapshot["teams"]["home"]["score"], 6)
-        self.assertEqual(snapshot["clocks"]["game"]["display"], "12:00")
+        self.assertEqual(snapshot["clocks"]["game"]["display"], "30:00")
 
     def test_the_spectator_page_carries_no_control(self) -> None:
         self.assertNotIn("data-command", SPECTATOR_HTML)
@@ -621,7 +623,7 @@ class TickTests(BridgeTestCase):
         self.monotonic.advance(1.5)
         view = self.bridge.tick()
 
-        self.assertEqual(view["clocks"]["game"]["display"], "11:59")
+        self.assertEqual(view["clocks"]["game"]["display"], "29:59")
         self.assertTrue(view["clocks"]["game"]["running"])
 
     def test_a_failing_checkpoint_does_not_stop_the_clock(self) -> None:
@@ -696,7 +698,7 @@ class ExpirationHistoryTests(BridgeTestCase):
 
         self.assertFalse(view["clocks"]["game"]["running"])
         self.assertFalse(view["clocks"]["play"]["running"])
-        self.assertEqual(view["clocks"]["play"]["display"], "")
+        self.assertEqual(view["clocks"]["play"]["display"], "—")
         self.assertEqual(self.service.revision, revision)
         commands = [row["command"] for row in read_action_history(self.paths.database)]
         self.assertIn("game_clock_expired", commands)
@@ -718,7 +720,7 @@ class ExpirationHistoryTests(BridgeTestCase):
         self.monotonic.advance(3.0)
         later = self.bridge.tick()
         self.assertFalse(later["clocks"]["play"]["running"])
-        self.assertEqual(later["clocks"]["play"]["display"], "")
+        self.assertEqual(later["clocks"]["play"]["display"], "—")
 
     def test_the_revision_is_not_advanced_by_an_expiration(self) -> None:
         self.send("game_clock_correct", {"seconds": 2.0})

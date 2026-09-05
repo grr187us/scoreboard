@@ -176,9 +176,15 @@ body {
   color: var(--ink-dim);
 }
 
-/* Running/stopped is text first; the border is supplementary. */
-.state.running {
+/* Running/stopped is text first; colour is a supplementary rapid cue. */
+.clock.big.running-game,
+.state.running-game {
   color: var(--ok);
+}
+
+.clock.big.running-play,
+.state.running-play {
+  color: var(--danger);
 }
 
 .pair {

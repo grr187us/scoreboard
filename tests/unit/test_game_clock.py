@@ -16,13 +16,13 @@ class FakeMonotonic:
 
 
 class GameClockTests(unittest.TestCase):
-    def test_initial_stopped_12_00_state(self) -> None:
+    def test_initial_stopped_30_00_pregame_state(self) -> None:
         state = default_state()
         clock = GameClock.from_state(state)
 
-        self.assertEqual(state.game_clock.seconds, 720.0)
+        self.assertEqual(state.game_clock.seconds, 1800.0)
         self.assertFalse(state.game_clock.running)
-        self.assertEqual(clock.remaining_at(), 720.0)
+        self.assertEqual(clock.remaining_at(), 1800.0)
         self.assertFalse(clock.running)
 
     def test_start_stop_behavior(self) -> None:

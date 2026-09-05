@@ -41,7 +41,7 @@
     <section class="clocks" aria-label="Clocks">
       <div class="clock-block">
         <h2>GAME CLOCK</h2>
-        <p class="clock big" data-field="clocks.game.display">12:00</p>
+        <p class="clock big" id="game-display" data-field="clocks.game.display">12:00</p>
         <p class="state" id="game-state" data-field="clocks.game.status">STOPPED</p>
         <div class="pair">
           <button type="button" id="game-start" data-command="game_clock_start">START</button>
@@ -96,7 +96,7 @@
 
   <footer class="tools">
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
-    <button type="button" id="open-event" data-action="open_event">Pregame / Halftime &#9656;</button>
+    <button type="button" id="open-event" data-action="open_event">Halftime &#9656;</button>
     <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
     <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
     <span class="spacer"></span>
@@ -212,21 +212,20 @@
     </div>
   </div>
 
-  <div class="drawer" id="event-drawer" hidden aria-label="Pregame and halftime countdown">
+  <div class="drawer" id="event-drawer" hidden aria-label="Halftime countdown">
     <div class="drawer-panel">
-      <h2>PREGAME / HALFTIME COUNTDOWN</h2>
-      <p class="hint">This countdown never starts, stops, or resets the game or play clock.</p>
+      <h2>HALFTIME COUNTDOWN</h2>
+      <p class="hint">Pregame is controlled by Game Clock. This separate countdown runs only halftime.</p>
 
       <div class="row">
-        <span class="row-label"><span data-field="clocks.event.title">KICKOFF IN</span>
-          <span class="clock" data-field="clocks.event.display">30:00</span>
+        <span class="row-label"><span data-field="clocks.event.title">UNTIL SECOND HALF</span>
+          <span class="clock" data-field="clocks.event.display">15:00</span>
           <span class="state" data-field="clocks.event.status">STOPPED</span>
           <span class="state" data-field="clocks.event.phase">PREGAME</span></span>
       </div>
 
       <div class="row">
-        <span class="row-label">Select</span>
-        <button type="button" data-command="event_countdown_select" data-label="PREGAME">Pregame 30:00</button>
+        <span class="row-label">Load</span>
         <button type="button" data-command="event_countdown_select" data-label="HALFTIME">Halftime 15:00</button>
       </div>
 
@@ -239,7 +238,7 @@
 
       <div class="row">
         <span class="row-label">Edit current time</span>
-        <input type="number" id="event-minutes" min="0" max="30" step="1" value="15" data-draft="true"
+        <input type="number" id="event-minutes" min="0" max="15" step="1" value="15" data-draft="true"
                aria-label="Countdown minutes">
         <span>:</span>
         <input type="number" id="event-seconds" min="0" max="59" step="1" value="0" data-draft="true"

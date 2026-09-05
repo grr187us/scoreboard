@@ -105,7 +105,7 @@ class RecoveryChoiceTests(ApplicationTestCase):
         self.assertEqual(view["teams"]["home"]["score"], 6)
         self.assertFalse(view["clocks"]["game"]["running"])
         self.assertEqual(view["clocks"]["game"]["status"], "STOPPED")
-        self.assertEqual(view["clocks"]["game"]["display"], "11:40")
+        self.assertEqual(view["clocks"]["game"]["display"], "29:40")
 
     def test_starting_new_after_a_crash_archives_rather_than_deletes(self) -> None:
         self.saved_game()
@@ -158,7 +158,7 @@ class RefreshTests(ApplicationTestCase):
         self.assertTrue(bridge.get_snapshot()["health"]["persistence"]["saved"])
         stored = read_stored_game(self.paths.database)
         self.assertIsNotNone(stored)
-        self.assertAlmostEqual(stored.state.game_clock.seconds, 719.0, places=6)
+        self.assertAlmostEqual(stored.state.game_clock.seconds, 1799.0, places=6)
 
     def test_a_tick_publishes_to_both_windows(self) -> None:
         application = self.make_application()
@@ -175,7 +175,7 @@ class RefreshTests(ApplicationTestCase):
         self.assertEqual(names, ["operator", "spectator"])
         operator_view = published[0][1]
         spectator_view = published[1][1]
-        self.assertEqual(operator_view["clocks"]["game"]["display"], "11:57")
+        self.assertEqual(operator_view["clocks"]["game"]["display"], "29:57")
         self.assertEqual(spectator_view["clocks"]["game"]["display"], "11:57")
         self.assertIn("health", operator_view)
         self.assertNotIn("health", spectator_view)
@@ -220,7 +220,7 @@ class ShutdownTests(ApplicationTestCase):
 
         stored = read_stored_game(self.paths.database)
         self.assertEqual(stored.checkpoint_kind, "SHUTDOWN")
-        self.assertAlmostEqual(stored.state.game_clock.seconds, 711.0, places=6)
+        self.assertAlmostEqual(stored.state.game_clock.seconds, 1791.0, places=6)
         # The lock is free again, so the next launch is not blocked.
         second = ScoreboardApplication(
             self.paths, diagnostics=NullDiagnostics(), acquire_lock=True

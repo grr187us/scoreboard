@@ -1,5 +1,6 @@
 /* One proportional canvas. Override --safe-inset for measured stadium overscan. */
-:root { --safe-inset: 4%; --canvas-width: min(100vw, 177.777778vh); }
+:root { --safe-inset: 4%; --canvas-width: min(100vw, 177.777778vh);
+  --game-running: #57e6a4; --play-running: #ff7474; }
 * { box-sizing: border-box; }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff; }
 body { display: grid; place-items: center; font-family: Arial, sans-serif; }
@@ -18,6 +19,8 @@ p { margin: 0; }
 .play { align-self: center; white-space: nowrap; }
 .play-clock { font-size: calc(var(--canvas-width) * .085); font-weight: 700; }
 .label { font-size: calc(var(--canvas-width) * .028); }
+.game-clock.running-game { color: var(--game-running); }
+.play-clock.running-play { color: var(--play-running); }
 .score, .game-clock, .play-clock, .event-clock { font-variant-numeric: tabular-nums; }
 #event-board { height: 100%; display: flex; flex-direction: column; justify-content: center;
   align-items: center; text-align: center; gap: calc(var(--canvas-width) * .018); }

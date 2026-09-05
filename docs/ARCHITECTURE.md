@@ -111,18 +111,20 @@ Publishing complete small snapshots is simpler and safer than applying a chain o
 
 Accepted quarter changes, including quarter Undo, set lifecycle from the manual
 label: PRE/PRE_GAME, HALF/HALFTIME, FINAL/FINAL, otherwise IN_PROGRESS.
-A game-clock Start that actually runs while pregame/halftime enters IN_PROGRESS.
+A Game Clock Start while PRE runs only the kickoff countdown and remains PRE_GAME;
+an accepted quarter transition enters IN_PROGRESS.
 New Game restores PRE_GAME; End Game sets FINAL. Expiry never advances it.
 Entering PRE or HALF selects the corresponding event preset only when the event
 kind differs; an already selected countdown retains its current value. This
 uses EventCountdown.select and does not reset the game/play clocks.
 
-Quarter transitions apply one narrow game-clock default: after stopping clocks
-when required, landing on `1st`, `2nd`, `3rd`, `4th`, or `OT` loads a stopped
-12:00 game clock only if its resulting value is `0:00`. It never overwrites a
-nonzero clock and never applies to PRE, HALF, or FINAL. This reset makes the
-quarter transition non-undoable because quarter-only Undo cannot restore the
-former zero clock.
+Every quarter command is a two-step, expected-revision-protected operation.
+Its Python-generated confirmation describes source/target, clocks that will
+stop, and any clock load. PRE to a live quarter discards the pregame value and
+loads stopped 12:00; PRE to 1st with time remaining carries the exact stronger
+accept label `Start 1st quarter — discard remaining pregame time`. A normal
+live-quarter transition loads 12:00 only from zero. Clock-loading transitions
+are non-undoable because quarter-only Undo cannot restore their prior value.
 
 The state and persisted snapshot carry an additive boolean `play_clock_cleared`.
 Preset/correction makes it false; manual clear and a stopped-to-running game
@@ -155,9 +157,9 @@ Game-clock and play-clock Edit Current Time commands first materialize and stop 
 
 Presentation formatting is a pure derived function; it never changes stored time. Whole seconds and displayed tenths round upward so the board never understates time remaining. Game-clock tenths begin only when the rounded-tenths value is below 60.0; play-clock tenths begin only when it is below 5.0. This keeps `1:00` visible through 59.91–59.99 seconds and `5` visible through 4.91–4.99 seconds before the first `59.9` or `4.9` display.
 
-Game and play clocks are separate instances under one coordinator. A quarter-change command may stop both and, only when landing on a live-quarter label with a resulting zero game clock, reset that clock to its stopped default; no UI timer controls either clock implicitly. Play-clock presets have both load-stopped commands and atomic preset-and-start commands, so an operator action never relies on a second request using a potentially stale revision. Pregame and interval countdowns use the same injected monotonic model but are separately modeled lifecycle timers: a 30:00 `KICKOFF IN` countdown and a 15:00 `UNTIL SECOND HALF` countdown whose presentation phase changes from `HALFTIME` to `WARMUP` at 3:00. They never mutate the game or play clock. Each exposes explicit Start, Stop, Reset, and validated Edit Current Time commands; an edit includes a deliberate `start_after_apply` option that defaults false.
+Game and play clocks are separate instances under one coordinator. In PRE, that same authoritative Game Clock engine is configured to 30:00 and rendered as `KICKOFF IN`; it has no play-clock coupling and expiry remains PRE. An accepted departure from PRE replaces it with the applicable stopped live-quarter value. Halftime remains the separate 15:00 `UNTIL SECOND HALF` interval engine, changing presentation phase from `HALFTIME` to `WARMUP` at 3:00. All engines use the injected monotonic model; JavaScript only renders Python's formatted snapshot.
 
-The deliberate game/play-clock couplings are transition-specific. A game-clock transition from stopped to running stops and clears the play clock, producing a blank spectator play-clock area; a redundant Start has no effect. A real game-clock transition from running to stopped through the explicit Stop command or natural expiry also clears a running play clock; a redundant Stop while the game clock was already stopped leaves an independent play clock alone. The natural-expiry observation runs under the bridge command lock, commits the play-clock engine clear without advancing the state revision, and records the game expiry plus system-caused clear in one persistence transaction. Otherwise the play clock remains independent and may expire at zero. No clock expiration emits an alarm, alert, or automatic lifecycle change; an expected play-clock zero remains visibly `0.0` until an operator clears or changes it.
+The deliberate game/play-clock couplings apply only in live quarters. A live Game Clock stopped-to-running transition clears the play clock; its real running-to-stopped Stop/expiry transition clears it too. PRE Start, Stop, and expiry never invoke those couplings. No expiry emits an alarm or automatic quarter transition.
 
 ## 8. View bridge and process model
 

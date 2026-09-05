@@ -16,7 +16,7 @@ Phase 2 is operated from one laptop by the primary operator. A second person is 
 | Frequency/risk | Controls | Treatment |
 |---|---|---|
 | Constant, time-critical | Game Start/Stop; play-clock 25/40; score `+1/+2/+3/+6` | Large, always visible, one action, keyboard-accessible |
-| Frequent | Quarter next; Undo | Visible on main screen; confirmation if clocks are running |
+| Frequent | Quarter next; Undo | Visible on main screen; every quarter move confirms |
 | Corrective | Score minus/direct set; clock edit; quarter back/direct set | Collapsed correction drawer with old/new preview |
 | Pregame | Team names; quarter length; display choice; shortcut help | Setup panel before the game; locked/collapsed during play |
 | Dangerous | New Game; reset game clock; End Game | Separate danger area with confirmation or hold/arm pattern |
@@ -36,7 +36,7 @@ Color is supplemental, not the only state signal. Text labels such as `RUNNING`,
 │                         │       12:00        │  GAME                         │
 │                         └────────────────────┘                               │
 │                                                                              │
-│                 1st                         PLAY 40                           │
+│            1st Quarter                   PLAY CLOCK 40                         │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -83,7 +83,9 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Do not require scrolling for live controls at 1366×768 and 100%/125% scaling.
 - Keep team controls spatially mirrored but use explicit HOME/AWAY names on every correction.
 - Use separate Start and Stop buttons. Disable or visually de-emphasize the action that is already true.
-- Show running/stopped text next to each clock; do not rely on button color.
+- Show running/stopped text next to each clock; do not rely on color alone. A
+  running game clock is green and a running play clock is red as rapid
+  supplementary cues.
 - Show the last reversible action and Undo without opening a menu.
 - A display-health failure must take over the health strip but must not obscure clocks or controls.
 
@@ -109,18 +111,17 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 1. Launch the application once; both windows open.
 2. If recoverable state exists, choose `Resume recovered game` or `Start new game`. Recovered clocks are stopped.
 3. Select the spectator display from the settings panel and enter fullscreen.
-4. Enter home and away names; verify the confirmed 12:00 quarter length and the selected clock-display preference.
-5. Verify 0–0, `PRE`, stopped game clock, stopped play clock, `DISPLAY OPEN`, and `STATE SAVED` on the operator view.
+4. Enter home and away names; verify the stopped 30:00 PRE Game Clock and selected display.
+5. Verify 0–0, `PRE`, `KICKOFF IN 30:00`, stopped play clock, `DISPLAY OPEN`, and `STATE SAVED`.
 6. Visually confirm the spectator display and run a short score/clock rehearsal, then restore the starting state through `New Game`.
 
 ### 6.1a Pregame, halftime, and warmup presentation
 
-- Quarter selection controls presentation: PRE shows the event countdown, HALF shows the interval, and playing quarters show the game board. Starting the game clock leaves pregame/interval presentation. Entering PRE/HALF loads its stopped preset only when switching countdown kind; an already selected countdown retains its value. No extra lifecycle control is required.
-- Before kickoff, the spectator display shows a labeled `KICKOFF IN` 30:00 countdown. This is separate from the stopped 12:00 game clock.
+- PRE renders the authoritative Game Clock as `KICKOFF IN 30:00`; the operator Game Clock card shows that same value and state. HALF shows the separate interval, and playing quarters show the game board.
+- Before kickoff, Game Clock Start/Stop/Reset/Edit control only the PRE countdown. It does not enter 1st quarter or affect the play clock; natural expiry remains PRE at `0:00`.
 - At halftime, the spectator display shows one `UNTIL SECOND HALF` 15:00 countdown. While more than 3:00 remains it labels the current phase `HALFTIME` and visibly states `Warmup follows: 3:00`.
 - At 3:00, the same countdown continues without a reset and its current-phase label changes to `WARMUP`.
-- These countdowns are operator-controlled, use the same reliable timing model as game clocks, and do not start, stop, or reset the game or play clock.
-- Each event countdown provides Start, Stop, Reset, and `Edit Current Time`. Editing opens a confirmation with a `Start after applying?` radio choice; `Remain stopped` is selected by default.
+- The halftime countdown uses the same reliable timing model but remains a separate control. Pregame has no second countdown control.
 
 ### 6.2 Start and stop the game clock
 
@@ -139,8 +140,7 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 - The game clock is unchanged.
 - The play clock uses the same upward presentation rule and changes to tenths only once its rounded tenths value is below `5.0`; it stays at `5` until it can display `4.9`.
 - This is the stadium's only play-clock display, so the active value must remain prominent and display recovery must preserve it.
-- When the game clock transitions from stopped to running, the play clock is stopped and its spectator area becomes blank. Starting an already-running game clock does not affect it; it may then count to zero unless an operator clears or changes it.
-- When the game clock makes a real running-to-stopped transition through STOP or naturally reaches `0:00`, a running play clock also stops and becomes blank. A redundant STOP while the game clock was already stopped leaves an independently running play clock alone.
+- In `1st`–`4th`/`OT`, Game Clock start/stop coupling clears the play clock as documented. In PRE, Start/Stop/expiry control only the kickoff countdown.
 - No clock expiration produces an alarm. A play clock that reaches `0.0` while the game clock is already running remains visible there until the operator uses the deliberate clear control or issues another play-clock command.
 - `Edit Current Time` lives in Corrections: it stops the play clock if needed, validates the value, and offers `Start after applying?`; `Remain stopped` is the default.
 
@@ -160,8 +160,8 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 ### 6.6 Change quarters
 
 - Use next/back on the main screen or direct selection in Corrections.
-- If either clock is running, the application warns that both will stop; cancel is safe.
-- On confirmation, stop both clocks and change the quarter plus its matching lifecycle/presentation. If the target is `1st`, `2nd`, `3rd`, `4th`, or `OT` and the resulting game clock is `0:00`, load a stopped 12:00; preserve a nonzero clock. PRE, HALF, and FINAL do not load the game clock. A transition that loads 12:00 cannot be undone because Undo could not restore the former zero value.
+- Every path opens one Python-described confirmation, even with clocks stopped. It names source/target, the running clocks that will stop, and any clock value that loads; cancel sends no mutation.
+- With pregame time remaining, PRE → 1st uses the stronger accepting action `Start 1st quarter — discard remaining pregame time`. Acceptance discards PRE time, loads stopped 12:00, and enters normal first-quarter behavior. At PRE `0:00`, the normal confirmation is used. Direct selection and keyboard use the same expected-revision protection.
 
 ### 6.7 Recover after application restart/crash
 

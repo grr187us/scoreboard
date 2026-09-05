@@ -19,8 +19,12 @@ class SpectatorBrowserTests(unittest.TestCase):
                     event_countdown=ClockValue(s, False, 1800))) for s in (900, 181, 180, 0)]
         zero = spectator_view_model(replace(play, play_clock=ClockValue(0, False, 40)))
         blank = spectator_view_model(replace(play, play_clock=ClockValue(0, False, 40), play_clock_cleared=True))
+        running_game = spectator_view_model(replace(play, game_clock=ClockValue(700, True, 720)))
+        running_play = spectator_view_model(replace(play, play_clock=ClockValue(25, True, 40),
+                                                     play_clock_cleared=False))
         result = run_browser('spectator.cjs', {'games': games, 'events': events,
-                             'pregame': spectator_view_model(GameState()), 'zero': zero, 'blank': blank})
+                             'pregame': spectator_view_model(GameState()), 'zero': zero, 'blank': blank,
+                             'runningGame': running_game, 'runningPlay': running_play})
         self.assertEqual(result['cases'], 36)
 
     def test_renderer_contains_no_authoritative_computation_or_controls(self):

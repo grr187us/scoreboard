@@ -261,6 +261,25 @@ The remaining two criteria need hardware. [`DISPLAY_CHECKLIST.md`](DISPLAY_CHECK
 - Known defects, recovery time, and go/no-go recommendation are recorded.
 - Phase 2 is not marked complete until the stadium display rehearsal and fallback procedure pass.
 
+## Post-audit testing follow-ups — September 5, 2026
+
+Local test-window feedback is tracked as individual issues in
+[`../.scratch/testing-followups/`](../.scratch/testing-followups/). These are
+not silently folded into Task 12: the first two change a documented clock and
+quarter-safety workflow and need an owner decision before implementation.
+
+| Issue | Scope | Status | Recommended delivery |
+|---|---|---|---|
+| 01 — Pregame game-clock unification | Show/control the `30:00` pregame countdown through Game Clock; halftime remains separate | ✅ Bundle A implemented and verified September 5 | Delivered with 02 |
+| 02 — Quarter-transition safeguards | Confirm every quarter action; PRE → 1st time abandonment uses owner-approved action wording | ✅ Bundle A implemented and verified September 5 | Delivered with 01 |
+| 03 — Running-clock colors | Green running game clock; red running play clock, with text status retained | ✅ Implemented and verified September 5 | Delivered with 04 |
+| 04 — Persistent Play Clock label and quarter title | Show `PLAY CLOCK —` after a clear; render `2nd Quarter` and equivalent live labels | ✅ Implemented and verified September 5 | Delivered with 03 |
+| 05 — Presentation layout editor discovery | Safe, offline visual-editor research | Deferred to Phase 3 | Separate discovery/prototype |
+
+The owner explicitly considers routine scoring increments such as `+6` quick,
+reversible actions; do not add confirmation to them. Major time/lifecycle
+commands remain the safety focus.
+
 ## Backlog guardrail
 
 If a task reveals a later-phase request, record it in the roadmap and continue the current acceptance criteria unless the new information invalidates the architecture or safety. A visually attractive addition is not a reason to bypass clock, persistence, recovery, or packaging verification.

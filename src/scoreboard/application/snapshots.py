@@ -9,6 +9,8 @@ from scoreboard.domain.state import (
     APP_VERSION,
     ClockValue,
     GameState,
+    MAX_GAME_CLOCK_SECONDS,
+    MAX_PREGAME_CLOCK_SECONDS,
     StateValidationError,
     default_state,
 )
@@ -71,7 +73,11 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
             away_score=away["score"],
             quarter=snapshot["quarter"],
             lifecycle=snapshot["lifecycle"],
-            game_clock=ClockValue(game["seconds"], game["running"], 12 * 60),
+            game_clock=ClockValue(
+                game["seconds"],
+                game["running"],
+                MAX_PREGAME_CLOCK_SECONDS if snapshot["quarter"] == "PRE" else MAX_GAME_CLOCK_SECONDS,
+            ),
             play_clock=ClockValue(play["seconds"], play["running"], 40),
             event_countdown=ClockValue(event["seconds"], event["running"], 30 * 60),
             event_phase=snapshot["event_phase"],

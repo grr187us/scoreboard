@@ -64,11 +64,18 @@ async function main(data) {
         cases++;
       }
     }
-    for (const [model, expected] of [[data.zero,'0.0'],[data.blank,'']]) {
+    for (const [model, expected] of [[data.zero,'0.0'],[data.blank,'—']]) {
       await page.evaluate(model => window.applyView(model), model);
       assert.equal(await page.locator('.play-clock').textContent(), expected);
-      assert.equal(await page.locator('#play-label').isVisible(), expected !== '');
+      assert.equal(await page.locator('#play-label').isVisible(), true);
     }
+    await page.evaluate(model => window.applyView(model), data.runningGame);
+    assert.equal(await page.locator('#game-clock').evaluate(el => el.classList.contains('running-game')), true);
+    assert.equal(await page.locator('#play-clock').evaluate(el => el.classList.contains('running-play')), false);
+    await page.evaluate(model => window.applyView(model), data.runningPlay);
+    assert.equal(await page.locator('#game-clock').evaluate(el => el.classList.contains('running-game')), false);
+    assert.equal(await page.locator('#play-clock').evaluate(el => el.classList.contains('running-play')), true);
+    assert.equal(await page.locator('.quarter').textContent(), '4th Quarter');
     await page.evaluate(() => {
       window.originalBind = window.ScoreboardRender.bindFields;
       window.ScoreboardRender.bindFields = () => { throw new Error('injected'); };

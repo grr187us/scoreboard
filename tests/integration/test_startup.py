@@ -29,7 +29,7 @@ class StartupSurfaceTests(ApplicationTestCase):
         report = api.get_recovery()
         self.assertEqual(report['source'], 'PRIMARY')
         self.assertIsNotNone(report['checkpoint_at'])
-        self.assertEqual(report['view']['clocks']['game']['display'], '11:40')
+        self.assertEqual(report['view']['clocks']['game']['display'], '29:40')
         self.assertIsNone(app.service)
         self.assertEqual(before, read_action_history(self.paths.database))
 
