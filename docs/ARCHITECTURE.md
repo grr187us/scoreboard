@@ -8,14 +8,14 @@
 Build the MVP as a **single local Python application process** with:
 
 - a pure authoritative state/command core;
-- two monotonic, deadline-based clocks owned by that core;
-- local JSON configuration and atomic recovery snapshots;
-- an append-only structured event log;
+- monotonic, deadline-based game, play, and event-countdown clocks owned by that core;
+- local JSON configuration plus an embedded SQLite recovery database and automatic backup;
+- a durable append-only action history stored with recoverable state;
 - two HTML/CSS/JavaScript views hosted in managed `pywebview` windows: operator and spectator;
 - a narrow JavaScript-to-Python command bridge and Python-to-view snapshot notifications;
 - a PyInstaller one-folder Windows package after development behavior is proven.
 
-This is a hybrid of option 1 (Python engine plus web presentation) and a small native window host. It deliberately omits a local HTTP/WebSocket server from the MVP. OBS and other integrations can later consume a read-only local transport adapter without taking ownership of state.
+This is a hybrid of option 1 (Python engine plus web presentation) and a small native window host. It deliberately omits a local HTTP/WebSocket server from the MVP. OBS and other integrations can later consume a read-only local transport adapter without taking ownership of state. The owner requires durable offline recovery data and an action history; the selected embedded local storage format remains a Phase 2 decision.
 
 ## 2. Decision drivers
 
@@ -45,7 +45,7 @@ Ratings are relative to this MVP: `Strong`, `Mixed`, or `Weak`. They are archite
 | Maintainability | Strong with boundaries | Mixed as rules grow | Mixed; presentation coupled to toolkit | Weak/mixed given candidate mismatch | Mixed; OBS APIs constrain core | **Strong**; pure core, replaceable views/host |
 | Ease with Codex | Strong | Strong | Mixed | Mixed because legacy/foreign code | Mixed due C/C++/OBS APIs | **Strong**; Python tests + ordinary web assets |
 | Automated testing | Strong | Strong for logic if carefully separated | Strong | Varies; most candidates sparse | Mixed; OBS-dependent behavior is costly | **Strong**; core tests do not launch UI |
-| Recovery after failure | Strong if designed | Mixed; localStorage is insufficient alone | Strong | Varies | Mixed; state may live in plugin/config | **Strong**; atomic snapshots + stopped recovery |
+| Recovery after failure | Strong if designed | Mixed; localStorage is insufficient alone | Strong | Varies | Mixed; state may live in plugin/config | **Strong**; SQLite transactions, backup, and stopped recovery |
 | Future OBS integration | Strong via browser/local API | Strong | Mixed | Candidate-specific | Strong | **Strong** through optional read-only adapter |
 | Future controller input | Strong command API | Mixed | Strong | Candidate-specific | Mixed; tends to couple to OBS actions | **Strong** through optional input adapter |
 | Future multi-operator | Strong with later local transport | Strong with later transport | Mixed | Candidate-specific | Mixed | **Strong later**; explicitly deferred now |
@@ -93,8 +93,8 @@ Operator HTML/JS
       ▼
 Python command service ──► pure state/rules ──► new immutable snapshot + revision
       │                           │
-      │                           ├──► atomic recovery snapshot
-      │                           └──► append-only event log
+      │                           ├──► SQLite state + action-history transaction
+      │                           └──► verified database backup
       │
       ├──► operator snapshot notification
       └──► spectator snapshot notification
@@ -124,7 +124,13 @@ remaining_ns = max(0, base_remaining_ns - (now_monotonic_ns - started_at_monoton
 
 Stopping materializes the current remaining value into `base_remaining_ns` and clears the anchor. Starting sets a new anchor without rounding away the remainder. UI refresh timers merely request/render the derived value; delayed callbacks cannot create cumulative drift. Expiration is detected when the derived value reaches zero, then materialized and logged once.
 
-Game and play clocks are separate instances under one coordinator. A quarter-change command may stop both, but no UI timer controls the other implicitly.
+Game-clock and play-clock Edit Current Time commands first materialize and stop their target clock, validate the requested time, then apply it with an explicit `start_after_apply` choice that defaults false. This preserves a single logged, testable correction path rather than letting a view edit timer state directly.
+
+Presentation formatting is a pure derived function; it never changes stored time. Whole seconds and displayed tenths round upward so the board never understates time remaining. Game-clock tenths begin only when the rounded-tenths value is below 60.0; play-clock tenths begin only when it is below 5.0. This keeps `1:00` visible through 59.91–59.99 seconds and `5` visible through 4.91–4.99 seconds before the first `59.9` or `4.9` display.
+
+Game and play clocks are separate instances under one coordinator. A quarter-change command may stop both, but no UI timer controls the other implicitly. Pregame and interval countdowns use the same injected monotonic model but are separately modeled lifecycle timers: a 30:00 `KICKOFF IN` countdown and a 15:00 `UNTIL SECOND HALF` countdown whose presentation phase changes from `HALFTIME` to `WARMUP` at 3:00. They never mutate the game or play clock. Each exposes explicit Start, Stop, Reset, and validated Edit Current Time commands; an edit includes a deliberate `start_after_apply` option that defaults false.
+
+The one deliberate game/play-clock coupling is a game-clock transition from stopped to running: it stops and clears the play clock, producing a blank spectator play-clock area. A redundant Start while the game clock is already running has no play-clock effect. Otherwise the play clock remains independent and may expire at zero. No clock expiration emits an alarm, alert, or automatic lifecycle change; an expected play-clock zero remains visibly `0.0` until an operator clears or changes it.
 
 ## 8. View bridge and process model
 
@@ -139,25 +145,24 @@ This is an in-process transport, not a claim that multi-operator networking exis
 
 ## 9. Configuration, state, and logs
 
-Use the Windows per-user application data location, resolved through the platform API rather than a repository-relative path. Proposed logical layout:
+Use the Windows per-user application data location, resolved through the platform API rather than a repository-relative path. SQLite is the confirmed embedded durable store for recoverable state and action history; no database server is permitted. Proposed logical layout:
 
 ```text
 Scoreboard/
   config.json
-  current-state.json
-  current-state.backup.json
+  scoreboard.db
+  scoreboard.backup.db
   logs/
-    game-<UTC timestamp>-<id>.jsonl
     application.log
 ```
 
 - `config.json`: schema version, defaults, display identity/geometry, operator preferences, shortcut map.
-- `current-state.json`: schema version, app version, state revision, lifecycle, teams/scores/quarter, stopped/materialized clock values, last command metadata.
-- `backup`: last known valid state before atomic replacement.
-- game log: one JSON object per line, append-only and flush-on-command.
+- `scoreboard.db`: schema version, app version, state revision, lifecycle, teams/scores/quarter, materialized clock values, last command metadata, and append-only action history.
+- `scoreboard.backup.db`: automatically refreshed last-known-good database backup.
+- action history: append-only rows retaining accepted and rejected operator requests with timestamps, sequence, source, command, result, and relevant old/new values.
 - diagnostic log: bounded rotating log for startup/errors; exact retention is a Phase 2 implementation detail.
 
-Atomic save sequence: serialize and validate in memory, write a same-directory temporary file, flush and close, preserve/replace backup, then atomically replace current state. Save after commands and, while a clock runs, checkpoint materialized values at each displayed-second boundary without creating tick events. On startup validate primary, fall back to backup, and surface the source. Running clocks always recover stopped at the last persisted derived values, with a visible checkpoint timestamp so the operator can reconcile the game.
+For every accepted state-changing command, validate in memory, update recoverable state and append its history row in one SQLite transaction, then commit. While a clock runs, checkpoint materialized values at each displayed-second boundary without adding synthetic tick events to the action history. Refresh the last-known-good backup after verified commits on a bounded, testable policy. On startup validate the primary database, fall back to the backup, and surface the source. Running clocks always recover stopped at the last persisted derived values, with a visible checkpoint timestamp so the operator can reconcile the game.
 
 ## 10. Windows startup and display selection
 
@@ -183,6 +188,8 @@ Focused display-selection tests passed (four tests): display labels are determin
 
 `pywebview.screens` reported only one available display on this host (`5120x1440 at 0,0`). Therefore, second-display placement, manual spectator close/reopen, fullscreen exit/re-entry, and offline manual operation remain reproducible acceptance checks on a normal two-display Windows setup; they are not claimed as completed local evidence. The Phase 0 stadium HDMI gate remains separate and open.
 
+A follow-up executable smoke check on September 4, 2026 ran the proof with display indexes `0` and `99`, each with a five-second automatic close. Both exited with code 0, and post-run process checks found no remaining `scoreboard-proof`, `python`, or `pythonw` process. `pip check` and Python compilation also passed. The host's Wi-Fi adapter was connected with Internet connectivity during this check, so the required network-disabled repeat and the visible manual checklist items remain unverified; no result is inferred from the successful smoke exit.
+
 ## 11. Failure handling
 
 | Failure | Required behavior |
@@ -191,10 +198,10 @@ Focused display-selection tests passed (four tests): display labels are determin
 | HDMI/display disappears | Core continues; report missing display; explicit reselection/reopen after Windows re-enumerates it |
 | Operator view closes | Ask for confirmation during normal close; if it is lost unexpectedly, clocks/core continue only if a visible recovery path remains, otherwise fail closed and persist stopped state |
 | Persistence write fails | Keep in-memory operation, show persistent warning, write diagnostic log if possible, retry on next command; never claim `SAVED` |
-| Primary state corrupt | Validate and load backup; show recovery banner and log the fallback |
-| Both state files invalid | Do not guess; offer new game and show paths for recovery; preserve invalid files |
+| Primary database corrupt | Validate and load database backup; show recovery banner and log the fallback |
+| Both databases invalid | Do not guess; offer new game and show paths for recovery; preserve invalid databases |
 | Second instance starts | Refuse authority on the same data directory and explain how to focus/close the existing instance |
-| Unhandled fatal exception | Best-effort diagnostic logging and safe materialized snapshot; recovery starts stopped |
+| Unhandled fatal exception | Best-effort diagnostic logging and safe materialized database checkpoint; recovery starts stopped |
 
 ## 12. Future integration boundaries
 
@@ -208,7 +215,7 @@ After safe identification and permission, add an input adapter that translates s
 
 ### Multiple operators
 
-If real workflow demands it, add authenticated local-network command clients through a transport adapter. State revisions and command serialization remain in the same authority. This is intentionally outside MVP.
+Initial operation is expected to involve two people, but Phase 2 has one laptop operator. The second person's peripheral is a future optional input adapter and cannot be authoritative or required for keyboard/mouse operation. If real workflow later demands two independently interacting clients, add authenticated local-network command clients through a transport adapter. State revisions and command serialization remain in the same authority. This is intentionally outside MVP.
 
 ### Media and animation
 
@@ -218,7 +225,7 @@ Spectator HTML can add transitions without changing state. Long-running media/OB
 
 - **Pure unit tests:** state validation, command transitions, undo, scoring bounds, quarter workflow, snapshot schema.
 - **Deterministic clock tests:** injected fake monotonic time, callback stalls, sub-second pause/resume, expiration, simultaneous clocks.
-- **Persistence tests:** atomic replacement, backup fallback, schema rejection/migration, restart-stopped behavior, write failure.
+- **Persistence tests:** SQLite transaction interruption, backup fallback, schema rejection/migration, restart-stopped behavior, and write failure.
 - **Bridge/contract tests:** JSON schema/version, stale revision handling, command rejection, complete snapshot rendering.
 - **UI tests/manual checks:** focus suppression, held keys, dangerous confirmations, viewport matrix, display close/reopen.
 - **Windows package tests:** clean account, no Python/Node/OBS, offline launch, correct data location, no orphan process.
@@ -253,13 +260,13 @@ The project needs correct football clocks, a simple local operator screen, a sca
 
 ### Decision
 
-Use a pure Python authoritative core and managed HTML/CSS/JavaScript operator/spectator views in one local process. Use monotonic deadline-based clocks, atomic JSON recovery, JSONL events, and an optional-adapter boundary for future integrations.
+Use a pure Python authoritative core and managed HTML/CSS/JavaScript operator/spectator views in one local process. Use monotonic deadline-based clocks, an embedded SQLite recovery database with a durable action history and automatic backup, and an optional-adapter boundary for future integrations.
 
 ### Consequences
 
-**Positive:** one authority and launch action; core tests are UI-independent; web presentation remains flexible; display windows are managed; OBS/controller failure cannot corrupt core state.
+**Positive:** one authority and launch action; core tests are UI-independent; web presentation remains flexible; display windows are managed; SQLite provides transactional offline recovery and action history; OBS/controller failure cannot corrupt core state.
 
-**Negative:** pywebview/WebView2 and PyInstaller behavior must be proven on Windows; in-process bridge code is custom; a later network/OBS consumer requires an adapter rather than being built in now.
+**Negative:** pywebview/WebView2 and PyInstaller behavior must be proven on Windows; SQLite schema/backup recovery requires testing; in-process bridge code is custom; a later network/OBS consumer requires an adapter rather than being built in now.
 
 ### Revisit triggers
 

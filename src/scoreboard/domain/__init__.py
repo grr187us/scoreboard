@@ -1,0 +1,1 @@
+"""Pure scoreboard domain models."""

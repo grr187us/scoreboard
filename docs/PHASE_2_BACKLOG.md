@@ -28,11 +28,11 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 ## Task 2 — Authoritative game-state model and snapshots
 
-**Objective:** Implement versioned, UI-independent state values, invariants, snapshots, and revisions.
+**Objective:** Implement versioned, UI-independent state values, invariants, snapshots, and revisions, including pregame and interval countdown lifecycle/phase values.
 
 **Components/files:** `domain/state.py`; `application/snapshots.py`; `tests/unit/test_state.py`; fixtures for valid/invalid snapshots.
 
-**Boundaries:** State only: names, scores, quarter/lifecycle, clock value/running fields. No command handlers, real time, filesystem, or UI wiring.
+**Boundaries:** State only: names, scores, quarter/lifecycle, game/play/event-countdown value/running fields, and event phase. No command handlers, real time, filesystem, or UI wiring.
 
 **Dependencies:** Task 1 project skeleton.
 
@@ -67,22 +67,22 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 ## Task 4 — Play-clock engine
 
-**Objective:** Add an independent play clock with 25/40 presets and explicit start/stop/correct/expire commands.
+**Objective:** Add an independent play clock with 25/40 load-stopped presets, explicit start/stop/clear/correct/expire commands, and the documented coupling to a stopped-to-running game-clock transition.
 
 **Components/files:** `domain/clocks.py`; play-clock state; `tests/unit/test_play_clock.py`; simultaneous-clock tests.
 
-**Boundaries:** No buttons or keyboard mapping. Implement documented provisional reset-and-start semantics behind a command that can be changed centrally after owner confirmation.
+**Boundaries:** No buttons or keyboard mapping. A `25` or `40` command loads its value while stopped; a separate Start begins it. A game-clock transition from stopped to running stops and clears the play clock, while a redundant Start on an already-running game clock has no effect on it. No expiration alarm is part of the MVP.
 
 **Dependencies:** Task 3.
 
-**Verification:** Fake-time tests for 25/40, independence from game clock, reset while running/stopped, expiration alert state, corrections, and simultaneous progression.
+**Verification:** Fake-time tests for 25/40 load-stopped behavior, independence from game clock except the documented transition coupling, clear behavior, expiration without alarm, corrections, and simultaneous progression.
 
 **Acceptance criteria:**
 
-- 25 and 40 commands produce exact documented values/behavior.
+- 25 and 40 commands load their exact documented values while stopped.
 - No play-clock command changes game-clock state.
 - Delayed callbacks and pause/resume behave without cumulative drift.
-- Expiration state clears only on the next defined play-clock command.
+- A play clock that reaches zero remains at `0.0` unless cleared or changed; it creates no alarm.
 
 ## Task 5 — Command service: scores, quarters, lifecycle, and undo
 
@@ -106,23 +106,23 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 ## Task 6 — Atomic persistence, recovery, and event logging
 
-**Objective:** Persist every accepted command safely and recover a stopped, validated game with a complete audit trail.
+**Objective:** Persist every accepted command safely in embedded SQLite and recover a stopped, validated game with a complete audit trail.
 
-**Components/files:** `infrastructure/paths.py`; `persistence.py`; `event_log.py`; `diagnostics.py`; `application/recovery.py`; integration tests/fixtures.
+**Components/files:** `infrastructure/paths.py`; SQLite persistence/repository module; `diagnostics.py`; `application/recovery.py`; integration tests/fixtures.
 
-**Boundaries:** JSON snapshot + backup and JSONL events only; no database, cloud sync, registry storage, or UI beyond returned recovery/status models.
+**Boundaries:** One embedded SQLite database plus an automatic last-known-good database backup; no database server, cloud sync, registry storage, or UI beyond returned recovery/status models.
 
 **Dependencies:** Task 5.
 
-**Verification:** Temporary-directory tests for atomic replacement, process interruption simulation, corrupt primary, corrupt both, write failure, running-clock checkpoints, log flush/order, second-instance lock, and restart of formerly running clocks.
+**Verification:** Temporary-directory tests for SQLite transaction interruption, corrupt primary database, corrupt primary/backup databases, write failure, running-clock checkpoints, action-history order, second-instance lock, and restart of formerly running clocks.
 
 **Acceptance criteria:**
 
-- Valid old or new state survives every simulated interrupted write.
-- Corrupt primary loads the last valid backup and reports that fact.
+- Every simulated interrupted write leaves a coherent committed state or a valid backup.
+- A corrupt primary database loads the last valid backup and reports that fact.
 - Recovered clocks are always stopped at persisted derived values.
 - A normal running-clock crash restores a checkpoint no more than one displayed second stale without tick-event log spam.
-- Event records include required sequence/source/old/new/result/version fields.
+- Durable action-history entries include required timestamp/sequence/source/old/new/result/version fields for accepted and rejected requests.
 - Runtime files are stored outside the repository and remain ignored by Git.
 
 ## Task 7 — Operator-interface foundation
@@ -131,7 +131,7 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 **Components/files:** `views/shared/`; `views/operator/`; `host/bridge.py`; UI contract tests; update the Task 1 host.
 
-**Boundaries:** Implement the documented live controls, health strip, last action, correction drawer, and confirmations. No keyboard shortcuts yet, spectator polish, settings beyond necessary defaults, or advanced football fields.
+**Boundaries:** Implement the documented live controls, health strip, last action, correction drawer, event-countdown controls, and confirmations. No keyboard shortcuts yet, spectator polish, settings beyond necessary defaults, or advanced football fields.
 
 **Dependencies:** Tasks 1 and 5–6.
 
@@ -147,11 +147,11 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 ## Task 8 — Spectator-display foundation
 
-**Objective:** Render the minimum spectator state responsively from complete authoritative snapshots.
+**Objective:** Render the minimum spectator state and its pregame/interval countdown presentation responsively from complete authoritative snapshots.
 
 **Components/files:** `views/spectator/`; shared snapshot renderer; viewport tests/screenshots.
 
-**Boundaries:** Only team names/scores, quarter, game clock, and play clock. No logos, colors as a requirement, animations, sponsor/media content, OBS, or control elements.
+**Boundaries:** During game play show team names/scores, quarter, game clock, and play clock. During pregame/interval presentation show only the documented countdown and phase information. No logos, animations, sponsor/media content, OBS, or control elements.
 
 **Dependencies:** Tasks 1–7.
 

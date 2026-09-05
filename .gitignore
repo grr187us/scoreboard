@@ -38,6 +38,7 @@ media/generated/
 recordings/
 replays/
 captures/
+brand-baseline/
 
 # OBS and machine-specific files
 .obs-studio/

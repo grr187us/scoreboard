@@ -9,6 +9,8 @@ The first operator may be a student or volunteer working under time pressure. Th
 
 The operator and spectator surfaces are separate windows backed by the same authoritative state. The operator sees controls and health information; spectators never do.
 
+Phase 2 is operated from one laptop by the primary operator. A second person is anticipated to operate a future peripheral, but that peripheral remains outside the MVP; its absence cannot block the laptop workflow.
+
 ## 2. Control hierarchy
 
 | Frequency/risk | Controls | Treatment |
@@ -107,9 +109,17 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 1. Launch the application once; both windows open.
 2. If recoverable state exists, choose `Resume recovered game` or `Start new game`. Recovered clocks are stopped.
 3. Select the spectator display from the settings panel and enter fullscreen.
-4. Enter home and away names; confirm the provisional/default quarter length and clock-display preference.
+4. Enter home and away names; verify the confirmed 12:00 quarter length and the selected clock-display preference.
 5. Verify 0–0, `PRE`, stopped game clock, stopped play clock, `DISPLAY OPEN`, and `STATE SAVED` on the operator view.
 6. Visually confirm the spectator display and run a short score/clock rehearsal, then restore the starting state through `New Game`.
+
+### 6.1a Pregame, halftime, and warmup presentation
+
+- Before kickoff, the spectator display shows a labeled `KICKOFF IN` 30:00 countdown. This is separate from the stopped 12:00 game clock.
+- At halftime, the spectator display shows one `UNTIL SECOND HALF` 15:00 countdown. While more than 3:00 remains it labels the current phase `HALFTIME` and visibly states `Warmup follows: 3:00`.
+- At 3:00, the same countdown continues without a reset and its current-phase label changes to `WARMUP`.
+- These countdowns are operator-controlled, use the same reliable timing model as game clocks, and do not start, stop, or reset the game or play clock.
+- Each event countdown provides Start, Stop, Reset, and `Edit Current Time`. Editing opens a confirmation with a `Start after applying?` radio choice; `Remain stopped` is selected by default.
 
 ### 6.2 Start and stop the game clock
 
@@ -117,13 +127,19 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 - The authoritative state changes once, the status text changes immediately, and the action is logged.
 - Start while running and Stop while stopped are harmless no-ops.
 - A stalled UI repaint does not affect the authoritative elapsed-time calculation.
+- The display never understates time remaining: whole seconds are rounded up at normal precision, and tenths are rounded up below one minute. `1:00` remains visible until the rounded tenths value can display `59.9`.
+- `Edit Current Time` stops the game clock if needed, validates the entered minutes/seconds, and then offers `Start after applying?`; `Remain stopped` is selected by default.
 
 ### 6.3 Reset play clock to 25 or 40
 
-- Click `25 + START` / `40 + START`, or press the mapped key.
-- Provisional behavior: the requested value loads and starts immediately in one command.
+- Click `25 LOAD` / `40 LOAD`, or press the mapped key.
+- The requested value loads while stopped; use the separate play-clock Start command when the official signals ready for play.
 - The game clock is unchanged.
-- If rules/operator preference require reset-stopped instead, change the command semantics and labels together; never leave ambiguous buttons.
+- The play clock uses the same upward presentation rule and changes to tenths only once its rounded tenths value is below `5.0`; it stays at `5` until it can display `4.9`.
+- This is the stadium's only play-clock display, so the active value must remain prominent and display recovery must preserve it.
+- When the game clock transitions from stopped to running, the play clock is stopped and its spectator area becomes blank. Starting an already-running game clock does not affect it; it may then count to zero unless an operator clears or changes it.
+- No clock expiration produces an alarm. A play clock that reaches `0.0` while the game clock is already running remains visible there until the operator uses the deliberate clear control or issues another play-clock command.
+- `Edit Current Time` lives in Corrections: it stops the play clock if needed, validates the value, and offers `Start after applying?`; `Remain stopped` is the default.
 
 ### 6.4 Update scores
 
