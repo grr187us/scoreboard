@@ -14,14 +14,18 @@ The operator bridge exposes deliberately few methods:
 * ``open_test_window()`` -- open a small practice-only spectator preview,
   without changing production-display health or preference;
 * ``data_folder()``, ``choose_data_folder()``, and ``use_default_folder()`` --
-  report and change where the game and its logs are saved.
+  report and change where the game and its logs are saved;
+* ``presentation_layout()`` and ``open_layout_editor()`` -- report the active
+  spectator layout and open the layout editor window.
 
-The last two groups are host actions, not game commands. They advance no
-revision, write nothing to the game database, and are asserted to leave a
-running clock running: a display or a folder is something about this laptop,
-not something that happened in the football game.
+Every group above is a host action, not a game command. Each advances no
+revision, writes nothing to the game database, and is asserted to leave a
+running clock running: a display, a folder, and a spectator layout are all
+something about this laptop or this presentation, not something that happened
+in the football game.
 
-The spectator bridge exposes ``get_snapshot()`` and nothing that mutates.
+The spectator bridge exposes ``get_snapshot()``, an optional ``get_layout()``,
+and nothing that mutates.
 
 No domain object crosses this boundary. Every value returned here is a
 ``str``, ``int``, ``float``, ``bool``, ``None``, ``list``, or ``dict``, so the
@@ -37,7 +41,7 @@ checkpoint can never disagree about what is on the board.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Callable, Final
 
 from scoreboard.application.service import ScoreboardService
@@ -48,14 +52,21 @@ from scoreboard.domain.commands import (
     CommandResult,
     CommandType,
     UndoEntry,
+    FieldAction,
+    finalize_field_action,
     validate_command,
 )
+from scoreboard.domain.field_assistant import absolute_from_ball_spot, home_goal_side
 from scoreboard.domain.formatting import (
     format_ball_on,
+    format_distance,
+    format_down,
     format_down_and_distance,
     format_event_countdown,
     format_game_clock,
     format_play_clock,
+    format_possession,
+    format_timeouts,
 )
 from scoreboard.domain.state import BallSpot, GameState, QUARTER_LABELS, SCHEMA_VERSION
 from scoreboard.host.folders import (
@@ -63,9 +74,11 @@ from scoreboard.host.folders import (
     choose_data_folder,
     use_default_folder,
 )
+from scoreboard.host.layout_bridge import PresentationLayouts
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import describe_resolution
 from scoreboard.infrastructure.persistence import GameStore, PersistenceStatus
+from scoreboard.presentation.layout import default_layout
 
 #: The two local input adapters share every command and retain their source.
 OPERATOR_MOUSE_SOURCE: Final[str] = "operator-mouse"
@@ -416,17 +429,39 @@ def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[
     a displayed value" principle the clocks already follow: the operator
     readout and the spectator board cannot disagree about what a down-and-
     distance or a field position reads as.
+
+    ``down_display``, ``distance_display``, ``possession_display``,
+    ``home_timeouts_display``, and ``away_timeouts_display`` are the single-
+    field renderings the presentation-layout widgets read (spec section 4.5).
+    ``down_distance_display`` and ``ball_on_display`` are kept exactly as they
+    were: the operator's field-status readout still combines them.
     """
 
-    team_name = home_name if state.ball_on.team == "home" else away_name
+    # Scoring transitions intentionally clear ordinary field status.  Keep
+    # the legacy inert BallSpot out of this view in that case: showing an old
+    # ball label beside "no possession" would make a completed score look
+    # like a live scrimmage series.
+    ball_on = state.ball_on
+    team_name = (
+        None if ball_on is None
+        else home_name if ball_on.team == "home" else away_name
+    )
     return {
         "down": state.down,
         "distance": state.distance,
         "down_distance_display": format_down_and_distance(state.down, state.distance),
+        "down_display": format_down(state.down),
+        "distance_display": format_distance(state.distance),
         "possession": state.possession,
-        "ball_on": {"team": state.ball_on.team, "yard_line": state.ball_on.yard_line},
-        "ball_on_display": format_ball_on(state.ball_on.team, state.ball_on.yard_line, team_name),
+        "possession_display": format_possession(state.possession),
+        "ball_on": None if ball_on is None else {"team": ball_on.team, "yard_line": ball_on.yard_line},
+        "ball_on_display": (
+            "—" if ball_on is None
+            else format_ball_on(ball_on.team, ball_on.yard_line, str(team_name))
+        ),
         "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
+        "home_timeouts_display": format_timeouts(state.home_timeouts),
+        "away_timeouts_display": format_timeouts(state.away_timeouts),
     }
 
 
@@ -505,6 +540,21 @@ def operator_view_model(
     model["play_clock_presets"] = [25, 40]
     model["last_action"] = _last_action_view(service.undo_entry)
     model["can_undo"] = service.undo_entry is not None
+    model["assistant"] = {
+        "first_quarter_home_direction": state.assistant_first_quarter_home_direction,
+        "line_to_gain": state.assistant_line_to_gain,
+        "ball_absolute": (
+            None if state.ball_on is None else absolute_from_ball_spot(state.ball_on)
+        ),
+        "home_goal_side": home_goal_side(
+            state.assistant_first_quarter_home_direction, state.quarter
+        ),
+        "offense_direction": (
+            1 if state.possession == "home"
+            else -1 if state.possession == "away"
+            else None
+        ),
+    }
     model["health"] = {
         "revision": state.revision,
         "display": display.to_dict(),
@@ -513,17 +563,70 @@ def operator_view_model(
     return model
 
 
+def _json_safe(value: Any) -> Any:
+    """Turn a calculator dataclass into the bridge's JSON-only contract."""
+
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 # --- Bridges ----------------------------------------------------------------
 
 
 class SpectatorBridge:
     """Read-only. There is deliberately no method here that changes anything."""
 
-    def __init__(self, read_snapshot: Callable[[], dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        read_snapshot: Callable[[], dict[str, Any]],
+        read_layout: Callable[[], dict[str, Any]] | None = None,
+    ) -> None:
         self._read_snapshot = read_snapshot
+        self._read_layout = read_layout
 
     def get_snapshot(self) -> dict[str, Any]:
         return self._read_snapshot()
+
+    def get_layout(self) -> dict[str, Any]:
+        """The active presentation layout, or the built-in default.
+
+        ``read_layout`` is optional so a caller that has no layout library yet
+        -- a unit test, or an older host -- still returns a usable, valid
+        layout rather than raising.
+        """
+
+        if self._read_layout is not None:
+            return self._read_layout()
+        return default_layout()
+
+
+class FieldAssistantBridge:
+    """The optional Field Assistant's deliberately small JSON API.
+
+    It has no generic ``command`` endpoint.  A draft can only ask Python to
+    preview one raw FieldAction or to submit that same action through the one
+    composite command.  Closing this bridge/window therefore has no path to
+    the game engine; reopening simply reads a fresh complete snapshot.
+    """
+
+    def __init__(self, operator: "ScoreboardBridge") -> None:
+        self._operator = operator
+
+    def get_snapshot(self) -> dict[str, Any]:
+        return self._operator.get_snapshot()
+
+    def preview_field_action(self, action: Any) -> dict[str, Any]:
+        return self._operator.preview_field_action(action)
+
+    def finalize_field_action(
+        self, action: Any, expected_revision: Any = None
+    ) -> dict[str, Any]:
+        return self._operator.finalize_field_action(action, expected_revision)
 
 
 class ScoreboardBridge:
@@ -544,11 +647,18 @@ class ScoreboardBridge:
         lock: threading.RLock | None = None,
         on_accepted: Callable[[dict[str, Any]], None] | None = None,
         folder_chooser: Callable[[], FolderChoice] | None = None,
+        layouts: PresentationLayouts | None = None,
+        field_assistant_opener: Callable[[], dict[str, str]] | None = None,
     ) -> None:
         self._service = service
         self._store = store
         self._display = DisplayLink() if display is None else display
         self._diagnostics = NullDiagnostics() if diagnostics is None else diagnostics
+        # Optional: many tests build a bridge with no layout library at all.
+        # Both host actions below report plainly rather than raising when it
+        # is absent, exactly like a display or a folder that is not there yet.
+        self._layouts = layouts
+        self._field_assistant_opener = field_assistant_opener
         # One lock serialises commands against the display-refresh tick, so a
         # checkpoint can never read a half-applied command.
         self._lock = threading.RLock() if lock is None else lock
@@ -603,6 +713,102 @@ class ScoreboardBridge:
                 result=result,
             )
 
+    def preview_field_action(self, action: Any) -> dict[str, Any]:
+        """Calculate one uncommitted assistant draft in Python.
+
+        The service uses the identical pure calculator when it later handles
+        ``finalize_field_action``.  The browser receives only a displayable
+        result and never sends calculated down/distance/score values back.
+        """
+
+        with self._lock:
+            built = self._field_action(action)
+            if isinstance(built, CommandError):
+                return {
+                    "accepted": False,
+                    "error": {"code": built.code, "message": built.message},
+                    "preview": None,
+                    "view": self._view(),
+                }
+            try:
+                preview_result = self._service.preview_field_action(built)
+            except Exception as exc:  # expected calculator failures stay visible
+                return {
+                    "accepted": False,
+                    "error": {"code": "INVALID_FIELD_ACTION", "message": str(exc)},
+                    "preview": None,
+                    "view": self._view(),
+                }
+            if not preview_result.get("accepted"):
+                return {
+                    "accepted": False,
+                    "error": preview_result.get("error"),
+                    "preview": None,
+                    # Service's raw persistence snapshot is intentionally not
+                    # the webview contract; always return the complete,
+                    # formatted bridge view instead.
+                    "view": self._view(),
+                }
+            return {
+                "accepted": True,
+                "error": None,
+                "preview": _json_safe(preview_result.get("preview")),
+                "view": self._view(),
+            }
+
+    def finalize_field_action(
+        self, action: Any, expected_revision: Any = None
+    ) -> dict[str, Any]:
+        """Persist exactly one composite Field Assistant command.
+
+        This intentionally does not call the manual ``set_*`` commands.  The
+        command object submitted here is also the single object recorded by
+        the store, preserving one revision, transaction, and durable row.
+        """
+
+        with self._lock:
+            built = self._field_action(action)
+            if isinstance(built, CommandError):
+                return self._result_payload(accepted=False, error=built)
+            if expected_revision is not None and (
+                isinstance(expected_revision, bool) or not isinstance(expected_revision, int)
+            ):
+                return self._result_payload(
+                    accepted=False,
+                    error=CommandError(INVALID_ARGUMENTS, "The expected revision must be a whole number."),
+                )
+            command = finalize_field_action(
+                built,
+                expected_revision=expected_revision,
+                source="field-assistant",
+            )
+            result = self._service.submit(command)
+            self._store.record_command(command, result)
+            if result.accepted and self._on_accepted is not None:
+                self._on_accepted(self._view())
+            return self._result_payload(
+                accepted=result.accepted,
+                error=result.error,
+                confirmation_required=result.confirmation_required,
+                result=result,
+            )
+
+    @staticmethod
+    def _field_action(value: Any) -> FieldAction | CommandError:
+        """Validate the transport envelope without calculating football rules."""
+
+        if not isinstance(value, dict):
+            return CommandError(INVALID_ARGUMENTS, "Field Assistant action must be an object.")
+        if set(value) != {"kind", "payload"}:
+            return CommandError(
+                INVALID_ARGUMENTS,
+                "Field Assistant action must contain only kind and payload.",
+            )
+        try:
+            return FieldAction(kind=value["kind"], payload=value["payload"])
+        except (TypeError, ValueError) as exc:
+            return CommandError(INVALID_ARGUMENTS, str(exc))
+
     def choose_data_folder(self) -> dict[str, Any]:
         """Open the folder picker and remember the answer for the next launch.
 
@@ -639,6 +845,70 @@ class ScoreboardBridge:
 
         with self._lock:
             return describe_resolution()
+
+    def presentation_layout(self) -> dict[str, Any]:
+        """The active spectator layout and the library it came from (host action).
+
+        Like :meth:`data_folder`, this is read on demand rather than carried in
+        the 10 Hz view model: it advances no revision and writes nothing to the
+        game database. A build with no layout library at all -- most bridge
+        tests -- reports a plain, valid, empty-library payload rather than
+        raising.
+        """
+
+        with self._lock:
+            if self._layouts is None:
+                return {
+                    "schema_version": 1,
+                    "active": None,
+                    "names": [],
+                    "layout": None,
+                    "widgets": [],
+                    "limits": {},
+                    "issues": [],
+                    "fell_back": False,
+                    "saved": True,
+                    "message": "The presentation layout is unavailable.",
+                }
+            return self._layouts.state()
+
+    def open_layout_editor(self) -> dict[str, str]:
+        """Open the presentation layout editor window.
+
+        This is a host action, like :meth:`open_test_window`: it advances no
+        revision, writes nothing to the game database, and cannot be undone
+        through the command history because it never touched it. A failure to
+        open the window is reported and survived, exactly like
+        :meth:`reopen_display` (R-002).
+        """
+
+        with self._lock:
+            if self._layouts is None:
+                return {"message": "The presentation layout editor is unavailable."}
+            try:
+                return self._layouts.link.open_editor()
+            except Exception as exc:  # noqa: BLE001 - an editor must never stop the game
+                self._diagnostics.unhandled_error(context="open_layout_editor", error=exc)
+                return {"message": f"The layout editor could not be opened: {exc}"}
+
+    def set_field_assistant_opener(
+        self, opener: Callable[[], dict[str, str]] | None
+    ) -> None:
+        """Install the optional host-window hook after WindowHost is wired."""
+
+        self._field_assistant_opener = opener
+
+    def open_field_assistant(self) -> dict[str, str]:
+        """Open the optional helper window without touching game state."""
+
+        with self._lock:
+            if self._field_assistant_opener is None:
+                return {"message": "The Field Assistant window is unavailable."}
+            try:
+                return self._field_assistant_opener()
+            except Exception as exc:  # noqa: BLE001 - helper failure is contained
+                self._diagnostics.unhandled_error(context="open_field_assistant", error=exc)
+                return {"message": f"The Field Assistant could not be opened: {exc}"}
 
     def reopen_display(self) -> dict[str, Any]:
         """Recreate the spectator window. This changes no game state (D-005)."""
@@ -885,6 +1155,7 @@ __all__ = [
     "UNKNOWN_COMMAND",
     "DisplayLink",
     "DisplayStatus",
+    "FieldAssistantBridge",
     "ScoreboardBridge",
     "SpectatorBridge",
     "build_command",

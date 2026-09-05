@@ -21,6 +21,7 @@ from scoreboard.domain.commands import CommandType
 from scoreboard.host.bridge import (
     OPERATOR_MOUSE_SOURCE,
     DisplayLink,
+    FieldAssistantBridge,
     ScoreboardBridge,
     SpectatorBridge,
     build_command,
@@ -105,7 +106,13 @@ class MousePathTests(BridgeTestCase):
         # so the page carries it as a rendered control rather than a literal.
         controls.update(re.findall(r"'data-command', '([a-z_]+)'", OPERATOR_JS))
 
-        missing = {command.value for command in CommandType} - controls
+        # The composite Field Assistant command deliberately has no generic
+        # operator ``data-command`` control: only its separate bridge can
+        # submit it, preventing an accidental sequence of manual set_* calls.
+        missing = {
+            command.value for command in CommandType
+            if command is not CommandType.FINALIZE_FIELD_ACTION
+        } - controls
         self.assertEqual(missing, set(), f"no mouse control for: {sorted(missing)}")
 
     def test_no_control_names_a_command_that_does_not_exist(self) -> None:
@@ -130,6 +137,8 @@ class MousePathTests(BridgeTestCase):
 
     def test_every_command_reaches_the_service_through_the_bridge(self) -> None:
         for command in CommandType:
+            if command is CommandType.FINALIZE_FIELD_ACTION:
+                continue
             with self.subTest(command=command.value):
                 # Each command runs against a fresh game so an earlier one
                 # cannot make a later one impossible.
@@ -159,6 +168,97 @@ class MousePathTests(BridgeTestCase):
         self.assertIn('data-action="open_test_window"', OPERATOR_HTML)
         self.assertIn("api.open_test_window()", OPERATOR_JS)
         self.assertNotIn("open_test_window", {command.value for command in CommandType})
+
+    def test_field_assistant_is_a_separate_explicit_window_control(self) -> None:
+        self.assertIn('data-action="open_field_assistant"', OPERATOR_HTML)
+        self.assertIn("api.open_field_assistant()", OPERATOR_JS)
+        self.assertNotIn('data-command="finalize_field_action"', OPERATOR_HTML)
+
+
+class FieldAssistantBridgeTests(BridgeTestCase):
+    """FA-19/20/25: the helper owns a draft, not game mutations."""
+
+    def set_live_quarter(self) -> None:
+        accepted = self.send("set_quarter", {"label": "1st", "confirmed": True})
+        self.assertTrue(accepted["accepted"], accepted["error"])
+
+    def start_action(self) -> dict:
+        return {
+            "kind": "start_series",
+            "payload": {
+                "offense": "home",
+                "ball_absolute": 25,
+                "first_quarter_home_direction": 1,
+            },
+        }
+
+    def test_preview_is_read_only_and_finalization_is_one_composite_source(self) -> None:
+        self.set_live_quarter()
+        assistant = FieldAssistantBridge(self.bridge)
+        revision = self.service.revision
+
+        preview = assistant.preview_field_action(self.start_action())
+        self.assertTrue(preview["accepted"], preview["error"])
+        self.assertEqual(self.service.revision, revision)
+        self.assertEqual(preview["preview"]["down"], 1)
+
+        committed = assistant.finalize_field_action(self.start_action(), revision)
+        self.assertTrue(committed["accepted"], committed["error"])
+        self.assertEqual(self.service.revision, revision + 1)
+        rows = read_action_history(self.paths.database)
+        self.assertEqual(rows[-1]["command"], "finalize_field_action")
+        self.assertEqual(rows[-1]["source"], "field-assistant")
+        self.assertEqual(committed["view"]["football"]["down"], 1)
+
+    def test_stale_draft_is_refused_and_manual_controls_remain_available(self) -> None:
+        self.set_live_quarter()
+        assistant = FieldAssistantBridge(self.bridge)
+        base = assistant.get_snapshot()["revision"]
+        self.send("set_down", {"value": 2})
+
+        stale = assistant.finalize_field_action(self.start_action(), base)
+        self.assertFalse(stale["accepted"])
+        self.assertEqual(stale["error"]["code"], "STALE_REVISION")
+        # FA-20: The pre-existing manual path remains usable and is not
+        # silently overwritten by the rejected draft.
+        manual = self.send("set_ball_on", {"team": "away", "value": 35})
+        self.assertTrue(manual["accepted"], manual["error"])
+        synced = assistant.get_snapshot()
+        self.assertEqual(synced["football"]["ball_on"], {"team": "away", "yard_line": 35})
+
+    def test_assistant_block_reports_display_facts_derived_in_python(self) -> None:
+        assistant = FieldAssistantBridge(self.bridge)
+
+        # A fresh game has no assistant state at all: the default BallSpot is
+        # HOME's own 50, which absolute_from_ball_spot maps to 50.
+        fresh = assistant.get_snapshot()["assistant"]
+        self.assertEqual(
+            fresh,
+            {
+                "first_quarter_home_direction": None,
+                "line_to_gain": None,
+                "ball_absolute": 50,
+                "home_goal_side": None,
+                "offense_direction": None,
+            },
+        )
+
+        self.set_live_quarter()
+        revision = self.service.revision
+        committed = assistant.finalize_field_action(self.start_action(), revision)
+        self.assertTrue(committed["accepted"], committed["error"])
+
+        live = assistant.get_snapshot()["assistant"]
+        self.assertEqual(
+            live,
+            {
+                "first_quarter_home_direction": 1,
+                "line_to_gain": 35,
+                "ball_absolute": 25,
+                "home_goal_side": "left",
+                "offense_direction": 1,
+            },
+        )
 
 
 class CommandTranslationTests(unittest.TestCase):
@@ -538,6 +638,8 @@ class JsonBoundaryTests(BridgeTestCase):
 
     def test_every_command_result_is_json_compatible(self) -> None:
         for command in CommandType:
+            if command is CommandType.FINALIZE_FIELD_ACTION:
+                continue
             with self.subTest(command=command.value):
                 service, store = self.started_session()
                 bridge = ScoreboardBridge(service, store)
@@ -650,7 +752,9 @@ class SpectatorBridgeTests(BridgeTestCase):
 
         public = {name for name in dir(spectator) if not name.startswith("_")}
 
-        self.assertEqual(public, {"get_snapshot"})
+        # get_layout was added alongside the presentation layout editor
+        # (spec section 6.1); it is read-only in exactly the same way.
+        self.assertEqual(public, {"get_snapshot", "get_layout"})
 
     def test_it_returns_a_complete_json_snapshot(self) -> None:
         self.send("add_score", {"team": "home", "points": 6})

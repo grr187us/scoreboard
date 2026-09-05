@@ -28,6 +28,10 @@ APPLICATION_DIRECTORY_NAME: Final[str] = "Scoreboard"
 DATABASE_FILENAME: Final[str] = "scoreboard.db"
 BACKUP_FILENAME: Final[str] = "scoreboard.backup.db"
 CONFIG_FILENAME: Final[str] = "config.json"
+#: The presentation-layout library (spec section 5). Deliberately a separate
+#: file from ``config.json`` -- see ``scoreboard.infrastructure.layouts`` for
+#: why -- so it gets its own filename constant here rather than a section key.
+LAYOUTS_FILENAME: Final[str] = "layouts.json"
 LOCK_FILENAME: Final[str] = "scoreboard.lock"
 LOG_DIRECTORY_NAME: Final[str] = "logs"
 LOG_FILENAME: Final[str] = "application.log"
@@ -153,6 +157,10 @@ class ScoreboardPaths:
     @property
     def config(self) -> Path:
         return self.root / CONFIG_FILENAME
+
+    @property
+    def layouts(self) -> Path:
+        return self.root / LAYOUTS_FILENAME
 
     @property
     def lock(self) -> Path:
@@ -376,6 +384,7 @@ __all__ = [
     "CONFIG_FILENAME",
     "DATABASE_FILENAME",
     "DATA_DIRECTORY_ENVIRONMENT_VARIABLE",
+    "LAYOUTS_FILENAME",
     "LOCATION_POINTER_FILENAME",
     "LOCK_FILENAME",
     "LOG_DIRECTORY_NAME",

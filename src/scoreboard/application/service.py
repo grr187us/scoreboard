@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass, field, replace
-from typing import Any, Callable, Final
+from typing import Any, Callable, Final, Mapping
 
 from scoreboard.application.snapshots import state_to_snapshot
 from scoreboard.domain.clocks import (
@@ -40,10 +40,21 @@ from scoreboard.domain.clocks import (
     clear_play_clock_on_game_clock_stop,
     event_phase_for,
 )
+from scoreboard.domain.field_assistant import (
+    FieldAction,
+    FieldAssistantContext,
+    FieldAssistantValidationError,
+    FieldResult,
+    SeriesState,
+    absolute_from_ball_spot,
+    calculate_field_action,
+    penalty_enforcement_spot,
+)
 from scoreboard.domain.commands import (
     CONFIRMATION_REQUIRED,
     INVALID_CLOCK_TIME,
     INVALID_EVENT_PHASE,
+    INVALID_FIELD_ACTION,
     INVALID_COMMAND,
     INVALID_PLAY_CLOCK_PRESET,
     INVALID_TEAM_NAME,
@@ -126,6 +137,36 @@ def _ball_spot_snapshot(value: BallSpot) -> dict[str, Any]:
     """
 
     return asdict(value)
+
+
+def _field_assistant_values(state: GameState) -> dict[str, Any]:
+    """The indivisible state group restored by a Field Assistant Undo."""
+
+    return {
+        "ball_on": None if state.ball_on is None else _ball_spot_snapshot(state.ball_on),
+        "possession": state.possession,
+        "down": state.down,
+        "distance": state.distance,
+        "assistant_first_quarter_home_direction": state.assistant_first_quarter_home_direction,
+        "assistant_line_to_gain": state.assistant_line_to_gain,
+        "home_score": state.home_score,
+        "away_score": state.away_score,
+    }
+
+
+def _field_assistant_restore_values(state: GameState) -> dict[str, Any]:
+    """State-shaped (not JSON-shaped) values retained in a composite Undo."""
+
+    return {
+        "ball_on": state.ball_on,
+        "possession": state.possession,
+        "down": state.down,
+        "distance": state.distance,
+        "assistant_first_quarter_home_direction": state.assistant_first_quarter_home_direction,
+        "assistant_line_to_gain": state.assistant_line_to_gain,
+        "home_score": state.home_score,
+        "away_score": state.away_score,
+    }
 
 
 def _undo_reported_value(value: Any) -> Any:
@@ -302,6 +343,152 @@ class ScoreboardService:
         finally:
             self._applying = False
 
+    def finalize_field_action(
+        self, action: FieldAction,
+        *,
+        expected_revision: int | None = None,
+        source: str = "field-assistant",
+    ) -> CommandResult:
+        """Finalize one Field Assistant action through the normal command path."""
+
+        from scoreboard.domain.commands import finalize_field_action
+
+        return self.submit(
+            finalize_field_action(
+                action, expected_revision=expected_revision, source=source
+            )
+        )
+
+    def preview_field_action(
+        self, action: FieldAction | Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Calculate a Field Assistant proposal without mutating any state."""
+
+        try:
+            result = self._calculate_field_action(self._coerce_field_action(action))
+        except (FieldAssistantValidationError, TypeError, ValueError) as exc:
+            return {
+                "accepted": False,
+                "error": {"code": INVALID_FIELD_ACTION, "message": str(exc)},
+                "view": self.snapshot,
+            }
+        return {
+            "accepted": True,
+            "preview": self._field_result_preview(result),
+            "view": self.snapshot,
+        }
+
+    def _coerce_field_action(self, action: FieldAction | Mapping[str, Any]) -> FieldAction:
+        """Accept the bridge's JSON envelope and compatibility UI aliases."""
+
+        if isinstance(action, FieldAction):
+            kind, raw = action.kind, dict(action.payload)
+        elif isinstance(action, Mapping):
+            kind, raw = action.get("kind"), action.get("payload", {})
+            if not isinstance(kind, str) or not isinstance(raw, Mapping):
+                raise FieldAssistantValidationError("field action needs kind text and an object payload")
+            raw = dict(raw)
+        else:
+            raise FieldAssistantValidationError("field action must be an object")
+        has_explicit_enforcement = "enforced_absolute" in raw
+
+        # The first implementation's compact window shares a team selector,
+        # direct spot, and option selector between transitions.  Normalize
+        # those UI names here; the pure calculator still sees only its clear,
+        # documented vocabulary.
+        if "ball_on" in raw and isinstance(raw["ball_on"], Mapping):
+            spot = raw["ball_on"]
+            try:
+                raw.setdefault(
+                    "ball_absolute",
+                    absolute_from_ball_spot(
+                        BallSpot(str(spot.get("team")), int(spot.get("yard_line")))
+                    ),
+                )
+            except (TypeError, ValueError, StateValidationError) as exc:
+                raise FieldAssistantValidationError(f"invalid direct ball spot: {exc}") from exc
+        if "ball_absolute" in raw:
+            if kind in {"normal_play", "turnover", "kickoff"}:
+                raw.setdefault("final_absolute", raw["ball_absolute"])
+            if kind == "penalty" and not has_explicit_enforcement:
+                raw.setdefault("enforced_absolute", raw["ball_absolute"])
+        if kind == "start_series":
+            raw.setdefault("offense", raw.get("team"))
+        elif kind == "turnover":
+            raw.setdefault("new_offense", raw.get("team"))
+        elif kind in {"touchdown", "try", "field_goal", "safety"}:
+            raw.setdefault("scoring_team", raw.get("team"))
+            if kind == "try":
+                raw.setdefault("points", raw.get("option", 0))
+            if raw.get("resolution") == "score_already_recorded":
+                raw["add_score"] = False
+        elif kind == "kickoff":
+            raw.setdefault("receiving_team", raw.get("team"))
+        if kind == "penalty":
+            option = raw.get("option")
+            # ±5/10/15 are offense-relative shortcuts.  Deriving their
+            # direction and field clamp belongs here, never in JavaScript.
+            if not has_explicit_enforcement and option in (-15, -10, -5, 5, 10, 15):
+                context = self._field_context(raw)
+                underlying_raw = raw.get("underlying_action")
+                if isinstance(underlying_raw, Mapping):
+                    underlying = calculate_field_action(
+                        context, self._coerce_field_action(underlying_raw)
+                    )
+                    if underlying.ball_on is None:
+                        raise FieldAssistantValidationError(
+                            "a penalty shortcut needs an ordinary proposed final spot"
+                        )
+                    context = replace(context, ball_on=underlying.ball_on)
+                spot, _ = penalty_enforcement_spot(context, int(raw["option"]))
+                raw["enforced_absolute"] = spot
+            else:
+                raw.setdefault("enforced_absolute", raw.get("final_absolute"))
+        return FieldAction(kind, raw)
+
+    def _field_context(self, payload: Mapping[str, Any]) -> FieldAssistantContext:
+        """Read the current persisted helper facts into calculator context."""
+
+        direction = self._state.assistant_first_quarter_home_direction
+        if direction is None:
+            supplied = payload.get("first_quarter_home_direction")
+            if supplied is not None:
+                direction = supplied
+        series = SeriesState(direction, self._state.assistant_line_to_gain)
+        # Scoring paths do not inspect the context, but a harmless concrete
+        # spot lets the same preview adapter report a useful error for all
+        # other actions if ordinary field status has intentionally been cleared.
+        ball = self._state.ball_on or BallSpot()
+        return FieldAssistantContext(
+            quarter=self._state.quarter,
+            possession=self._state.possession,
+            ball_on=ball,
+            down=self._state.down,
+            distance=self._state.distance,
+            series=series,
+        )
+
+    def _calculate_field_action(self, action: FieldAction) -> FieldResult:
+        return calculate_field_action(self._field_context(action.payload), action)
+
+    @staticmethod
+    def _field_result_preview(result: FieldResult) -> dict[str, Any]:
+        return {
+            "ball_on": None if result.ball_on is None else _ball_spot_snapshot(result.ball_on),
+            "possession": result.possession,
+            "down": result.down,
+            "distance": result.distance,
+            "line_to_gain": None if result.series is None else result.series.line_to_gain,
+            "first_quarter_home_direction": (
+                None if result.series is None else result.series.first_quarter_home_direction
+            ),
+            "score_delta": {"home": result.score_delta_home, "away": result.score_delta_away},
+            "classification": result.classification,
+            "summary": result.summary,
+            "follow_up": result.follow_up,
+            "requires_explicit_turnover": result.requires_explicit_turnover,
+        }
+
     def _apply(self, command: Command) -> CommandResult:
         shape_error = validate_command(command)
         if shape_error is not None:
@@ -387,15 +574,19 @@ class ScoreboardService:
                 changes["play_clock_cleared"] = False
             elif command.type is CommandType.PLAY_CLOCK_RESET:
                 changes["play_clock_cleared"] = play_clock.preset_seconds == 0
-            # Every accepted command republishes both materialized clock values so
-            # the snapshot is complete and current at the moment it was applied.
-            changes.setdefault("game_clock", game_clock.to_clock_value(now=now))
-            changes.setdefault("play_clock", play_clock.to_clock_value(now=now))
-            countdown = event_clock.to_clock_value(now=now)
-            changes.setdefault("event_countdown", countdown)
-            changes["event_phase"] = event_phase_for(
-                changes.get("event_phase", self._state.event_phase), countdown.seconds
-            )
+            # Every regular command republishes materialized clocks.  A Field
+            # Assistant confirmation is explicitly clock-isolated: preserving
+            # the original values and flags is stronger than merely avoiding a
+            # start/stop call, and prevents a post-play update from becoming an
+            # incidental clock checkpoint.
+            if command.type is not CommandType.FINALIZE_FIELD_ACTION:
+                changes.setdefault("game_clock", game_clock.to_clock_value(now=now))
+                changes.setdefault("play_clock", play_clock.to_clock_value(now=now))
+                countdown = event_clock.to_clock_value(now=now)
+                changes.setdefault("event_countdown", countdown)
+                changes["event_phase"] = event_phase_for(
+                    changes.get("event_phase", self._state.event_phase), countdown.seconds
+                )
             try:
                 next_state = self._state.evolve(**changes)
             except StateValidationError as exc:
@@ -541,6 +732,20 @@ class ScoreboardService:
                 )
             return CommandError(
                 NOTHING_TO_UNDO, "There is no reversible scoring or quarter command to undo."
+            )
+        if entry.old_values is not None:
+            old_values = _field_assistant_values(self._state)
+            return _Transition(
+                changes=dict(entry.old_values),
+                event=EventIntent(
+                    command=command.type,
+                    field="field_assistant",
+                    old_value=old_values,
+                    new_value=dict(entry.old_values),
+                    team=entry.team,
+                    source=command.source,
+                ),
+                clears_undo=True,
             )
         current = getattr(self._state, entry.field)
         # Undo is a new forward transition, not a rollback: the revision keeps
@@ -1102,6 +1307,87 @@ class ScoreboardService:
             ),
         )
 
+    # --- Field Assistant composite action ---------------------------------
+
+    def _handle_finalize_field_action(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        assert isinstance(command.action, FieldAction)
+        try:
+            action = self._coerce_field_action(command.action)
+            result = self._calculate_field_action(action)
+        except (FieldAssistantValidationError, TypeError, ValueError) as exc:
+            return CommandError(INVALID_FIELD_ACTION, f"Field Assistant action rejected: {exc}")
+        if result.requires_explicit_turnover:
+            return CommandError(
+                INVALID_FIELD_ACTION,
+                "This is a proposed turnover on downs. Confirm the new offense and final spot explicitly.",
+            )
+
+        home_score = self._state.home_score + result.score_delta_home
+        away_score = self._state.away_score + result.score_delta_away
+        if home_score > MAX_SCORE or away_score > MAX_SCORE:
+            return CommandError(
+                SCORE_ABOVE_MAXIMUM,
+                f"The board supports scores from 0 to {MAX_SCORE}; this transition would exceed it.",
+            )
+
+        # Scoring transitions clear a live series but retain a previously
+        # established first-quarter direction so the explicit kickoff setup
+        # can immediately begin a new series.  A new/start/turnover/kickoff
+        # result supplies both authoritative assistant values itself.
+        if result.series is None:
+            direction = self._state.assistant_first_quarter_home_direction
+            line_to_gain = None
+        else:
+            direction = result.series.first_quarter_home_direction
+            line_to_gain = result.series.line_to_gain
+        changes = {
+            "ball_on": result.ball_on,
+            "possession": result.possession,
+            "down": result.down,
+            "distance": result.distance,
+            "assistant_first_quarter_home_direction": direction,
+            "assistant_line_to_gain": line_to_gain,
+            "home_score": home_score,
+            "away_score": away_score,
+        }
+        old_values = _field_assistant_values(self._state)
+        new_values = dict(changes)
+        new_values["ball_on"] = (
+            None if result.ball_on is None else _ball_spot_snapshot(result.ball_on)
+        )
+        new_values.update(
+            {
+                "action": {"kind": action.kind, "payload": dict(action.payload)},
+                "classification": result.classification,
+                "summary": result.summary,
+                "follow_up": result.follow_up,
+                "score_delta": {
+                    "home": result.score_delta_home,
+                    "away": result.score_delta_away,
+                },
+            }
+        )
+        return _Transition(
+            changes=changes,
+            event=EventIntent(
+                command=command.type,
+                field="field_assistant",
+                old_value=old_values,
+                new_value=new_values,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type,
+                field="field_assistant",
+                old_value=old_values,
+                new_value=new_values,
+                old_values=_field_assistant_restore_values(self._state),
+                new_values=changes,
+            ),
+        )
+
     _HANDLERS: Final[dict[CommandType, Any]] = {
         CommandType.SET_TEAM_NAME: _handle_set_team_name,
         CommandType.ADD_SCORE: _handle_add_score,
@@ -1136,6 +1422,7 @@ class ScoreboardService:
         CommandType.TIMEOUT_USED: _handle_timeout_used,
         CommandType.TIMEOUT_CORRECT: _handle_timeout_correct,
         CommandType.SET_TIMEOUTS: _handle_set_timeouts,
+        CommandType.FINALIZE_FIELD_ACTION: _handle_finalize_field_action,
     }
 
 

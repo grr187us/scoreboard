@@ -162,6 +162,56 @@ def format_down_and_distance(down: int | None, distance: int | None) -> str:
     return f"{ordinal} & {to_go}"
 
 
+#: Presentation-layout widgets (spec section 4.5) show down, distance,
+#: possession, and timeouts each in their own box rather than combined into a
+#: single string, so each needs its own tolerant, never-raising formatter. The
+#: authoritative operator readout keeps using :func:`format_down_and_distance`
+#: unchanged; these are additional views of the same stored values, not a
+#: replacement for it.
+
+
+def format_down(down: int | None) -> str:
+    """``"1st"``/``"2nd"``/``"3rd"``/``"4th"``, or blank when not set."""
+
+    if down is None:
+        return BLANK_DISPLAY
+    return _DOWN_ORDINALS.get(down, BLANK_DISPLAY)
+
+
+def format_distance(distance: int | None) -> str:
+    """``"& 7"``, ``"& Goal"`` (distance ``0``), or blank when not set.
+
+    The ampersand lives with the distance so an adjacent ``down`` and
+    ``distance`` widget pair reads "3rd & 7" exactly as the combined line does
+    today.
+    """
+
+    if distance is None or distance < 0:
+        return BLANK_DISPLAY
+    to_go = GOAL_TO_GO_DISPLAY if distance == 0 else str(distance)
+    return f"& {to_go}"
+
+
+def format_possession(possession: str | None) -> str:
+    """``"◀ BALL"`` for home, ``"BALL ▶"`` for away, blank for neither."""
+
+    if possession == "home":
+        return "◀ BALL"
+    if possession == "away":
+        return "BALL ▶"
+    return BLANK_DISPLAY
+
+
+def format_timeouts(remaining: int | None) -> str:
+    """``"TO 3"``, or blank when unknown. Never invents a maximum."""
+
+    if remaining is None or isinstance(remaining, bool) or not isinstance(remaining, int):
+        return BLANK_DISPLAY
+    if remaining < 0:
+        return BLANK_DISPLAY
+    return f"TO {remaining}"
+
+
 def format_ball_on(team: str, yard_line: int, team_name: str) -> str:
     """Format field position as e.g. ``"TIGERS 35"``, or ``"50"`` at midfield.
 
@@ -190,8 +240,12 @@ __all__ = [
     "ceil_tenths",
     "displayed_second",
     "format_ball_on",
+    "format_distance",
+    "format_down",
     "format_down_and_distance",
     "format_event_countdown",
     "format_game_clock",
     "format_play_clock",
+    "format_possession",
+    "format_timeouts",
 ]

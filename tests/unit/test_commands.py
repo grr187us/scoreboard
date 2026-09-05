@@ -10,6 +10,7 @@ from scoreboard.application.service import ScoreboardService
 from scoreboard.application.snapshots import state_to_snapshot
 from scoreboard.domain import commands as cmd
 from scoreboard.domain.clocks import GameClock, PlayClock
+from scoreboard.domain.field_assistant import FieldAction
 from scoreboard.domain.state import MAX_SCORE, QUARTER_LABELS, GameState, default_state
 
 
@@ -1155,6 +1156,85 @@ class FootballStateTests(unittest.TestCase):
 
         undone = service.submit(cmd.undo())
         self.assertEqual(undone.state.home_timeouts, 3)
+
+
+class FieldAssistantCompositeCommandTests(unittest.TestCase):
+    def _service_in_first(self):
+        fake = FakeMonotonic()
+        state = default_state().evolve(quarter="1st", lifecycle="IN_PROGRESS")
+        return ScoreboardService(state=state, monotonic_clock=fake), fake
+
+    def test_finalize_is_one_revision_complete_snapshot_and_one_composite_undo(self) -> None:
+        service, _ = self._service_in_first()
+        start = service.finalize_field_action(
+            FieldAction(
+                "start_series",
+                {"offense": "home", "ball_absolute": 25, "first_quarter_home_direction": 1},
+            ),
+            expected_revision=service.revision,
+        )
+        before = start.state
+
+        result = service.finalize_field_action(
+            FieldAction("normal_play", {"final_absolute": 36}),
+            expected_revision=service.revision,
+        )
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(result.revision, before.revision + 1)
+        self.assertEqual(set(result.snapshot), SNAPSHOT_KEYS)
+        self.assertEqual((result.state.down, result.state.distance), (1, 10))
+        self.assertEqual(result.event.field, "field_assistant")
+        self.assertEqual(result.event.new_value["classification"], "first_down")
+
+        undone = service.submit(cmd.undo())
+        self.assertTrue(undone.accepted)
+        self.assertEqual(undone.revision, result.revision + 1)
+        self.assertEqual(undone.state.ball_on, before.ball_on)
+        self.assertEqual(undone.state.down, before.down)
+        self.assertEqual(undone.state.distance, before.distance)
+        self.assertEqual(undone.state.assistant_line_to_gain, before.assistant_line_to_gain)
+
+    def test_scoring_composite_clears_field_status_and_undo_restores_score_and_series(self) -> None:
+        service, _ = self._service_in_first()
+        service.finalize_field_action(
+            FieldAction(
+                "start_series",
+                {"offense": "home", "ball_absolute": 25, "first_quarter_home_direction": 1},
+            )
+        )
+        before = service.state
+
+        result = service.finalize_field_action(FieldAction("touchdown", {"scoring_team": "home"}))
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(result.state.home_score, before.home_score + 6)
+        self.assertIsNone(result.state.ball_on)
+        self.assertIsNone(result.state.down)
+        self.assertIsNone(result.state.assistant_line_to_gain)
+        self.assertEqual(result.state.assistant_first_quarter_home_direction, 1)
+        undone = service.submit(cmd.undo())
+        self.assertEqual(undone.state.home_score, before.home_score)
+        self.assertEqual(undone.state.ball_on, before.ball_on)
+        self.assertEqual(undone.state.assistant_line_to_gain, before.assistant_line_to_gain)
+
+    def test_finalize_rejects_stale_revision_and_never_changes_clocks(self) -> None:
+        service, fake = self._service_in_first()
+        service.submit(cmd.game_clock_start())
+        service.submit(cmd.play_clock_preset_start(25))
+        clocks_before = (service.state.game_clock, service.state.play_clock, service.state.event_countdown)
+        stale = service.finalize_field_action(
+            FieldAction("touchdown", {"scoring_team": "home"}), expected_revision=0
+        )
+        self.assertFalse(stale.accepted)
+        self.assertEqual(stale.error.code, cmd.STALE_REVISION)
+        fake.advance(2)
+        result = service.finalize_field_action(FieldAction("touchdown", {"scoring_team": "home"}))
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(
+            (result.state.game_clock, result.state.play_clock, result.state.event_countdown),
+            clocks_before,
+        )
 
 
 if __name__ == "__main__":

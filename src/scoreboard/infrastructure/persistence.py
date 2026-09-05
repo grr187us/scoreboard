@@ -1092,6 +1092,16 @@ def _requested_arguments(command: Command) -> dict[str, Any]:
         argument = getattr(command, name, None)
         if argument is not None:
             requested[name] = argument
+    action = getattr(command, "action", None)
+    if action is not None:
+        # FieldAction is an immutable dataclass whose payload can itself hold
+        # nested action mappings (declined penalties).  Preserve that
+        # structured operator request for a rejected stale/invalid submit,
+        # instead of falling back to a Python representation.
+        requested["action"] = {
+            "kind": getattr(action, "kind", None),
+            "payload": dict(getattr(action, "payload", {})),
+        }
     requested["confirmed"] = command.confirmed
     if command.expected_revision is not None:
         requested["expected_revision"] = command.expected_revision

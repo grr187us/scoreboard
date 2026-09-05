@@ -237,6 +237,35 @@ class StateTests(unittest.TestCase):
 
         self.assertEqual(restored, default_state())
 
+    def test_assistant_series_state_is_additive_and_round_trips(self) -> None:
+        state = default_state().evolve(
+            assistant_first_quarter_home_direction=1,
+            assistant_line_to_gain=63,
+        )
+
+        payload = state_to_snapshot(state)
+
+        self.assertEqual(
+            payload["assistant"],
+            {"first_quarter_home_direction": 1, "line_to_gain": 63},
+        )
+        self.assertEqual(json_to_state(json.dumps(payload)), state)
+
+    def test_old_snapshot_without_assistant_state_recovers_safe_setup_defaults(self) -> None:
+        payload = state_to_snapshot(default_state())
+        del payload["assistant"]
+
+        restored = snapshot_to_state(payload)
+
+        self.assertIsNone(restored.assistant_first_quarter_home_direction)
+        self.assertIsNone(restored.assistant_line_to_gain)
+
+    def test_scoring_transition_can_clear_ball_status(self) -> None:
+        state = default_state().evolve(ball_on=None)
+
+        self.assertIsNone(state_to_snapshot(state)["football"]["ball_on"])
+        self.assertEqual(snapshot_to_state(state_to_snapshot(state)), state)
+
 
 if __name__ == "__main__":
     unittest.main()

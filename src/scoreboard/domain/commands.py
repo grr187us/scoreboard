@@ -15,9 +15,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Final
+from typing import Any, Final, Mapping
 
 from scoreboard.domain.clocks import PLAY_CLOCK_PRESETS, SELECTABLE_EVENT_PHASES
+from scoreboard.domain.field_assistant import FieldAction
 from scoreboard.domain.state import (
     MAX_DISTANCE,
     MAX_DOWN,
@@ -79,6 +80,9 @@ class CommandType(str, Enum):
     TIMEOUT_USED = "timeout_used"
     TIMEOUT_CORRECT = "timeout_correct"
     SET_TIMEOUTS = "set_timeouts"
+    #: One atomic Field Assistant result.  It is intentionally not composed
+    #: from the manual football commands, so observers never see a half-play.
+    FINALIZE_FIELD_ACTION = "finalize_field_action"
 
 
 # --- Error codes -----------------------------------------------------------
@@ -108,6 +112,7 @@ INVALID_POSSESSION: Final[str] = "INVALID_POSSESSION"
 INVALID_BALL_ON: Final[str] = "INVALID_BALL_ON"
 INVALID_TIMEOUT_DELTA: Final[str] = "INVALID_TIMEOUT_DELTA"
 INVALID_TIMEOUT_TARGET: Final[str] = "INVALID_TIMEOUT_TARGET"
+INVALID_FIELD_ACTION: Final[str] = "INVALID_FIELD_ACTION"
 TIMEOUT_BELOW_ZERO: Final[str] = "TIMEOUT_BELOW_ZERO"
 TIMEOUT_ABOVE_MAXIMUM: Final[str] = "TIMEOUT_ABOVE_MAXIMUM"
 
@@ -131,6 +136,7 @@ UNDOABLE_COMMANDS: Final[frozenset[CommandType]] = frozenset(
         CommandType.TIMEOUT_USED,
         CommandType.TIMEOUT_CORRECT,
         CommandType.SET_TIMEOUTS,
+        CommandType.FINALIZE_FIELD_ACTION,
     }
 )
 
@@ -192,6 +198,7 @@ class Command:
     confirmed: bool = False
     source: str = "operator"
     expected_revision: int | None = None
+    action: FieldAction | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +225,10 @@ class UndoEntry:
     old_value: Any
     new_value: Any
     team: str | None = None
+    #: A composite action's complete prior values.  Kept optional so every
+    #: existing one-field manual command retains its stable representation.
+    old_values: Mapping[str, Any] | None = None
+    new_values: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -394,6 +405,14 @@ def validate_command(command: Command) -> CommandError | None:
                 f"Timeouts remaining must be between 0 and {MAX_TIMEOUTS}.",
             )
 
+    if command.type is CommandType.FINALIZE_FIELD_ACTION and not isinstance(
+        command.action, FieldAction
+    ):
+        return CommandError(
+            INVALID_FIELD_ACTION,
+            "Field Assistant needs one complete operator action before it can finalize.",
+        )
+
     return None
 
 
@@ -554,6 +573,22 @@ def set_timeouts(team: str, value: int, *, source: str = "operator") -> Command:
     return Command(CommandType.SET_TIMEOUTS, team=team, value=value, source=source)
 
 
+def finalize_field_action(
+    action: FieldAction,
+    *,
+    expected_revision: int | None = None,
+    source: str = "field-assistant",
+) -> Command:
+    """Build the sole atomic Field Assistant mutation command."""
+
+    return Command(
+        CommandType.FINALIZE_FIELD_ACTION,
+        action=action,
+        expected_revision=expected_revision,
+        source=source,
+    )
+
+
 __all__ = [
     "CONFIRMATION_REQUIRED",
     "INVALID_BALL_ON",
@@ -562,6 +597,7 @@ __all__ = [
     "INVALID_DISTANCE",
     "INVALID_DOWN",
     "INVALID_EVENT_PHASE",
+    "INVALID_FIELD_ACTION",
     "INVALID_PLAY_CLOCK_PRESET",
     "INVALID_POSSESSION",
     "INVALID_QUARTER",
@@ -592,6 +628,7 @@ __all__ = [
     "CommandResult",
     "CommandType",
     "EventIntent",
+    "FieldAction",
     "UndoEntry",
     "add_score",
     "correct_score",
@@ -601,6 +638,7 @@ __all__ = [
     "event_countdown_select",
     "event_countdown_start",
     "event_countdown_stop",
+    "finalize_field_action",
     "game_clock_correct",
     "game_clock_reset",
     "game_clock_start",

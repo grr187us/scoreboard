@@ -105,6 +105,7 @@
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
     <button type="button" id="open-event" data-action="open_event">Halftime &#9656;</button>
     <button type="button" id="open-field" data-action="open_field">Field &#9656;</button>
+    <button type="button" id="open-field-assistant" data-action="open_field_assistant">Field Assistant</button>
     <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
     <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
     <span class="spacer"></span>
@@ -350,6 +351,16 @@
       <div class="row">
         <span class="row-label">Spectator preview</span>
         <button type="button" id="open-test-window" data-action="open_test_window">Open test window</button>
+      </div>
+      <!-- The presentation layout editor lives here, not on the board, for the
+           same reason the display panel does: the drawer overlays and scrolls
+           inside itself, so nothing added here can push a live control off a
+           1366x768 screen (U-001). It is also not a game control. -->
+      <p class="hint" id="layout-editor-note">Changes how the spectator board looks. It never changes
+        scores, clocks, or any game value.</p>
+      <div class="row">
+        <span class="row-label">Presentation layout</span>
+        <button type="button" id="open-layout-editor" data-action="open_layout_editor">Presentation layout&hellip;</button>
       </div>
       <div class="row end">
         <button type="button" data-action="close_drawer">Close</button>

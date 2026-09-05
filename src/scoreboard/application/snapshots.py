@@ -49,8 +49,19 @@ def state_to_snapshot(state: GameState) -> dict[str, Any]:
             "down": state.down,
             "distance": state.distance,
             "possession": state.possession,
-            "ball_on": {"team": state.ball_on.team, "yard_line": state.ball_on.yard_line},
+            "ball_on": (
+                None
+                if state.ball_on is None
+                else {"team": state.ball_on.team, "yard_line": state.ball_on.yard_line}
+            ),
             "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
+        },
+        # Additive Field Assistant recovery state.  It intentionally contains
+        # no draft or inferred result: only the first-quarter direction and
+        # active series line-to-gain survive a restart.
+        "assistant": {
+            "first_quarter_home_direction": state.assistant_first_quarter_home_direction,
+            "line_to_gain": state.assistant_line_to_gain,
         },
     }
 
@@ -79,7 +90,13 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
         # load with the same defaults a fresh GameState() carries (P-004,
         # P-006) rather than becoming unrecoverable.
         football = snapshot.get("football", {})
-        ball_on = football.get("ball_on", {})
+        # Assistant state is additive.  Older snapshots had no key, and must
+        # recover into the safe "assistant setup required" state.
+        assistant = snapshot.get("assistant", {})
+        ball_on = football.get(
+            "ball_on",
+            {"team": _DEFAULT_BALL_ON.team, "yard_line": _DEFAULT_BALL_ON.yard_line},
+        )
         timeouts = football.get("timeouts", {})
         return GameState(
             schema_version=snapshot["schema_version"],
@@ -104,14 +121,22 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
             down=football.get("down"),
             distance=football.get("distance"),
             possession=football.get("possession"),
-            ball_on=BallSpot(
-                ball_on.get("team", _DEFAULT_BALL_ON.team),
-                ball_on.get("yard_line", _DEFAULT_BALL_ON.yard_line),
+            ball_on=(
+                None
+                if ball_on is None
+                else BallSpot(
+                    ball_on.get("team", _DEFAULT_BALL_ON.team),
+                    ball_on.get("yard_line", _DEFAULT_BALL_ON.yard_line),
+                )
             ),
             home_timeouts=timeouts.get("home", MAX_TIMEOUTS),
             away_timeouts=timeouts.get("away", MAX_TIMEOUTS),
+            assistant_first_quarter_home_direction=assistant.get(
+                "first_quarter_home_direction"
+            ),
+            assistant_line_to_gain=assistant.get("line_to_gain"),
         )
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, AttributeError) as exc:
         raise StateValidationError(f"invalid snapshot shape: {exc}") from exc
 
 

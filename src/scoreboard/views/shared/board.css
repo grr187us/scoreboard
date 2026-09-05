@@ -1,0 +1,35 @@
+/* Generic widget styling shared by the spectator board and the layout
+ * editor's live preview. A widget's position/size/style is set as inline
+ * custom properties by `board.js`'s applyLayout(); this file only says how
+ * those custom properties turn into a drawn box. Nothing here is specific to
+ * the spectator page's element ids, so the editor's preview can reuse it
+ * unchanged. `--canvas-width` is defined by whichever page includes this
+ * file (see spectator.css).
+ */
+
+.widget {
+  position: absolute;
+  display: flex;
+  line-height: 1.15;
+  overflow: visible;
+  left: calc(var(--x) * 100%);
+  top: calc(var(--y) * 100%);
+  width: calc(var(--w) * 100%);
+  height: calc(var(--h) * 100%);
+  font-size: calc(var(--canvas-width) * var(--fs));
+  color: var(--color);
+  font-weight: var(--fw);
+  justify-content: var(--ta);
+  align-items: var(--va);
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Colour supplements, never replaces, the textual clock status shown to the
+ * operator (carried over from the pre-widget spectator board). */
+.widget.running-game .widget-text { color: var(--game-running); }
+.widget.running-play .widget-text { color: var(--play-running); }

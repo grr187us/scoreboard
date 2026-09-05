@@ -46,6 +46,14 @@ MAX_YARD_LINE: Final[int] = 50
 #: from local officials, including whether it should reset at halftime.
 MAX_TIMEOUTS: Final[int] = 3
 
+# Field Assistant's deliberately small persisted memory.  The calculator owns
+# all derived football rules; authoritative state retains only the two facts it
+# cannot reconstruct after a restart.  ``None`` means the assistant has not
+# been set up (or this is a pre-assistant saved game).
+FIRST_QUARTER_DIRECTIONS: Final[tuple[int, ...]] = (-1, 1)
+MIN_ABSOLUTE_YARD: Final[int] = 0
+MAX_ABSOLUTE_YARD: Final[int] = 100
+
 QUARTER_LABELS: Final[tuple[str, ...]] = (
     "PRE",
     "1st",
@@ -142,6 +150,16 @@ def _require_optional_team_side(value: str | None, field_name: str) -> str | Non
         return None
     if value not in TEAM_SIDES:
         raise StateValidationError(f"{field_name} must be 'home', 'away', or null")
+    return value
+
+
+def _require_optional_first_quarter_direction(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or value not in FIRST_QUARTER_DIRECTIONS:
+        raise StateValidationError(
+            "assistant_first_quarter_home_direction must be +1, -1, or null"
+        )
     return value
 
 
@@ -245,9 +263,11 @@ class GameState:
     down: int | None = None
     distance: int | None = None
     possession: str | None = None
-    ball_on: BallSpot = BallSpot()
+    ball_on: BallSpot | None = BallSpot()
     home_timeouts: int = MAX_TIMEOUTS
     away_timeouts: int = MAX_TIMEOUTS
+    assistant_first_quarter_home_direction: int | None = None
+    assistant_line_to_gain: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.play_clock_cleared, bool):
@@ -294,8 +314,8 @@ class GameState:
         object.__setattr__(
             self, "possession", _require_optional_team_side(self.possession, "possession")
         )
-        if not isinstance(self.ball_on, BallSpot):
-            raise StateValidationError("ball_on must be a BallSpot")
+        if self.ball_on is not None and not isinstance(self.ball_on, BallSpot):
+            raise StateValidationError("ball_on must be a BallSpot or null")
         object.__setattr__(
             self,
             "home_timeouts",
@@ -305,6 +325,23 @@ class GameState:
             self,
             "away_timeouts",
             _require_int_range(self.away_timeouts, "away_timeouts", 0, MAX_TIMEOUTS),
+        )
+        object.__setattr__(
+            self,
+            "assistant_first_quarter_home_direction",
+            _require_optional_first_quarter_direction(
+                self.assistant_first_quarter_home_direction
+            ),
+        )
+        object.__setattr__(
+            self,
+            "assistant_line_to_gain",
+            _require_optional_int_range(
+                self.assistant_line_to_gain,
+                "assistant_line_to_gain",
+                MIN_ABSOLUTE_YARD,
+                MAX_ABSOLUTE_YARD,
+            ),
         )
 
     @property

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Presentation layout</title>
+  <!-- The preview is the real spectator renderer: the same board.js widgets,
+       the same board.css rules, and the same layout document the spectator
+       window receives. Nothing about the board is reimplemented here. -->
+  <link rel="stylesheet" href="../shared/board.css">
+  <link rel="stylesheet" href="layout.css">
+</head>
+<body>
+  <header class="bar">
+    <h1>PRESENTATION LAYOUT</h1>
+    <label class="named" for="layout-select">Layout</label>
+    <select id="layout-select" aria-label="Stored layout"></select>
+    <button type="button" id="save" data-action="save">Save</button>
+    <button type="button" id="save-as-open" data-action="save_as_open">Save as&hellip;</button>
+    <button type="button" id="discard" data-action="discard">Discard changes</button>
+    <span class="chip" id="dirty-chip" hidden>UNSAVED CHANGES</span>
+  </header>
+
+  <!-- The whole safety story for this window, in the one place an operator
+       cannot miss it. -->
+  <p class="banner" id="scope-banner">This changes how the spectator board LOOKS. It never changes
+    scores, clocks, or any other game value.</p>
+
+  <p class="alert" id="alert" hidden role="alert" aria-live="assertive"></p>
+
+  <div class="save-as" id="save-as" hidden>
+    <label for="save-as-name">Save this layout as</label>
+    <input type="text" id="save-as-name" maxlength="40" autocomplete="off"
+           aria-describedby="save-as-hint">
+    <button type="button" data-action="save_as_confirm">Save</button>
+    <button type="button" data-action="save_as_cancel">Cancel</button>
+    <span class="hint" id="save-as-hint">1&ndash;40 characters. Saving over an existing name replaces it.</span>
+  </div>
+
+  <main class="workspace">
+    <section class="panel widgets" aria-label="Widgets">
+      <h2>WIDGETS</h2>
+      <ul id="widget-list"></ul>
+    </section>
+
+    <section class="panel preview-panel" aria-label="Spectator preview">
+      <h2>PREVIEW &mdash; spectator board</h2>
+      <div class="preview-frame">
+        <div id="canvas">
+          <div id="safe-area" aria-hidden="true"></div>
+          <div id="game-board"></div>
+        </div>
+      </div>
+      <p class="hint">Click a widget to select it. The preview shows the live board values;
+        it cannot change them.</p>
+    </section>
+
+    <section class="panel properties" aria-label="Properties">
+      <h2>PROPERTIES &mdash; <span id="selected-label">nothing selected</span></h2>
+      <div id="property-form" hidden>
+        <div class="prop-row">
+          <label for="prop-visible">Visible</label>
+          <input type="checkbox" id="prop-visible" data-prop="visible">
+        </div>
+        <div class="prop-grid">
+          <label for="prop-x">X</label>
+          <input type="number" id="prop-x" data-prop="x" step="0.005" min="0" max="1">
+          <label for="prop-y">Y</label>
+          <input type="number" id="prop-y" data-prop="y" step="0.005" min="0" max="1">
+          <label for="prop-width">Width</label>
+          <input type="number" id="prop-width" data-prop="width" step="0.005" min="0" max="1">
+          <label for="prop-height">Height</label>
+          <input type="number" id="prop-height" data-prop="height" step="0.005" min="0" max="1">
+        </div>
+        <div class="prop-row">
+          <label for="prop-font_scale">Font size</label>
+          <input type="number" id="prop-font_scale" data-prop="font_scale" step="0.001">
+          <span class="hint">Share of the board's width.</span>
+        </div>
+        <div class="prop-row">
+          <label for="prop-color">Colour</label>
+          <input type="color" id="prop-color-swatch" aria-label="Colour swatch">
+          <input type="text" id="prop-color" data-prop="color" maxlength="7" size="8">
+        </div>
+        <div class="prop-row">
+          <span class="prop-name" id="align-label">Align</span>
+          <span class="choices" id="prop-text_align" data-prop="text_align"
+                role="group" aria-labelledby="align-label"></span>
+        </div>
+        <div class="prop-row">
+          <span class="prop-name" id="valign-label">Vertical</span>
+          <span class="choices" id="prop-vertical_align" data-prop="vertical_align"
+                role="group" aria-labelledby="valign-label"></span>
+        </div>
+        <div class="prop-row">
+          <label for="prop-font_weight">Weight</label>
+          <select id="prop-font_weight" data-prop="font_weight"></select>
+          <label for="prop-z_index">Stacking</label>
+          <input type="number" id="prop-z_index" data-prop="z_index" step="1">
+        </div>
+        <p class="hint" id="static-note" hidden>This is a fixed label. You can move, restyle, or
+          hide it; its wording is set by the application.</p>
+        <div class="prop-row end">
+          <button type="button" data-action="clamp">Fit to safe area</button>
+          <button type="button" data-action="reset_widget">Reset this widget</button>
+        </div>
+      </div>
+      <p class="hint" id="no-selection">Choose a widget from the list or the preview.</p>
+    </section>
+  </main>
+
+  <section class="panel validation" aria-label="Validation">
+    <h2>VALIDATION</h2>
+    <ul id="issue-list"></ul>
+    <p class="hint" id="issue-empty">No problems. This layout can be saved.</p>
+    <div class="row end">
+      <button type="button" id="reset-layout" data-action="reset_layout_ask">Reset entire layout&hellip;</button>
+      <span class="confirm-inline" id="reset-confirm" hidden>
+        Replace this layout with the built-in default?
+        <button type="button" data-action="reset_layout_confirm">Reset</button>
+        <button type="button" data-action="reset_layout_cancel">Cancel</button>
+      </span>
+    </div>
+  </section>
+
+  <script src="../shared/render.js"></script>
+  <script src="../shared/board.js"></script>
+  <script src="layout.js"></script>
+</body>
+</html>

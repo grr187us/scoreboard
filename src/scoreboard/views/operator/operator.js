@@ -497,11 +497,32 @@
       });
       return;
     }
+    if (action === 'open_layout_editor') {
+      // A host action, like the test window: it opens a presentation-only
+      // window and cannot reach the game. Both outcomes are reported plainly
+      // because this is a button an operator may press during a game.
+      Promise.resolve(api.open_layout_editor()).then(function (result) {
+        showAlert((result && result.message) || 'Presentation layout editor opened.');
+      }).catch(function (error) {
+        showAlert('The presentation layout editor could not be opened: ' + error);
+      });
+      return;
+    }
     if (action === 'open_test_window') {
       Promise.resolve(api.open_test_window()).then(function (result) {
         showAlert((result && result.message) || 'Test spectator window opened.');
       }).catch(function (error) {
         showAlert('The test spectator window could not be opened: ' + error);
+      });
+      return;
+    }
+    if (action === 'open_field_assistant') {
+      Promise.resolve(api.open_field_assistant()).then(function (result) {
+        showAlert((result && result.message) || 'Field Assistant opened.');
+      }).catch(function (error) {
+        // The helper is deliberately optional: an unavailable window leaves
+        // the existing Field drawer and every game control usable.
+        showAlert('The Field Assistant could not be opened: ' + error);
       });
       return;
     }

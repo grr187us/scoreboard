@@ -4,38 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scoreboard display</title>
+  <link rel="stylesheet" href="../shared/board.css">
   <link rel="stylesheet" href="spectator.css">
 </head>
 <body>
   <main id="canvas" aria-label="Scoreboard">
-    <div id="safe-area">
-      <section id="game-board" hidden>
-        <div class="team home">
-          <p class="name"><span class="possession-mark" id="home-possession-mark"></span><span
-            data-field="teams.home.name"></span></p>
-          <p class="score" data-field="teams.home.score"></p>
-        </div>
-        <div class="team away">
-          <p class="name"><span data-field="teams.away.name"></span><span
-            class="possession-mark" id="away-possession-mark"></span></p>
-          <p class="score" data-field="teams.away.score"></p>
-        </div>
-        <p class="game-clock" id="game-clock" data-field="clocks.game.display"></p>
-        <p class="quarter"><span data-field="quarter_display"></span><span class="field-line"
-          id="down-distance-line" data-field="football.down_distance_display"></span></p>
-        <p class="play"><span class="label" id="play-label">PLAY CLOCK </span><span
-          class="play-clock" id="play-clock" data-field="clocks.play.display"></span><span
-          class="field-line" id="ball-on-line" data-field="football.ball_on_display"></span></p>
-      </section>
-      <section id="event-board" hidden>
-        <p class="phase" id="event-phase" data-field="clocks.event.phase"></p>
-        <p class="event-title" data-field="clocks.event.title"></p>
-        <p class="event-clock" data-field="clocks.event.display"></p>
-        <p class="warmup" id="warmup">Warmup follows: <span data-field="clocks.event.warmup_follows"></span></p>
-      </section>
-    </div>
+    <div id="safe-area" aria-hidden="true"></div>
+    <section id="game-board" hidden></section>
+    <section id="event-board" hidden>
+      <p class="phase" id="event-phase" data-field="clocks.event.phase"></p>
+      <p class="event-title" data-field="clocks.event.title"></p>
+      <p class="event-clock" data-field="clocks.event.display"></p>
+      <p class="warmup" id="warmup">Warmup follows: <span data-field="clocks.event.warmup_follows"></span></p>
+    </section>
   </main>
   <script src="../shared/render.js"></script>
+  <script src="../shared/board.js"></script>
   <script src="spectator.js"></script>
 </body>
 </html>

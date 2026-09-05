@@ -53,10 +53,12 @@ from scoreboard.application.service import ScoreboardService
 from scoreboard.domain.state import APP_VERSION
 from scoreboard.host.bridge import (
     DisplayLink,
+    FieldAssistantBridge,
     ScoreboardBridge,
     SpectatorBridge,
     spectator_view_model,
 )
+from scoreboard.host.layout_bridge import LayoutEditorBridge, PresentationLayouts
 from scoreboard.host.startup import StartupBridge
 from scoreboard.host.displays import (
     MATCH_CHOSEN,
@@ -182,7 +184,15 @@ class ScoreboardApplication:
         self.store: GameStore | None = None
         self.bridge: ScoreboardBridge | None = None
         self.display = DisplayLink()
+        # Created before any game exists, exactly like ``self.display``: the
+        # presentation layout is a host concern, not game state, so it must
+        # survive across a recovered/new-game choice untouched (spec 6.2).
+        self.layouts = PresentationLayouts(self.paths, diagnostics=self.diagnostics)
         self._push: Callable[[str, dict[str, Any]], None] | None = None
+        # WindowHost owns this optional surface.  Keeping the predicate here
+        # means normal two-window application tests do not receive a third
+        # publication, while an open helper sees every complete revision.
+        self._field_assistant_active: Callable[[], bool] | None = None
         self._display_watch: Callable[[], None] | None = None
         self._command_lock = threading.RLock()
         self._stopping = threading.Event()
@@ -233,6 +243,7 @@ class ScoreboardApplication:
             diagnostics=self.diagnostics,
             lock=self._command_lock,
             on_accepted=self._publish,
+            layouts=self.layouts,
         )
         return self.bridge
 
@@ -305,6 +316,11 @@ class ScoreboardApplication:
 
         self._push = push
 
+    def set_field_assistant_active(self, active: Callable[[], bool] | None) -> None:
+        """Tell publishing whether the optional helper window is open."""
+
+        self._field_assistant_active = active
+
     def _publish(self, operator_view: dict[str, Any]) -> None:
         if self._push is None or self.bridge is None:
             return
@@ -319,6 +335,14 @@ class ScoreboardApplication:
             # problem: report it, mark the display, and keep the clocks running.
             self.diagnostics.unhandled_error(context="spectator_push", error=exc)
             self.bridge.display_closed(f"The display stopped responding: {exc}")
+        if self._field_assistant_active is not None and self._field_assistant_active():
+            try:
+                # Same complete operator snapshot the primary controls get;
+                # the helper compares its base revision and visibly marks an
+                # outstanding draft stale instead of merging it.
+                self._push("field_assistant", operator_view)
+            except Exception as exc:  # noqa: BLE001 - optional window only
+                self.diagnostics.unhandled_error(context="field_assistant_push", error=exc)
 
     # --- Spectator health ---------------------------------------------------
 
@@ -401,6 +425,12 @@ class WindowHost:
         self.spectator_window: webview.Window | None = None
         # A practice-only window. It has no display-selection or health role.
         self.test_window: webview.Window | None = None
+        # The presentation layout editor. Like the test window, it has no
+        # display-selection or health role and no path to a game command.
+        self.layout_window: webview.Window | None = None
+        # A similarly sized, deliberately opened operational aid.  It has no
+        # display-selection role and no authority over the game.
+        self.field_assistant_window: webview.Window | None = None
         self.status = "STARTING"
         self._lock = threading.RLock()
         # Injected so every display behaviour below can be exercised without a
@@ -421,6 +451,11 @@ class WindowHost:
         application.display.select = self.select_display  # type: ignore[method-assign]
         application.display.forget = self.forget_display  # type: ignore[method-assign]
         application.display.open_test_window = self.open_test_window  # type: ignore[method-assign]
+        application.layouts.link.open_editor = self.open_layout_editor  # type: ignore[method-assign]
+        application.layouts.link.publish = self.publish_layout  # type: ignore[method-assign]
+        application.set_field_assistant_active(
+            lambda: self.field_assistant_window is not None
+        )
 
     # --- Lifecycle ----------------------------------------------------------
 
@@ -452,6 +487,7 @@ class WindowHost:
             if choice not in ("resume", "new"):
                 raise ValueError("Choose Resume recovered game or Start new game")
             bridge = self.application.resume() if choice == "resume" else self.application.start_new()
+            bridge.set_field_assistant_opener(self.open_field_assistant)
             self.operator_window = webview.create_window(
                 "Scoreboard control", url=view_url("operator"), js_api=bridge,
                 width=1180, height=720, min_size=(1024, 600),
@@ -477,13 +513,21 @@ class WindowHost:
             self.status = "SHUTTING DOWN"
             spectator = self.spectator_window
             test_window = self.test_window
+            layout_window = self.layout_window
+            field_assistant_window = self.field_assistant_window
             self.spectator_window = None
             self.test_window = None
+            self.layout_window = None
+            self.field_assistant_window = None
         self.application.stop_refresh()
         if spectator is not None:
             spectator.destroy()
         if test_window is not None:
             test_window.destroy()
+        if layout_window is not None:
+            layout_window.destroy()
+        if field_assistant_window is not None:
+            field_assistant_window.destroy()
 
     # --- Windows ------------------------------------------------------------
 
@@ -633,7 +677,9 @@ class WindowHost:
         spectator = webview.create_window(
             "Scoreboard display",
             url=view_url("spectator"),
-            js_api=SpectatorBridge(self._spectator_snapshot),
+            js_api=SpectatorBridge(
+                self._spectator_snapshot, read_layout=self.application.layouts.current_layout
+            ),
             screen=screen,
             fullscreen=True,
             frameless=True,
@@ -654,6 +700,10 @@ class WindowHost:
             self.remember_display(target)
 
         self.application.spectator_opened(target.description)
+        # The page also pulls its own layout on load (get_layout()), but
+        # pushing it here means a spectator opened mid-game shows the right
+        # layout immediately rather than waiting on the next save (spec 6.2).
+        self.publish_layout(self.application.layouts.current_layout())
         self.application.diagnostics.note(
             "DISPLAY_SELECTED", target=target.description, how=match.how
         )
@@ -691,7 +741,9 @@ class WindowHost:
         test_window = webview.create_window(
             "Scoreboard display (test)",
             url=view_url("spectator"),
-            js_api=SpectatorBridge(self._spectator_snapshot),
+            js_api=SpectatorBridge(
+                self._spectator_snapshot, read_layout=self.application.layouts.current_layout
+            ),
             width=TEST_SPECTATOR_WIDTH,
             height=TEST_SPECTATOR_HEIGHT,
             frameless=False,
@@ -703,6 +755,110 @@ class WindowHost:
         with self._lock:
             self.test_window = test_window
         return {"message": "Test spectator window opened."}
+
+    def open_layout_editor(self) -> dict[str, str]:
+        """Open the presentation layout editor window.
+
+        Like :meth:`open_test_window`, this bypasses display selection and
+        saved preferences entirely, and it advances no revision. The editor's
+        ``js_api`` is :class:`~scoreboard.host.layout_bridge.LayoutEditorBridge`,
+        which reads the live spectator snapshot and the layout library but has
+        no path to a game command.
+        """
+
+        with self._lock:
+            previous, self.layout_window = self.layout_window, None
+        if previous is not None:
+            previous.destroy()
+
+        layout_window = webview.create_window(
+            "Presentation layout",
+            url=view_url("layout"),
+            js_api=LayoutEditorBridge(self.application.layouts, self._spectator_snapshot),
+            width=1220,
+            height=780,
+            min_size=(980, 620),
+        )
+        if layout_window is None:
+            raise RuntimeError("The layout editor window could not be created.")
+        layout_window.events.closed += self._layout_window_closed
+        with self._lock:
+            self.layout_window = layout_window
+        return {"message": "Presentation layout editor opened."}
+
+    def open_field_assistant(self) -> dict[str, str]:
+        """Open (or deliberately replace) the optional Field Assistant.
+
+        A helper close/failure must never stop clocks, close the operator, or
+        change persistence.  Replacing the window reads from the same bridge,
+        so its load request always receives the latest complete snapshot.
+        """
+
+        bridge = self.application.bridge
+        if bridge is None:
+            return {"message": "Start or recover a game before opening Field Assistant."}
+        with self._lock:
+            previous, self.field_assistant_window = self.field_assistant_window, None
+        if previous is not None:
+            try:
+                previous.destroy()
+            except Exception as exc:  # noqa: BLE001 - prior helper is optional
+                self.application.diagnostics.unhandled_error(
+                    context="destroy_field_assistant", error=exc
+                )
+        window = webview.create_window(
+            "Field Assistant",
+            url=view_url("field_assistant"),
+            js_api=FieldAssistantBridge(bridge),
+            width=1180,
+            height=720,
+            min_size=(1024, 600),
+        )
+        if window is None:
+            return {"message": "The Field Assistant window could not be created."}
+        window.events.closed += self._field_assistant_closed
+        with self._lock:
+            self.field_assistant_window = window
+        return {"message": "Field Assistant opened with the latest field status."}
+
+    def _field_assistant_closed(self, window: webview.Window) -> None:
+        """Forget a manually closed helper without disturbing the game."""
+
+        with self._lock:
+            if self.field_assistant_window is window:
+                self.field_assistant_window = None
+
+    def publish_layout(self, layout: dict[str, Any]) -> None:
+        """Push a changed presentation layout to every open board.
+
+        Called whenever :class:`~scoreboard.host.layout_bridge.PresentationLayouts`
+        saves, selects, or resets a layout, and once right after the spectator
+        window opens. This changes no game state: a rendering failure in any
+        one window is logged and the others are unaffected (R-002).
+        """
+
+        with self._lock:
+            spectator = self.spectator_window
+            test_window = self.test_window
+            layout_window = self.layout_window
+        script = f"window.applyLayout && window.applyLayout({_json(layout)})"
+        for window, context in (
+            (spectator, "spectator_layout_push"),
+            (test_window, "test_spectator_layout_push"),
+            (layout_window, "layout_editor_layout_push"),
+        ):
+            if window is not None and window.events.loaded.is_set():
+                try:
+                    window.evaluate_js(script)
+                except Exception as exc:  # noqa: BLE001 - a layout push must not stop the game
+                    self.application.diagnostics.unhandled_error(context=context, error=exc)
+
+    def _layout_window_closed(self, window: webview.Window) -> None:
+        """Forget a manually closed editor window without affecting the board."""
+
+        with self._lock:
+            if self.layout_window is window:
+                self.layout_window = None
 
     def list_displays(self) -> dict[str, Any]:
         """What the operator's display panel renders. Opens and moves nothing."""
@@ -810,10 +966,17 @@ class WindowHost:
                 operator = self.operator_window
                 spectator = None
                 test_window = None
+                field_assistant = None
+            elif window_name == "field_assistant":
+                operator = None
+                spectator = None
+                test_window = None
+                field_assistant = self.field_assistant_window
             else:
                 operator = None
                 spectator = self.spectator_window
                 test_window = self.test_window
+                field_assistant = None
         script = f"window.applyView && window.applyView({_json(view)})"
         if operator is not None and operator.events.loaded.is_set():
             operator.evaluate_js(script)
@@ -834,6 +997,22 @@ class WindowHost:
                 except Exception as destroy_exc:  # noqa: BLE001 - best effort only
                     self.application.diagnostics.unhandled_error(
                         context="destroy_test_spectator", error=destroy_exc
+                    )
+        if field_assistant is not None and field_assistant.events.loaded.is_set():
+            try:
+                field_assistant.evaluate_js(script)
+            except Exception as exc:  # noqa: BLE001 - helper failure is isolated
+                self.application.diagnostics.unhandled_error(
+                    context="field_assistant_push", error=exc
+                )
+                with self._lock:
+                    if self.field_assistant_window is field_assistant:
+                        self.field_assistant_window = None
+                try:
+                    field_assistant.destroy()
+                except Exception as destroy_exc:  # noqa: BLE001
+                    self.application.diagnostics.unhandled_error(
+                        context="destroy_field_assistant", error=destroy_exc
                     )
 
     def _set_status(self, message: str) -> dict[str, str]:
