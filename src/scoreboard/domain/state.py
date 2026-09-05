@@ -22,6 +22,30 @@ MAX_EVENT_COUNTDOWN_SECONDS: Final[float] = 30 * 60
 #: countdown.  The interval engine remains separate for halftime.
 MAX_PREGAME_CLOCK_SECONDS: Final[float] = 30 * 60
 
+#: Which side of the ball a football-state field belongs to. Defined once here
+#: rather than only in ``domain.commands`` because :class:`BallSpot` and its
+#: validation need it too, and ``domain.state`` must not import
+#: ``domain.commands`` (state is the lower layer).
+TEAM_SIDES: Final[tuple[str, ...]] = ("home", "away")
+
+#: 1st through 4th down. There is no NFHS-style "5th down"; a down outside this
+#: range, or an operator clearing it entirely (``None``), are the only options.
+MIN_DOWN: Final[int] = 1
+MAX_DOWN: Final[int] = 4
+#: Yards to go for a first down. ``0`` is displayed as "Goal" (goal-to-go)
+#: rather than as a literal zero-yard distance (see ``domain.formatting``).
+MAX_DISTANCE: Final[int] = 99
+#: A yard line is always relative to one team's own goal line: ``0`` is that
+#: team's goal line and ``50`` is midfield. There is deliberately no absolute
+#: 0-100 field-position scale; storing a side plus a 0-50 offset matches how
+#: officials and broadcasts describe field position ("the Eagles' 35").
+MAX_YARD_LINE: Final[int] = 50
+#: NFHS-style high-school football grants three timeouts per team per half.
+#: This is a provisional default like the other football rules in this
+#: module; see docs/MVP_REQUIREMENTS.md for the confirmation this still needs
+#: from local officials, including whether it should reset at halftime.
+MAX_TIMEOUTS: Final[int] = 3
+
 QUARTER_LABELS: Final[tuple[str, ...]] = (
     "PRE",
     "1st",
@@ -91,6 +115,36 @@ def _require_score(value: int, field_name: str) -> int:
     return value
 
 
+def _require_optional_int_range(
+    value: int | None, field_name: str, minimum: int, maximum: int
+) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise StateValidationError(f"{field_name} must be a whole number or null")
+    if not minimum <= value <= maximum:
+        raise StateValidationError(
+            f"{field_name} must be between {minimum} and {maximum}, or null"
+        )
+    return value
+
+
+def _require_int_range(value: int, field_name: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise StateValidationError(f"{field_name} must be a whole number")
+    if not minimum <= value <= maximum:
+        raise StateValidationError(f"{field_name} must be between {minimum} and {maximum}")
+    return value
+
+
+def _require_optional_team_side(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if value not in TEAM_SIDES:
+        raise StateValidationError(f"{field_name} must be 'home', 'away', or null")
+    return value
+
+
 def _require_seconds(value: float, field_name: str, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise StateValidationError(f"{field_name} must be a number of seconds")
@@ -139,6 +193,29 @@ class ClockValue:
 
 
 @dataclass(frozen=True, slots=True)
+class BallSpot:
+    """Field position: which team's side of the field, and how far onto it.
+
+    ``yard_line`` is always counted from ``team``'s own goal line (``0``) up
+    to midfield (``50``), the way officials and broadcasts describe it -- "the
+    Eagles' 35" -- rather than an absolute end-to-end scale. This keeps field
+    position one compound value, on the same immutable-dataclass pattern as
+    :class:`ClockValue`, so the existing single-field undo mechanism in
+    ``application.service`` needs no special case for it.
+    """
+
+    team: str = "home"
+    yard_line: int = 50
+
+    def __post_init__(self) -> None:
+        if self.team not in TEAM_SIDES:
+            raise StateValidationError("ball spot team must be 'home' or 'away'")
+        object.__setattr__(
+            self, "yard_line", _require_int_range(self.yard_line, "yard_line", 0, MAX_YARD_LINE)
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class GameState:
     """Complete authoritative state at one revision."""
 
@@ -159,6 +236,18 @@ class GameState:
     event_phase: str = "PREGAME"
 
     play_clock_cleared: bool = True
+
+    #: Down/distance/possession/ball-on are ``None`` (down, distance,
+    #: possession) or the inert 50-yard-line default (ball_on) until an
+    #: operator sets them; nothing here is derived automatically from scoring,
+    #: clock, or quarter commands (see docs/MVP_REQUIREMENTS.md section 3 for
+    #: the football-rule decisions this still needs from local officials).
+    down: int | None = None
+    distance: int | None = None
+    possession: str | None = None
+    ball_on: BallSpot = BallSpot()
+    home_timeouts: int = MAX_TIMEOUTS
+    away_timeouts: int = MAX_TIMEOUTS
 
     def __post_init__(self) -> None:
         if not isinstance(self.play_clock_cleared, bool):
@@ -194,6 +283,29 @@ class GameState:
             raise StateValidationError("event_countdown must be a ClockValue")
         if self.event_countdown.maximum_seconds != MAX_EVENT_COUNTDOWN_SECONDS:
             raise StateValidationError("event_countdown has an invalid maximum")
+        object.__setattr__(
+            self, "down", _require_optional_int_range(self.down, "down", MIN_DOWN, MAX_DOWN)
+        )
+        object.__setattr__(
+            self,
+            "distance",
+            _require_optional_int_range(self.distance, "distance", 0, MAX_DISTANCE),
+        )
+        object.__setattr__(
+            self, "possession", _require_optional_team_side(self.possession, "possession")
+        )
+        if not isinstance(self.ball_on, BallSpot):
+            raise StateValidationError("ball_on must be a BallSpot")
+        object.__setattr__(
+            self,
+            "home_timeouts",
+            _require_int_range(self.home_timeouts, "home_timeouts", 0, MAX_TIMEOUTS),
+        )
+        object.__setattr__(
+            self,
+            "away_timeouts",
+            _require_int_range(self.away_timeouts, "away_timeouts", 0, MAX_TIMEOUTS),
+        )
 
     @property
     def state_revision(self) -> int:

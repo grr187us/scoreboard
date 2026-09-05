@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started.
+**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started. The owner-requested local-time presentation and deferred scoreboard fields (below) were implemented and tested on September 5, 2026.
 **Last updated:** September 5, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
@@ -284,10 +284,37 @@ commands remain the safety focus.
 
 If a task reveals a later-phase request, record it in the roadmap and continue the current acceptance criteria unless the new information invalidates the architecture or safety. A visually attractive addition is not a reason to bypass clock, persistence, recovery, or packaging verification.
 
-## Deferred scoreboard fields (not in Phase 2 MVP)
+## Deferred scoreboard fields — ✅ implemented September 5, 2026
 
-Task 5 explicitly excluded down/distance, timeouts, and possession from the MVP command set. Noted here (2026-09-05) as fields the operator still wants, to be scoped as their own task once Phase 2 acceptance is complete:
+Task 5 explicitly excluded down/distance, timeouts, and possession from the MVP
+command set. The owner asked for these to be added after the local-time
+presentation work and before the presentation layout editor:
 
-- Ball on (yard line)
-- Timeouts remaining (per team)
-- Current down (and distance)
+- ball on / current yard line;
+- timeouts remaining for each team;
+- current down;
+- to go / distance;
+- possession;
+- any additional essential football field found during the requirements review.
+
+This follow-up was a separate state-and-controls task, not a reason to reopen
+the Phase 2 MVP boundaries before Task 12 and the hardware evidence are
+complete. It covers authoritative state, validated commands, operator
+controls, spectator rendering, persistence/recovery, and action history, and
+does not add statistics, media, OBS, networking, or physical-controller
+integration. Values and rules that depend on local officials or league
+practice are recorded as open decisions (B-1 through B-4) rather than guessed;
+see "Phase 2 owner request 2 — expanded football state and controls" in
+`PROJECT_ROADMAP.md` for full evidence, including a real defect (a domain
+object briefly reaching the JSON/history boundary through Undo) found and
+fixed during testing. No additional essential field beyond the five listed
+was identified during the requirements review.
+
+## Deferred presentation layout editor
+
+The scoreboard editor remains later work. The local-time presentation and
+expanded football fields it was waiting on are both implemented and verified
+(see above); the editor itself has not been started. Its scope is spectator
+presentation only: safely editing text sizes, positions, colors, and related
+visual properties without allowing the editor to become authoritative game
+state or a dependency for offline keyboard/mouse operation.

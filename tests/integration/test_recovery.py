@@ -20,6 +20,7 @@ from scoreboard.application.recovery import (
 from scoreboard.domain import commands as cmd
 from scoreboard.domain.formatting import displayed_second
 from scoreboard.domain.state import APP_VERSION
+from scoreboard.infrastructure.local_time import format_local_timestamp
 from scoreboard.infrastructure.persistence import (
     read_action_history,
     read_stored_game,
@@ -66,6 +67,25 @@ class RestartRecoveryTests(TemporaryDataDirectoryTest):
         self.assertFalse(report.state.game_clock.running)
         self.assertFalse(report.state.play_clock.running)
         self.assertFalse(report.state.event_countdown.running)
+
+    def test_checkpoint_is_also_offered_as_readable_eastern_time(self) -> None:
+        """Operator-facing recovery timestamps are shown in Eastern time.
+
+        The database and diagnostics keep the unambiguous UTC ISO string in
+        ``checkpoint_at``; ``checkpoint_at_local`` and the human-facing message
+        carry the same instant converted for a person reading the screen.
+        """
+
+        self.crash_with_running_clocks()
+
+        report = inspect_recovery(self.paths)
+
+        expected_local = format_local_timestamp(report.checkpoint_at)
+        self.assertIsNotNone(report.checkpoint_at)
+        self.assertEqual(report.checkpoint_at_local, expected_local)
+        self.assertNotEqual(report.checkpoint_at_local, report.checkpoint_at)
+        self.assertIn(report.checkpoint_at_local, report.message)
+        self.assertEqual(report.to_dict()["checkpoint_at_local"], expected_local)
 
     def test_restored_clocks_hold_the_last_checkpointed_displayed_second(self) -> None:
         self.crash_with_running_clocks()

@@ -13,6 +13,11 @@
       // the operator. The Play Clock label stays visible even after a clear.
       R.setFlag(document.getElementById('game-clock'), 'running-game', model.clocks.game.running);
       R.setFlag(document.getElementById('play-clock'), 'running-play', model.clocks.play.running);
+      // A short word, not only a colour, names which team has the ball.
+      R.setText(document.getElementById('home-possession-mark'),
+        model.football.possession === 'home' ? '◀ BALL' : '');
+      R.setText(document.getElementById('away-possession-mark'),
+        model.football.possession === 'away' ? 'BALL ▶' : '');
       document.getElementById('canvas').dataset.revision = model.revision;
     } catch (error) {
       // Keep the last usable board; no operator diagnostic appears on the LED.

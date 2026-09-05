@@ -18,7 +18,15 @@ from enum import Enum
 from typing import Any, Final
 
 from scoreboard.domain.clocks import PLAY_CLOCK_PRESETS, SELECTABLE_EVENT_PHASES
-from scoreboard.domain.state import MAX_SCORE, QUARTER_LABELS
+from scoreboard.domain.state import (
+    MAX_DISTANCE,
+    MAX_DOWN,
+    MAX_SCORE,
+    MAX_TIMEOUTS,
+    MAX_YARD_LINE,
+    MIN_DOWN,
+    QUARTER_LABELS,
+)
 
 #: Documented scoring buttons: ``+1`` conversion, ``+2`` conversion/safety,
 #: ``+3`` field goal, ``+6`` touchdown (F-012). The correction path uses the
@@ -61,6 +69,16 @@ class CommandType(str, Enum):
     EVENT_COUNTDOWN_STOP = "event_countdown_stop"
     EVENT_COUNTDOWN_RESET = "event_countdown_reset"
     EVENT_COUNTDOWN_CORRECT = "event_countdown_correct"
+    #: Expanded football state (deferred from Task 5; see
+    #: docs/PHASE_2_BACKLOG.md "Deferred scoreboard fields"): down, distance,
+    #: possession, ball-on field position, and timeouts remaining.
+    SET_DOWN = "set_down"
+    SET_DISTANCE = "set_distance"
+    SET_POSSESSION = "set_possession"
+    SET_BALL_ON = "set_ball_on"
+    TIMEOUT_USED = "timeout_used"
+    TIMEOUT_CORRECT = "timeout_correct"
+    SET_TIMEOUTS = "set_timeouts"
 
 
 # --- Error codes -----------------------------------------------------------
@@ -84,6 +102,18 @@ INVALID_CLOCK_TIME: Final[str] = "INVALID_CLOCK_TIME"
 INVALID_PLAY_CLOCK_PRESET: Final[str] = "INVALID_PLAY_CLOCK_PRESET"
 INVALID_EVENT_PHASE: Final[str] = "INVALID_EVENT_PHASE"
 STALE_REVISION: Final[str] = "STALE_REVISION"
+INVALID_DOWN: Final[str] = "INVALID_DOWN"
+INVALID_DISTANCE: Final[str] = "INVALID_DISTANCE"
+INVALID_POSSESSION: Final[str] = "INVALID_POSSESSION"
+INVALID_BALL_ON: Final[str] = "INVALID_BALL_ON"
+INVALID_TIMEOUT_DELTA: Final[str] = "INVALID_TIMEOUT_DELTA"
+INVALID_TIMEOUT_TARGET: Final[str] = "INVALID_TIMEOUT_TARGET"
+TIMEOUT_BELOW_ZERO: Final[str] = "TIMEOUT_BELOW_ZERO"
+TIMEOUT_ABOVE_MAXIMUM: Final[str] = "TIMEOUT_ABOVE_MAXIMUM"
+
+#: A timeout correction is +1 or -1 only, mirroring how a single mis-click is
+#: corrected elsewhere; a larger swing should be a direct Set instead.
+TIMEOUT_CORRECTION_MAGNITUDE: Final[int] = 1
 
 #: Commands whose effect a single Undo can reverse (F-014).
 UNDOABLE_COMMANDS: Final[frozenset[CommandType]] = frozenset(
@@ -94,6 +124,13 @@ UNDOABLE_COMMANDS: Final[frozenset[CommandType]] = frozenset(
         CommandType.QUARTER_FORWARD,
         CommandType.QUARTER_BACK,
         CommandType.SET_QUARTER,
+        CommandType.SET_DOWN,
+        CommandType.SET_DISTANCE,
+        CommandType.SET_POSSESSION,
+        CommandType.SET_BALL_ON,
+        CommandType.TIMEOUT_USED,
+        CommandType.TIMEOUT_CORRECT,
+        CommandType.SET_TIMEOUTS,
     }
 )
 
@@ -114,6 +151,10 @@ _TEAM_COMMANDS: Final[frozenset[CommandType]] = frozenset(
         CommandType.ADD_SCORE,
         CommandType.CORRECT_SCORE,
         CommandType.SET_SCORE,
+        CommandType.SET_BALL_ON,
+        CommandType.TIMEOUT_USED,
+        CommandType.TIMEOUT_CORRECT,
+        CommandType.SET_TIMEOUTS,
     }
 )
 
@@ -312,6 +353,47 @@ def validate_command(command: Command) -> CommandError | None:
         if numeric < 0:
             return CommandError(INVALID_CLOCK_TIME, "A clock cannot be corrected below 0:00.")
 
+    if command.type is CommandType.SET_DOWN and command.value is not None:
+        if not _is_int(command.value) or not MIN_DOWN <= command.value <= MAX_DOWN:
+            return CommandError(
+                INVALID_DOWN,
+                f"Down must be {MIN_DOWN}st through {MAX_DOWN}th, or cleared.",
+            )
+
+    if command.type is CommandType.SET_DISTANCE and command.value is not None:
+        if not _is_int(command.value) or not 0 <= command.value <= MAX_DISTANCE:
+            return CommandError(
+                INVALID_DISTANCE,
+                f"Distance to go must be between 0 and {MAX_DISTANCE} yards, or cleared.",
+            )
+
+    if command.type is CommandType.SET_POSSESSION and command.team is not None:
+        if command.team not in TEAMS:
+            return CommandError(
+                INVALID_POSSESSION,
+                f"Choose the home team, the away team, or clear possession; got {command.team!r}.",
+            )
+
+    if command.type is CommandType.SET_BALL_ON:
+        if not _is_int(command.value) or not 0 <= command.value <= MAX_YARD_LINE:
+            return CommandError(
+                INVALID_BALL_ON,
+                f"The yard line must be between 0 and {MAX_YARD_LINE}.",
+            )
+
+    if command.type is CommandType.TIMEOUT_CORRECT:
+        if not _is_int(command.points) or abs(command.points) != TIMEOUT_CORRECTION_MAGNITUDE:
+            return CommandError(
+                INVALID_TIMEOUT_DELTA, "A timeout correction is +1 or -1."
+            )
+
+    if command.type is CommandType.SET_TIMEOUTS:
+        if not _is_int(command.value) or not 0 <= command.value <= MAX_TIMEOUTS:
+            return CommandError(
+                INVALID_TIMEOUT_TARGET,
+                f"Timeouts remaining must be between 0 and {MAX_TIMEOUTS}.",
+            )
+
     return None
 
 
@@ -430,17 +512,65 @@ def event_countdown_correct(seconds: float, *, source: str = "operator") -> Comm
     return Command(CommandType.EVENT_COUNTDOWN_CORRECT, seconds=seconds, source=source)
 
 
+def set_down(down: int | None, *, source: str = "operator") -> Command:
+    """Direct-select 1st through 4th down, or clear it with ``down=None``."""
+
+    return Command(CommandType.SET_DOWN, value=down, source=source)
+
+
+def set_distance(distance: int | None, *, source: str = "operator") -> Command:
+    """Set yards to go (``0`` displays as Goal), or clear with ``distance=None``."""
+
+    return Command(CommandType.SET_DISTANCE, value=distance, source=source)
+
+
+def set_possession(team: str | None, *, source: str = "operator") -> Command:
+    """Set which team has the ball, or clear it with ``team=None``."""
+
+    return Command(CommandType.SET_POSSESSION, team=team, source=source)
+
+
+def set_ball_on(team: str, yard_line: int, *, source: str = "operator") -> Command:
+    """Set field position: ``yard_line`` yards from ``team``'s own goal line."""
+
+    return Command(CommandType.SET_BALL_ON, team=team, value=yard_line, source=source)
+
+
+def timeout_used(team: str, *, source: str = "operator") -> Command:
+    """Record that ``team`` used a timeout, decrementing its count by one."""
+
+    return Command(CommandType.TIMEOUT_USED, team=team, source=source)
+
+
+def timeout_correct(team: str, points: int, *, source: str = "operator") -> Command:
+    """Correct a timeout mis-count by +1 or -1."""
+
+    return Command(CommandType.TIMEOUT_CORRECT, team=team, points=points, source=source)
+
+
+def set_timeouts(team: str, value: int, *, source: str = "operator") -> Command:
+    """Directly set ``team``'s timeouts remaining (0 to :data:`MAX_TIMEOUTS`)."""
+
+    return Command(CommandType.SET_TIMEOUTS, team=team, value=value, source=source)
+
+
 __all__ = [
     "CONFIRMATION_REQUIRED",
+    "INVALID_BALL_ON",
     "INVALID_CLOCK_TIME",
     "INVALID_COMMAND",
+    "INVALID_DISTANCE",
+    "INVALID_DOWN",
     "INVALID_EVENT_PHASE",
     "INVALID_PLAY_CLOCK_PRESET",
+    "INVALID_POSSESSION",
     "INVALID_QUARTER",
     "INVALID_SCORE_DELTA",
     "INVALID_SCORE_TARGET",
     "INVALID_TEAM",
     "INVALID_TEAM_NAME",
+    "INVALID_TIMEOUT_DELTA",
+    "INVALID_TIMEOUT_TARGET",
     "MAX_SCORE",
     "NON_UNDOABLE_COMMANDS",
     "NOTHING_TO_UNDO",
@@ -453,6 +583,9 @@ __all__ = [
     "STALE_REVISION",
     "TEAMS",
     "TEAM_NAME_NOT_ALLOWED",
+    "TIMEOUT_ABOVE_MAXIMUM",
+    "TIMEOUT_BELOW_ZERO",
+    "TIMEOUT_CORRECTION_MAGNITUDE",
     "UNDOABLE_COMMANDS",
     "Command",
     "CommandError",
@@ -482,9 +615,16 @@ __all__ = [
     "play_clock_stop",
     "quarter_back",
     "quarter_forward",
+    "set_ball_on",
+    "set_distance",
+    "set_down",
+    "set_possession",
     "set_quarter",
     "set_score",
     "set_team_name",
+    "set_timeouts",
+    "timeout_correct",
+    "timeout_used",
     "undo",
     "validate_command",
 ]

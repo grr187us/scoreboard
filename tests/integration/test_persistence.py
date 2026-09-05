@@ -241,6 +241,22 @@ class ActionHistoryTests(TemporaryDataDirectoryTest):
         self.assertEqual(decode(rows[-1]["old_value"]), 6)
         self.assertEqual(decode(rows[-1]["new_value"]), 0)
 
+    def test_undoing_a_compound_field_records_a_structured_value_not_a_repr(self) -> None:
+        """``ball_on`` is a compound ``BallSpot`` field; Undo's generic old/new
+        reporting must serialize it the same structured way its own direct
+        command does, not as a Python object string (P-007)."""
+
+        service, store = self.started_session()
+        self.submit(service, store, cmd.set_ball_on("home", 40))
+        self.submit(service, store, cmd.set_ball_on("away", 22))
+
+        self.submit(service, store, cmd.undo())
+        row = read_action_history(self.paths.database)[-1]
+
+        self.assertEqual(row["command"], "undo")
+        self.assertEqual(decode(row["old_value"]), {"team": "away", "yard_line": 22})
+        self.assertEqual(decode(row["new_value"]), {"team": "home", "yard_line": 40})
+
 
 class GameIdentityTests(TemporaryDataDirectoryTest):
     """F-023: New Game archives the current game's log and opens a new one."""

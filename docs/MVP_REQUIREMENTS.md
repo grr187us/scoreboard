@@ -1,6 +1,6 @@
 # MVP Requirements
 
-**Status:** Phase 1 baseline, updated by the September 5, 2026 Phase 2 audit; implementation Tasks 1-11 are substantially built. Focused Bundle A verification passes, while the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Task 10's real two-display/stadium evidence and Task 12 rehearsal remain open.
+**Status:** Phase 1 baseline, updated by the September 5, 2026 Phase 2 audit; implementation Tasks 1-11 are substantially built. Focused Bundle A verification passes, while the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Task 10's real two-display/stadium evidence and Task 12 rehearsal remain open. Section 4.6 (down/distance/possession/ball position/timeouts) and local-time display (P-010) were added and implemented on September 5, 2026; see `PROJECT_ROADMAP.md` for evidence.
 **Last updated:** September 5, 2026
 
 ## 1. Purpose and requirement language
@@ -119,6 +119,30 @@ No expiry advances lifecycle. Team names are editable only in PRE_GAME.
 | F-051 | The play clock MUST provide Edit Current Time in the correction area. Opening it MUST stop a running play clock; the confirmation MUST validate the requested value and offer `Start after applying?`, defaulting to `Remain stopped`. | Boundary, running-clock, and UI tests. |
 | F-052 | In live quarters, a real Game Clock running-to-stopped transition through Stop or expiry clears a running play clock. PRE Stop/expiry MUST not couple; pregame expiry remains PRE at 0:00. | Fake-time command and bridge-tick tests. |
 
+### 4.6 Down, distance, possession, ball position, and timeouts
+
+Implemented September 5, 2026 (docs/PHASE_2_BACKLOG.md "Deferred scoreboard
+fields"). Every field here is independently settable, validated, undoable, and
+persisted; none is derived automatically by a scoring, clock, or quarter
+command (F-020 through F-052 are unchanged by this section).
+
+| ID | Requirement | Verification |
+|---|---|---|
+| F-060 | The operator MUST be able to set the current down to 1st, 2nd, 3rd, or 4th, or clear it to not-applicable. Down MUST NOT change automatically. | Command and undo tests; quarter/new-game interaction tests. |
+| F-061 | The operator MUST be able to set distance to go (0-99 yards) or clear it to not-applicable. A distance of `0` MUST display as `Goal`, not a literal zero. | Formatter boundary tests; command tests. |
+| F-062 | The operator MUST be able to set which team has possession, or clear it to neither team. | Command and undo tests. |
+| F-063 | The operator MUST be able to set field position as a team plus a yard line (0-50) counted from that team's own goal line. Field position MUST be one validated, undoable unit; an Undo MUST NOT be able to pair one command's team with a different command's yard line. | Command, undo, and JSON-boundary regression tests. |
+| F-064 | Each team's timeouts remaining (0 to a configured maximum, provisional default 3) MUST be independently trackable: a quick "timeout used" action that decrements by one and is rejected rather than going negative, a ±1 correction, and a direct Set for the corrections surface. Timeouts MUST NOT reset automatically at any lifecycle transition. | Command tests for the floor/ceiling rejections and undo. |
+| F-065 | `New Game` MUST reset down, distance, possession, and field position to not-applicable/default, and both teams' timeouts to the configured maximum, in the same transition as every other reset field. | New-game test. |
+| F-066 | Down, distance, possession, ball position, and timeouts remaining MUST be rendered as text by Python (not derived in JavaScript), on the operator view at all times and on the spectator view whenever the game board is shown (see D-001, D-009). | View-model and browser render tests. |
+
+**Owner decisions still required (see section 13):** whether 3 timeouts per
+team is correct and whether it should reset at halftime (B-1); whether a
+change of possession should prompt for new down/distance (B-2); whether field
+position should display relative to the named team's own goal line or as an
+OWN/OPP-relative label (B-3); whether timeouts remaining should also appear on
+the spectator board (B-4).
+
 ## 5. Operator-usability requirements
 
 | ID | Requirement | Verification |
@@ -167,7 +191,7 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 | ID | Requirement | Verification |
 |---|---|---|
-| D-001 | The spectator window MUST show only home name/score, away name/score, quarter, game clock, and play clock in the MVP. | Visual inventory check. |
+| D-001 | The spectator window MUST show only home name/score, away name/score, quarter, game clock, play clock, and, while the game board is shown, down/distance, field position, and possession (F-060 through F-066, added September 5, 2026). Timeouts remaining is tracked and shown to the operator but is not yet drawn on the spectator board (owner decision B-4, section 13). | Visual inventory check. |
 | D-002 | It MUST support borderless fullscreen on a selected Windows display and remember that preference. If the display is unavailable, it MUST keep the operator usable and report `DISPLAY NOT FOUND` rather than silently taking over the primary screen. | Multi-monitor disconnect/reconnect tests. |
 | D-003 | Layout MUST use a resolution-independent logical canvas, scalable typography, and safe margins; it MUST NOT assume the stadium's unknown pixel dimensions. | Render at 1280×720, 1366×768, 1920×1080, and a portrait test mode. |
 | D-004 | State changes SHOULD appear within 100 ms in the spectator view on the target laptop; MUST appear within 250 ms. | Timestamped integration test. |
@@ -191,6 +215,7 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 | P-007 | Each game MUST have an append-only durable action history with wall-clock timestamp, monotonic sequence, command, source, relevant old/new values, result, and application version. It MUST retain accepted actions and rejected operator requests. | Schema, ordering, and post-crash recovery inspection. |
 | P-008 | Startup, shutdown, recovery, display open/close, rejected commands, persistence failures, and unhandled errors MUST be logged. | Scenario inspection. |
 | P-009 | Local databases, backups, logs, and live state MUST not be committed to Git. | `git status --ignored` check. |
+| P-010 | Operator-facing startup/recovery timestamps (for example, the recovery screen's "Last saved" value) MUST be shown in human-readable Eastern local time (`America/New_York`), including daylight-saving handling. Stored/logged timestamps (the database, the action history, and the diagnostics log) MAY remain unambiguous ISO/UTC values. Added September 5, 2026. | Unit tests at EST/EDT and the daylight-saving transition boundaries; recovery-report integration test. |
 
 ## 9. Reliability and failure requirements
 
@@ -217,7 +242,7 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 ## 11. Explicit non-goals
 
-The MVP does not implement down/distance, possession, timeouts, penalties, statistics, rosters, team logos/colors as a requirement, animations, sponsor scheduling, audio, video, replay, OBS scenes/control, livestreaming, networking or multiple operators, cloud services, user accounts, automated HDMI switching, direct LED/RJ45 protocols, or the physical USB controller.
+Down, distance, possession, ball position, and timeouts are implemented (section 4.6, September 5, 2026) and are no longer non-goals. The MVP does not implement penalties, statistics, rosters, team logos/colors as a requirement, animations, sponsor scheduling, audio, video, replay, OBS scenes/control, livestreaming, networking or multiple operators, cloud services, user accounts, automated HDMI switching, direct LED/RJ45 protocols, the physical USB controller, or the presentation layout editor (deferred, docs/PHASE_2_BACKLOG.md).
 
 It also does not modify the vendor computer, software, controller, or license dongle.
 
@@ -246,4 +271,8 @@ The following do not block architecture or early implementation but block final 
 - acceptable clock-accuracy tolerance;
 - overtime labels/workflow;
 - production laptop and school software-install restrictions;
-- first live-use date and initial operator count.
+- first live-use date and initial operator count;
+- **B-1: is 3 timeouts per team the correct default, and should it reset at halftime?** NFHS-style rules award 3 timeouts per team per half; this build starts both teams at 3 and never resets automatically, requiring a manual correction at halftime (section 4.6, F-064);
+- **B-2: should a change of possession clear or prompt for new down/distance?** Currently fully independent by design; a real possession change almost always means "1st & 10" for the new team;
+- **B-3: is field position described relative to the named team's own goal line (for example "Eagles 35"), or should it use an OWN/OPP-relative convention?** Affects display and operator-control wording only, not the stored value;
+- **B-4: should timeouts remaining be added to the spectator board?** Currently operator-only (D-001).

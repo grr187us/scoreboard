@@ -83,6 +83,20 @@ class AcceptedCommandContractTests(unittest.TestCase):
             ("play clock clear", running_play_clock, cmd.play_clock_clear()),
             ("play clock reset", running_play_clock, cmd.play_clock_reset()),
             ("play clock correct", running_play_clock, cmd.play_clock_correct(12.0)),
+            ("set down", lambda s, f: None, cmd.set_down(3)),
+            ("clear down", lambda s, f: s.submit(cmd.set_down(3)), cmd.set_down(None)),
+            ("set distance", lambda s, f: None, cmd.set_distance(7)),
+            ("clear distance", lambda s, f: s.submit(cmd.set_distance(7)), cmd.set_distance(None)),
+            ("set possession", lambda s, f: None, cmd.set_possession("home")),
+            (
+                "clear possession",
+                lambda s, f: s.submit(cmd.set_possession("home")),
+                cmd.set_possession(None),
+            ),
+            ("set ball on", lambda s, f: None, cmd.set_ball_on("away", 22)),
+            ("timeout used", lambda s, f: None, cmd.timeout_used("home")),
+            ("timeout correction", lambda s, f: None, cmd.timeout_correct("home", -1)),
+            ("set timeouts", lambda s, f: None, cmd.set_timeouts("away", 1)),
         ]
 
     def test_accepted_command_advances_exactly_one_revision(self) -> None:
@@ -209,6 +223,55 @@ class RejectedCommandContractTests(unittest.TestCase):
                 lambda s, f: s.submit(cmd.add_score("home", 6)),
                 cmd.Command(cmd.CommandType.ADD_SCORE, team="home", points=6, expected_revision=0),
                 cmd.STALE_REVISION,
+            ),
+            ("down out of range", lambda s, f: None, cmd.set_down(5), cmd.INVALID_DOWN),
+            (
+                "distance out of range",
+                lambda s, f: None,
+                cmd.set_distance(100),
+                cmd.INVALID_DISTANCE,
+            ),
+            (
+                "possession for an unknown team",
+                lambda s, f: None,
+                cmd.Command(cmd.CommandType.SET_POSSESSION, team="visitor"),
+                cmd.INVALID_POSSESSION,
+            ),
+            (
+                "ball on an unknown team",
+                lambda s, f: None,
+                cmd.Command(cmd.CommandType.SET_BALL_ON, team="visitor", value=35),
+                cmd.INVALID_TEAM,
+            ),
+            (
+                "ball on yard line out of range",
+                lambda s, f: None,
+                cmd.set_ball_on("home", 51),
+                cmd.INVALID_BALL_ON,
+            ),
+            (
+                "timeout used with none remaining",
+                lambda s, f: s.submit(cmd.set_timeouts("home", 0)),
+                cmd.timeout_used("home"),
+                cmd.TIMEOUT_BELOW_ZERO,
+            ),
+            (
+                "timeout correction is not +-1",
+                lambda s, f: None,
+                cmd.timeout_correct("home", 2),
+                cmd.INVALID_TIMEOUT_DELTA,
+            ),
+            (
+                "timeout correction above the maximum",
+                lambda s, f: None,
+                cmd.timeout_correct("home", 1),
+                cmd.TIMEOUT_ABOVE_MAXIMUM,
+            ),
+            (
+                "set timeouts out of range",
+                lambda s, f: None,
+                cmd.set_timeouts("home", 4),
+                cmd.INVALID_TIMEOUT_TARGET,
             ),
         ]
 
@@ -944,6 +1007,154 @@ class SerializationAndTimeSourceTests(unittest.TestCase):
         self.assertFalse(original_clock.running)
         self.assertEqual(original_state.revision, 0)
         self.assertIsInstance(service.state, GameState)
+
+
+class FootballStateTests(unittest.TestCase):
+    """Down, distance, possession, ball-on, and timeouts (docs/PHASE_2_BACKLOG.md
+    "Deferred scoreboard fields"). None of these touch a clock, a score, or the
+    quarter, and none of them are derived automatically from another command.
+    """
+
+    def test_down_and_distance_default_to_not_applicable(self) -> None:
+        service, _ = make_service()
+
+        self.assertIsNone(service.state.down)
+        self.assertIsNone(service.state.distance)
+        self.assertIsNone(service.state.possession)
+        self.assertEqual(service.state.home_timeouts, 3)
+        self.assertEqual(service.state.away_timeouts, 3)
+        self.assertEqual(service.state.ball_on.team, "home")
+        self.assertEqual(service.state.ball_on.yard_line, 50)
+
+    def test_set_down_is_undoable(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_down(2))
+
+        result = service.submit(cmd.set_down(3))
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.state.down, 3)
+
+        undone = service.submit(cmd.undo())
+        self.assertTrue(undone.accepted)
+        self.assertEqual(undone.state.down, 2)
+
+    def test_clearing_down_and_distance_round_trips_through_undo(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_down(3))
+        service.submit(cmd.set_distance(7))
+
+        cleared = service.submit(cmd.set_distance(None))
+        self.assertTrue(cleared.accepted)
+        self.assertIsNone(cleared.state.distance)
+        self.assertEqual(cleared.state.down, 3, "distance and down are independent fields")
+
+        undone = service.submit(cmd.undo())
+        self.assertEqual(undone.state.distance, 7)
+
+    def test_a_quarter_change_does_not_touch_down_distance_or_possession(self) -> None:
+        """No command couples these to the quarter; only an operator sets them."""
+
+        service, _ = make_service()
+        service.submit(cmd.set_down(3))
+        service.submit(cmd.set_distance(7))
+        service.submit(cmd.set_possession("home"))
+
+        result = service.submit(cmd.set_quarter("2nd", confirmed=True))
+
+        self.assertEqual(result.state.down, 3)
+        self.assertEqual(result.state.distance, 7)
+        self.assertEqual(result.state.possession, "home")
+
+    def test_new_game_resets_every_football_field(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_down(4))
+        service.submit(cmd.set_distance(0))
+        service.submit(cmd.set_possession("away"))
+        service.submit(cmd.set_ball_on("away", 3))
+        service.submit(cmd.timeout_used("home"))
+
+        result = service.submit(cmd.new_game(confirmed=True))
+
+        self.assertIsNone(result.state.down)
+        self.assertIsNone(result.state.distance)
+        self.assertIsNone(result.state.possession)
+        self.assertEqual(result.state.ball_on.team, "home")
+        self.assertEqual(result.state.ball_on.yard_line, 50)
+        self.assertEqual(result.state.home_timeouts, 3)
+
+    def test_set_possession_can_be_cleared_and_undone(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_possession("home"))
+
+        cleared = service.submit(cmd.set_possession(None))
+        self.assertTrue(cleared.accepted)
+        self.assertIsNone(cleared.state.possession)
+
+        undone = service.submit(cmd.undo())
+        self.assertEqual(undone.state.possession, "home")
+
+    def test_ball_on_is_one_field_and_undo_restores_it_whole(self) -> None:
+        """Side and yard line change together; Undo must not mix old/new halves."""
+
+        service, _ = make_service()
+        service.submit(cmd.set_ball_on("home", 40))
+
+        moved = service.submit(cmd.set_ball_on("away", 22))
+        self.assertTrue(moved.accepted)
+        self.assertEqual((moved.state.ball_on.team, moved.state.ball_on.yard_line), ("away", 22))
+
+        undone = service.submit(cmd.undo())
+        self.assertEqual((undone.state.ball_on.team, undone.state.ball_on.yard_line), ("home", 40))
+
+    def test_ball_on_event_reports_a_plain_dictionary_not_a_domain_object(self) -> None:
+        service, _ = make_service()
+
+        result = service.submit(cmd.set_ball_on("away", 22))
+
+        self.assertEqual(result.event.old_value, {"team": "home", "yard_line": 50})
+        self.assertEqual(result.event.new_value, {"team": "away", "yard_line": 22})
+
+    def test_timeout_used_decrements_and_stops_at_zero(self) -> None:
+        service, _ = make_service()
+
+        for expected in (2, 1, 0):
+            result = service.submit(cmd.timeout_used("home"))
+            self.assertTrue(result.accepted)
+            self.assertEqual(result.state.home_timeouts, expected)
+
+        exhausted = service.submit(cmd.timeout_used("home"))
+        self.assertFalse(exhausted.accepted)
+        self.assertEqual(exhausted.error.code, cmd.TIMEOUT_BELOW_ZERO)
+        self.assertEqual(service.state.home_timeouts, 0)
+
+    def test_timeout_correct_is_undoable_and_bounded(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.timeout_used("away"))
+
+        corrected = service.submit(cmd.timeout_correct("away", 1))
+        self.assertTrue(corrected.accepted)
+        self.assertEqual(corrected.state.away_timeouts, 3)
+
+        undone = service.submit(cmd.undo())
+        self.assertEqual(undone.state.away_timeouts, 2)
+
+    def test_home_and_away_timeouts_are_independent(self) -> None:
+        service, _ = make_service()
+
+        service.submit(cmd.timeout_used("home"))
+
+        self.assertEqual(service.state.home_timeouts, 2)
+        self.assertEqual(service.state.away_timeouts, 3)
+
+    def test_set_timeouts_direct_entry_is_undoable(self) -> None:
+        service, _ = make_service()
+
+        result = service.submit(cmd.set_timeouts("home", 1))
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.state.home_timeouts, 1)
+
+        undone = service.submit(cmd.undo())
+        self.assertEqual(undone.state.home_timeouts, 3)
 
 
 if __name__ == "__main__":

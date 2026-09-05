@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         report = exc.report
         lines = [report.message]
         if report.checkpoint_at:
-            lines.append(f"Last saved: {report.checkpoint_at}")
+            lines.append(f"Last saved: {report.checkpoint_at_local or report.checkpoint_at}")
         lines.append(
             "Start again with --resume to continue that game, "
             "or --new-game to replace it."

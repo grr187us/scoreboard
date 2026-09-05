@@ -28,7 +28,7 @@ Contract:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Callable, Final
 
 from scoreboard.application.snapshots import state_to_snapshot
@@ -56,6 +56,8 @@ from scoreboard.domain.commands import (
     SCORE_BELOW_ZERO,
     STALE_REVISION,
     TEAM_NAME_NOT_ALLOWED,
+    TIMEOUT_ABOVE_MAXIMUM,
+    TIMEOUT_BELOW_ZERO,
     UNDOABLE_COMMANDS,
     Command,
     CommandError,
@@ -68,7 +70,9 @@ from scoreboard.domain.commands import (
 from scoreboard.domain.state import (
     LIVE_QUARTER_LABELS,
     MAX_SCORE,
+    MAX_TIMEOUTS,
     QUARTER_LABELS,
+    BallSpot,
     ClockValue,
     GameState,
     MAX_GAME_CLOCK_SECONDS,
@@ -109,6 +113,36 @@ def _clock_snapshot(value: ClockValue) -> dict[str, Any]:
     """The old/new shape reported for clock commands in an event intent."""
 
     return {"seconds": value.seconds, "running": value.running}
+
+
+def _ball_spot_snapshot(value: BallSpot) -> dict[str, Any]:
+    """The old/new shape reported for ``set_ball_on`` in an event intent.
+
+    ``dataclasses.asdict`` so this matches, field for field, what Undo's
+    generic ``getattr(state, entry.field)`` path produces for the same
+    ``BallSpot`` value (persistence.py's JSON encoder applies the same
+    conversion there) -- the audit history describes the same field position
+    the same way regardless of which path recorded it.
+    """
+
+    return asdict(value)
+
+
+def _undo_reported_value(value: Any) -> Any:
+    """The JSON-safe old/new value Undo's generic path reports for one field.
+
+    Every other undoable field is already a plain ``str``/``int``/``None``
+    that an :class:`EventIntent` can carry as-is. ``BallSpot`` is the one
+    compound state field reachable through Undo's generic
+    ``getattr(state, entry.field)``, so it is the one case that needs
+    converting before it reaches the event -- and, eventually, the bridge and
+    the durable history -- exactly as :func:`_ball_spot_snapshot` already
+    converts it on ``set_ball_on``'s own direct path.
+    """
+
+    if isinstance(value, BallSpot):
+        return _ball_spot_snapshot(value)
+    return value
 
 
 class ScoreboardService:
@@ -516,8 +550,13 @@ class ScoreboardService:
             event=EventIntent(
                 command=command.type,
                 field=entry.field,
-                old_value=current,
-                new_value=entry.old_value,
+                # A compound field such as ball_on (BallSpot) must reach the
+                # event/JSON boundary as the same plain dict its own direct
+                # command reports, not the domain object generic getattr()
+                # produces here (ARCHITECTURE.md section 8: no domain object
+                # crosses the bridge).
+                old_value=_undo_reported_value(current),
+                new_value=_undo_reported_value(entry.old_value),
                 team=entry.team,
                 source=command.source,
             ),
@@ -911,6 +950,158 @@ class ScoreboardService:
             )
         return self._event_transition(command, now, corrected)
 
+    # --- Expanded football state --------------------------------------------
+    #
+    # Down, distance, possession, ball position, and timeouts remaining are
+    # direct, independently settable state (docs/PHASE_2_BACKLOG.md "Deferred
+    # scoreboard fields"). None of these commands touch a clock, a score, or
+    # the quarter, and none of them are derived automatically from another
+    # command: a change of possession does not reset down/distance, and a
+    # quarter change does not touch any of them either, because inventing that
+    # coupling was not requested and is exactly the kind of rule automation
+    # this project's guardrails ask to avoid without an explicit decision (see
+    # docs/MVP_REQUIREMENTS.md section 3 for what still needs officials'
+    # confirmation).
+
+    def _handle_set_down(self, command: Command, now: float) -> _Transition | CommandError:
+        old_value = self._state.down
+        new_value = command.value
+        return _Transition(
+            changes={"down": new_value},
+            event=EventIntent(
+                command=command.type,
+                field="down",
+                old_value=old_value,
+                new_value=new_value,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type, field="down", old_value=old_value, new_value=new_value
+            ),
+        )
+
+    def _handle_set_distance(self, command: Command, now: float) -> _Transition | CommandError:
+        old_value = self._state.distance
+        new_value = command.value
+        return _Transition(
+            changes={"distance": new_value},
+            event=EventIntent(
+                command=command.type,
+                field="distance",
+                old_value=old_value,
+                new_value=new_value,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type, field="distance", old_value=old_value, new_value=new_value
+            ),
+        )
+
+    def _handle_set_possession(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        old_value = self._state.possession
+        new_value = command.team
+        return _Transition(
+            changes={"possession": new_value},
+            event=EventIntent(
+                command=command.type,
+                field="possession",
+                old_value=old_value,
+                new_value=new_value,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type,
+                field="possession",
+                old_value=old_value,
+                new_value=new_value,
+            ),
+        )
+
+    def _handle_set_ball_on(self, command: Command, now: float) -> _Transition | CommandError:
+        old_spot = self._state.ball_on
+        new_spot = BallSpot(team=str(command.team), yard_line=int(command.value))
+        return _Transition(
+            changes={"ball_on": new_spot},
+            event=EventIntent(
+                command=command.type,
+                field="ball_on",
+                old_value=_ball_spot_snapshot(old_spot),
+                new_value=_ball_spot_snapshot(new_spot),
+                team=command.team,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type,
+                field="ball_on",
+                old_value=old_spot,
+                new_value=new_spot,
+                team=command.team,
+            ),
+        )
+
+    def _timeout_field(self, team: str) -> str:
+        return f"{team}_timeouts"
+
+    def _handle_timeout_used(self, command: Command, now: float) -> _Transition | CommandError:
+        state_field = self._timeout_field(str(command.team))
+        old_value = getattr(self._state, state_field)
+        new_value = old_value - 1
+        if new_value < 0:
+            return CommandError(
+                TIMEOUT_BELOW_ZERO,
+                f"The {command.team} team has no timeouts remaining to use.",
+            )
+        return self._timeout_transition(command, state_field, old_value, new_value)
+
+    def _handle_timeout_correct(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        state_field = self._timeout_field(str(command.team))
+        old_value = getattr(self._state, state_field)
+        new_value = old_value + int(command.points)
+        if new_value < 0:
+            return CommandError(
+                TIMEOUT_BELOW_ZERO,
+                f"The {command.team} team's timeouts are {old_value}; "
+                "a correction cannot take them below 0.",
+            )
+        if new_value > MAX_TIMEOUTS:
+            return CommandError(
+                TIMEOUT_ABOVE_MAXIMUM,
+                f"Timeouts remaining cannot exceed {MAX_TIMEOUTS}.",
+            )
+        return self._timeout_transition(command, state_field, old_value, new_value)
+
+    def _handle_set_timeouts(self, command: Command, now: float) -> _Transition | CommandError:
+        state_field = self._timeout_field(str(command.team))
+        old_value = getattr(self._state, state_field)
+        new_value = int(command.value)
+        return self._timeout_transition(command, state_field, old_value, new_value)
+
+    def _timeout_transition(
+        self, command: Command, state_field: str, old_value: int, new_value: int
+    ) -> _Transition:
+        return _Transition(
+            changes={state_field: new_value},
+            event=EventIntent(
+                command=command.type,
+                field=state_field,
+                old_value=old_value,
+                new_value=new_value,
+                team=command.team,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type,
+                field=state_field,
+                old_value=old_value,
+                new_value=new_value,
+                team=command.team,
+            ),
+        )
+
     _HANDLERS: Final[dict[CommandType, Any]] = {
         CommandType.SET_TEAM_NAME: _handle_set_team_name,
         CommandType.ADD_SCORE: _handle_add_score,
@@ -938,6 +1129,13 @@ class ScoreboardService:
         CommandType.EVENT_COUNTDOWN_STOP: _handle_event_countdown_stop,
         CommandType.EVENT_COUNTDOWN_RESET: _handle_event_countdown_reset,
         CommandType.EVENT_COUNTDOWN_CORRECT: _handle_event_countdown_correct,
+        CommandType.SET_DOWN: _handle_set_down,
+        CommandType.SET_DISTANCE: _handle_set_distance,
+        CommandType.SET_POSSESSION: _handle_set_possession,
+        CommandType.SET_BALL_ON: _handle_set_ball_on,
+        CommandType.TIMEOUT_USED: _handle_timeout_used,
+        CommandType.TIMEOUT_CORRECT: _handle_timeout_correct,
+        CommandType.SET_TIMEOUTS: _handle_set_timeouts,
     }
 
 

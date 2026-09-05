@@ -248,6 +248,24 @@ button.is-current {
   text-align: center;
 }
 
+.field-status {
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-status .sep {
+  margin: 0 4px;
+}
+
+.possession-flag {
+  color: var(--ok);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
 .last-action {
   margin-left: auto;
   color: var(--ink-dim);
@@ -368,6 +386,16 @@ button.danger:hover:not(:disabled) {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.side-toggle {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.side-toggle .toggle.is-current {
+  border-color: var(--accent);
+  background: #1d3550;
 }
 
 /* --- Confirmation dialog ------------------------------------------------ */

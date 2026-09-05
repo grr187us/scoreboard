@@ -199,6 +199,42 @@ The worst-case figure is dominated by the gap between reading the reference and 
 
 **Not claimed.** This is `time.monotonic` measured against `time.perf_counter` on a development machine with no window open. R-005 asks for the target laptop, under the real refresh loop, a real WebView2 window, and an independent reference. That measurement stays open.
 
+### Phase 2 owner request 1 — human-readable local time
+
+Implements item 1 of "Owner-requested next scoreboard work" below.
+
+- Added [`infrastructure/local_time.py`](src/scoreboard/infrastructure/local_time.py): a pure `format_local_timestamp()` converting a stored UTC ISO 8601 timestamp (or `datetime`) into Eastern local time, e.g. `September 5, 2026 at 10:41 AM EDT`. One IANA zone name (`America/New_York`) is the whole daylight-saving policy; there is no separate EDT/EST branch anywhere in the codebase.
+- **Windows does not ship the IANA time zone database**, so Python's `zoneinfo.ZoneInfo("America/New_York")` raised `ZoneInfoNotFoundError` on this development host until `tzdata==2026.3` was added as a pinned runtime dependency in `pyproject.toml`. This is an offline-operation requirement (R-001, W-006): the scoreboard must not depend on Windows or the network to resolve a time zone, and PyInstaller bundles pure-Python packages, so no packaging change is needed beyond the dependency pin.
+- `application/recovery.py`'s `RecoveryReport` gained `checkpoint_at_local` alongside the existing `checkpoint_at`. The primary- and backup-source recovery messages, the in-window recovery screen (`views/startup/startup.js`), and the non-interactive `--resume`/`--new-game` CLI fallback in `__main__.py` all now show the local-time string; `checkpoint_at` itself, the SQLite `wall_clock` columns, and the diagnostics log keep their unambiguous UTC ISO values unchanged, exactly as requested.
+- A malformed or unparsable timestamp is returned unchanged rather than raising, and `None` stays `None`: a broken timestamp must not blank the rest of the recovery screen, on the same "an optional failure must not stop core operation" principle R-002 applies to the spectator window.
+- Verified with 11 focused tests in [`tests/unit/test_local_time.py`](tests/unit/test_local_time.py) — summer/winter offsets, the 2026 spring-forward and fall-back transition instants either side of the skipped/repeated local hour, midnight/noon, microseconds, a naive `datetime` treated as UTC, and unparsable/empty/`None` input — plus an integration test in `tests/integration/test_recovery.py` asserting the recovery report, its `to_dict()` JSON payload, and its message text all carry the same converted string.
+
+### Phase 2 owner request 2 — expanded football state and controls
+
+Implements item 2 of "Owner-requested next scoreboard work" below, and closes the "Deferred scoreboard fields" entry in `docs/PHASE_2_BACKLOG.md`.
+
+- Added six new authoritative `GameState` fields, all optional/independent and untouched by any existing command: `down` (1-4 or `None`), `distance` (0-99, where `0` means goal-to-go, or `None`), `possession` (`"home"`/`"away"`/`None`), `ball_on` (a new `BallSpot` value), `home_timeouts`/`away_timeouts` (0-3, default 3). None of them are derived automatically — a change of possession does not reset down/distance, and a quarter change does not touch any of them — because inventing that coupling was not requested and the project guardrails ask for an explicit decision before automating a football rule.
+- **Field position is one compound value, `BallSpot(team, yard_line)`,** on the same immutable-dataclass pattern `ClockValue` already uses, rather than two separate state fields. `yard_line` (0-50) is always counted from `team`'s own goal line, the way officials and broadcasts say it ("the Eagles' 35"), so no absolute end-to-end field scale had to be invented. Keeping it one field also means the existing single-field one-level Undo mechanism needed no special case to reverse it correctly as a unit (side and yard line can never end up mismatched after an Undo).
+- Seven new validated commands in `domain/commands.py` — `set_down`, `set_distance`, `set_possession`, `set_ball_on`, `timeout_used`, `timeout_correct`, `set_timeouts` — each with its own shape validation, service-level range/state checks (`TIMEOUT_BELOW_ZERO`/`TIMEOUT_ABOVE_MAXIMUM` mirror the existing score-correction pattern), and factory helper. All seven are undoable through the existing one-level Undo.
+- **Persistence is additive with no schema-version bump.** `application/snapshots.py` nests the new fields under one `"football"` snapshot key; a snapshot written before this change has no such key at all, and `snapshot_to_state()` falls back to the same defaults `default_state()` carries, so an older saved game stays recoverable (P-004, P-006) exactly like the `play_clock_cleared` precedent it follows.
+- **A real defect was found and fixed during testing.** Undo's generic old/new reporting (`getattr(state, entry.field)`) read the raw `BallSpot` domain object directly into the returned `EventIntent` for an undone `set_ball_on`, which would have violated "no domain object crosses the bridge" (ARCHITECTURE.md §8) and made that one command's result payload fail `json.dumps`. Fixed by converting a `BallSpot` value to its plain `{"team": ..., "yard_line": ...}` dictionary wherever Undo's generic path reports it (`application/service.py`), and by teaching `infrastructure/persistence.py`'s history-row JSON encoder to convert any dataclass generically (`dataclasses.asdict`) rather than falling back to a Python `repr()` string. A regression test for each layer (`tests/integration/test_bridge.py`, `tests/integration/test_persistence.py`) exercises exactly this path: `set_ball_on` twice, then Undo.
+- Operator UI: the quarter bar gained a compact, always-visible field-status readout (down & distance, field position, timeouts) next to the existing quarter control, and a new **Field ▸** drawer alongside the existing Corrections/Halftime/Advanced drawers holds the setting controls — direct-select down buttons, a distance entry with a Goal shortcut, a possession toggle, a ball-on side toggle plus yard-line entry, and per-team timeout controls. A short text flag (`◀ BALL` / `BALL ▶`), not color alone, marks which team has possession next to its name (U-002's principle). None of these controls require confirmation, matching the owner's existing "routine, reversible actions don't need a confirmation dialog" guidance recorded in `docs/PHASE_2_BACKLOG.md`.
+- Spectator UI: down-and-distance and ball-on are rendered as a second, smaller line nested inside the existing quarter and play-clock grid cells, and the possession flag is nested inside the existing team-name element. Nothing was added as a new top-level grid item and no row proportion changed, so the Task 7/8 `U-001`/viewport work this project already verified is not disturbed. Timeouts remaining is exposed in the view model but is not yet drawn on the spectator board (recorded as an open item below).
+- Every string an operator or spectator sees is produced in Python (`domain/formatting.py`'s new `format_down_and_distance()` and `format_ball_on()`), on the same "JavaScript never derives a displayed value" principle the clocks already follow.
+- **Manually verified in the in-app Chromium browser** against a stub bridge (this development host still has no Node/Playwright, so `tests/ui/` cannot run — the same limitation recorded throughout Phase 2): the operator page at 1366×768 and at 1093×614 (125% scaling) shows no scrolling and the same toolbar-bottom pixel positions the Task 7 U-001 measurement recorded; the Field drawer opens and its down/distance/possession/ball-on/timeout controls round-trip through the (stub) bridge and re-render correctly, including the side-toggle-plus-yard-line compound entry; the spectator page renders down-and-distance, field position, and possession correctly at 1366×768 including under extreme content (24-character names, scores at 199, `4th & Goal`) with no overlap and no scrolling.
+- 46 new automated tests: `tests/unit/test_state.py` (`BallSpot` validation, new field validation, snapshot round-trip and pre-expansion backward compatibility), `tests/unit/test_commands.py` (shape validation, and a new `FootballStateTests` class covering undo, clearing, quarter/new-game interaction, and timeout boundaries), `tests/unit/test_formatting.py` (`format_down_and_distance`/`format_ball_on` boundaries), `tests/integration/test_bridge.py` (view-model rendering, the JSON-safety regression above, and the existing generic per-`CommandType` contract tests extended to cover all seven new commands), and `tests/integration/test_persistence.py` (the compound-field Undo history regression). The full suite was run before and after this work; the failing/erroring set is byte-for-byte identical (the same 16 failures and 2 errors, all pre-existing legacy pregame/quarter-confirmation and Node-unavailable issues already recorded elsewhere in this document), so nothing here introduced a regression.
+
+**Owner/officials decisions still open, not blocking implementation:**
+
+| # | Question | Why it matters | Status |
+|---:|---|---|---|
+| B-1 | Is 3 timeouts per team the right default, and should it auto-reset at halftime? | NFHS-style rules award 3 timeouts per team **per half**. This build starts both teams at 3 and never resets them automatically; the operator must use the Field drawer's direct Set control at halftime. | 🧪 Needs owner/officials confirmation before live use |
+| B-2 | Should a change of possession clear or prompt for new down/distance? | Currently fully independent by design (no invented automation); a real change of possession almost always means "1st & 10" for the new team, which today needs two extra operator actions. | ➖ Accepted for the MVP; revisit if rehearsal shows it is error-prone |
+| B-3 | Is "yards from the named team's own goal line" (e.g. "Eagles 35") the field-position convention this stadium's staff expect, versus an OWN/OPP-relative convention? | Changes only the display and the Field-drawer side toggle's meaning, not the stored value. | 🧪 Needs owner confirmation |
+| B-4 | Should timeouts remaining appear on the spectator board? | Currently operator-only; the spectator board already shows down/distance/ball-on/possession. | ➖ Deferred; add if requested |
+
+**Not claimed.** Native WebView2 rendering of the new controls, real Windows keyboard/touch interaction with the Field drawer, and a two-hour rehearsal exercising the new fields are all still open, on the same basis as every other Task 7-10 UI claim in this document.
+
 ### Phase 2 Task 3 evidence
 
 - Added a monotonic-deadline game-clock engine in [`src/scoreboard/domain/clocks.py`](src/scoreboard/domain/clocks.py) and kept the clock state immutable and revision-safe using the existing `GameState`/`ClockValue` contract.
@@ -657,6 +693,11 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | `schema_version` is the only compatibility gate on a stored game; `app_version` is provenance and is reported, never enforced. | Gating on the build number made every saved game unrecoverable the moment the version changed, which Task 11 packaging guarantees will happen. A mid-season update installed between two launches would have destroyed a game in progress. | A future schema change that genuinely cannot be read by an older or newer build; that is what `schema_version` is for. |
 | September 5, 2026 | Record clock expiration as a `system`-sourced action-history row written by the refresh tick, rather than adding an expire command or letting the tick submit one. | F-037 and F-046 require expiration in the durable history, but nobody presses anything when a clock reaches zero. Keeping it out of the command model preserves the rule that the service is the only writer of the authoritative revision. | If expiration ever needs to change game state — an automatic quarter advance, for example — at which point it becomes a real command and needs a confirmation policy. |
 | September 5, 2026 | Distinguish a genuine expiry from a commanded zero by comparing the state revision between refresh ticks. | A game-clock Start blanks a running play clock (F-048) and a correction can set 0:00; both reach zero without expiring. The command that caused them already has its own history row, so inventing an expiration as well would misreport the field. | If a future command changes a clock without advancing a revision. |
+| September 5, 2026 | Human-facing saved/checkpoint timestamps use Eastern local time (`America/New_York`) with a readable zone-bearing format; internal elapsed timing remains monotonic and machine timestamps remain unambiguous. | Operators need to reconcile recovery information quickly, while daylight-saving-aware conversion prevents UTC/raw ISO strings from being mistaken for local time. | When another operator-visible timestamp is added or the project adopts a different deployment timezone policy. |
+| September 5, 2026 | Add ball on, to go, down, timeouts, possession, and any requirements-reviewed essential football fields before starting the presentation layout editor. | These are game-operation information and authoritative-state concerns, while text size/position/color editing is spectator-only presentation work that must not obscure the core workflow. | After the expanded-field task is verified and operators identify additional essential fields. |
+| September 5, 2026 | Field position is one compound state field, `BallSpot(team, yard_line)`, with `yard_line` counted from `team`'s own goal line (0-50) — not two separate fields and not an absolute 0-100 field scale. | Matches how officials and broadcasts describe field position ("the Eagles' 35"); keeping it one field, on the same pattern as `ClockValue`, let the existing single-field one-level Undo reverse it as a unit with no special case. | If a future need (an absolute field-position graphic, for example) requires a coordinate that is not team-relative. |
+| September 5, 2026 | Down, distance, possession, ball position, and timeouts are never changed automatically by another command (scoring, quarter, or clock). Timeouts default to 3 per team and are not auto-reset at halftime. | Automating a football rule (for example, resetting timeouts at halftime, or clearing down/distance on a change of possession) risks encoding a rule the owner or officials have not confirmed; an explicit operator action is always correct even if one click slower. | If rehearsal (Task 12) shows operators reliably forget one of these steps and officials confirm the automatic rule. |
+| September 5, 2026 | The durable history's generic JSON encoder (`infrastructure/persistence.py`) converts any dataclass value via `dataclasses.asdict` rather than falling back to `str()`. | Undo's generic old/new reporting reads a state field by name and can hold a compound value like `BallSpot`; a `str()` fallback recorded a Python repr in the audit trail and, at the bridge layer, briefly broke JSON serialization for that field until the corresponding service-layer fix. | If a future compound state field needs a different serialized shape than its own field names. |
 | September 5, 2026 | A genuine game-clock running-to-stopped transition clears a running play clock: explicit Stop does so in its command commit; natural expiry clears it through a bridge-locked observed tick without advancing the revision. | The stadium board must not keep showing a self-running play clock after the game clock has stopped. The observed expiry path mutates the play-clock engine and writes the game-expiry and system-caused clear records together, so a later tick cannot revive the old deadline and recovery retains why it disappeared. A redundant Stop remains a no-op for an independent play clock. | If officials require a different stopped-game-clock workflow. |
 | September 4, 2026 | Task 8 gap 1: lifecycle follows accepted quarter commands (including quarter Undo): PRE → PRE_GAME, HALF → HALFTIME, FINAL → FINAL, all playing labels → IN_PROGRESS. A successful game-clock Start leaving pregame/halftime enters IN_PROGRESS; End Game sets FINAL and New Game restores PRE_GAME. PRE/HALF entry selects its stopped event preset only when switching countdown kind; an already selected countdown retains its time. | No overlapping lifecycle control; team-name validation now leaves pregame. Expiry never advances lifecycle. | Operator rehearsal. |
 | September 4, 2026 | Persist an additive play_clock_cleared flag; retain old blank-zero interpretation for legacy snapshots lacking it. | The old model erased expiry versus clear intent; the renderer cannot recreate it safely. | Recovery compatibility/rehearsal. |
@@ -780,6 +821,58 @@ cleans it up with the other owned windows.
 | Repository status | Work is on `phase-2-audit`, four commits ahead of `main`. The Phase 1 foundation commit `6f9fc18` was pushed and independently cloned cleanly. An unrelated agent-skills change to `AGENTS.md` and a new untracked `docs/agents/` directory are present in the working tree and were **deliberately left uncommitted**, because they are not Task 10 work. |
 | Testing follow-ups | Five findings from local spectator-preview testing are recorded in [`.scratch/testing-followups`](.scratch/testing-followups/spec.md). The pregame/game-clock and quarter-safety requests change the current documented workflow and await owner decisions; the color/label changes are ready as one small presentation pass; the visual layout editor is deferred to Phase 3 discovery. |
 
+## Owner-requested next scoreboard work
+
+These requests are recorded as follow-up scope, not as evidence that Phase 2 is
+complete. The current MVP acceptance work, hardware gate, and fallback
+requirements remain in force.
+
+### 1. Human-readable local time — ✅ implemented September 5, 2026
+
+Human-facing timestamps shown during startup/recovery must be converted to
+Eastern local time (`America/New_York`), including daylight-saving changes, and
+rendered in a clear format such as `September 5, 2026 at 10:41 AM EDT`. This
+primarily applies to the first recovery screen's `Last saved` value and any
+other operator-visible saved/checkpoint timestamps discovered during the
+implementation. Internal elapsed-time calculations remain monotonic, and
+machine-readable logs/storage may retain an unambiguous timestamp representation
+as long as the operator-facing value is local and easy to read.
+
+See "Phase 2 owner request 1 — human-readable local time" above for evidence.
+
+### 2. Expanded football state and controls — ✅ implemented September 5, 2026
+
+After the local-time presentation is corrected, add authoritative state,
+validated commands, operator controls, spectator display fields, persistence,
+recovery, and action-history coverage for the football information operators
+need during a game:
+
+- ball on / current yard line;
+- to go / distance;
+- current down;
+- timeouts remaining for home and away;
+- possession;
+- any additional field identified by the requirements review that is necessary
+  for a usable football scoreboard, without silently adding statistics or
+  production-media features.
+
+The implementation must preserve the existing architecture: Python remains the
+authoritative state owner, all mutations use validated commands, both views
+render complete snapshots, and optional display failure cannot stop operation.
+Rules and defaults that depend on local officials or league practice must be
+documented as decisions or provisional values before live use.
+
+See "Phase 2 owner request 2 — expanded football state and controls" above for
+evidence, and the B-1 through B-4 open decisions it records for officials/owner
+confirmation before live use.
+
+### 3. Presentation layout editor
+
+Only after items 1 and 2 are implemented and verified, begin the separate
+scoreboard editor work for safely changing text sizes, positions, colors, and
+related spectator-only presentation properties. The editor must not become an
+authority for game state or block the basic offline scoreboard.
+
 ## Next Action
 
 **On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed.
@@ -791,6 +884,11 @@ Then, in order:
 3. **Choose the pregame-to-first-quarter safety workflow** in testing follow-ups 01 and 02: specifically, what the operator must see and choose when advancing from `PRE` before `KICKOFF IN` reaches zero. This decision also determines how the requested unified pregame/game-clock control can be implemented safely.
 4. **Work the `docs/PACKAGING.md` checklist on the target laptop** — clean machine, network disabled, SmartScreen, startup time. The package was rebuilt after Task 10 and carries the current display behaviour, so this checklist is now working the right build.
 5. **Task 12 — sustained rehearsal and recovery acceptance**, which closes Phase 2 together with the stadium display rehearsal.
+
+The owner-requested local-time presentation and expanded football fields
+(items 1 and 2 below) are implemented and tested; the presentation layout
+editor (item 3) remains deferred, as requested, and is the next scope item
+once Task 12 and the hardware evidence above are complete.
 
 Carried forward as open items, none of which may be treated as completed on the strength of a passing automated suite:
 

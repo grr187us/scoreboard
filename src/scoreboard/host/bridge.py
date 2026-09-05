@@ -51,11 +51,13 @@ from scoreboard.domain.commands import (
     validate_command,
 )
 from scoreboard.domain.formatting import (
+    format_ball_on,
+    format_down_and_distance,
     format_event_countdown,
     format_game_clock,
     format_play_clock,
 )
-from scoreboard.domain.state import GameState, QUARTER_LABELS, SCHEMA_VERSION
+from scoreboard.domain.state import BallSpot, GameState, QUARTER_LABELS, SCHEMA_VERSION
 from scoreboard.host.folders import (
     FolderChoice,
     choose_data_folder,
@@ -103,10 +105,29 @@ _ALLOWED_ARGUMENTS: Final[dict[CommandType, frozenset[str]]] = {
     CommandType.EVENT_COUNTDOWN_STOP: frozenset(),
     CommandType.EVENT_COUNTDOWN_RESET: frozenset(),
     CommandType.EVENT_COUNTDOWN_CORRECT: frozenset({"seconds"}),
+    CommandType.SET_DOWN: frozenset({"value"}),
+    CommandType.SET_DISTANCE: frozenset({"value"}),
+    CommandType.SET_POSSESSION: frozenset({"team"}),
+    CommandType.SET_BALL_ON: frozenset({"team", "value"}),
+    CommandType.TIMEOUT_USED: frozenset({"team"}),
+    CommandType.TIMEOUT_CORRECT: frozenset({"team", "points"}),
+    CommandType.SET_TIMEOUTS: frozenset({"team", "value"}),
 }
 
 _NUMERIC_ARGUMENTS: Final[frozenset[str]] = frozenset({"points", "value", "seconds"})
 _TEXT_ARGUMENTS: Final[frozenset[str]] = frozenset({"team", "label", "name"})
+
+#: Down and distance are the only numeric arguments a control may explicitly
+#: clear to "not applicable" by sending ``value: null`` (an operator button
+#: sends this deliberately; it never arrives as a stray empty field, which
+#: :func:`build_command` still rejects the same way it always has).
+_NULLABLE_VALUE_COMMANDS: Final[frozenset[CommandType]] = frozenset(
+    {CommandType.SET_DOWN, CommandType.SET_DISTANCE}
+)
+#: Possession is the only team argument a control may clear to "nobody".
+_NULLABLE_TEAM_COMMANDS: Final[frozenset[CommandType]] = frozenset(
+    {CommandType.SET_POSSESSION}
+)
 
 
 # --- Display health ---------------------------------------------------------
@@ -253,7 +274,15 @@ def build_command(
 
     fields: dict[str, Any] = {}
     for key, value in supplied.items():
-        if key in _NUMERIC_ARGUMENTS:
+        if value is None and (
+            (key == "value" and command_type in _NULLABLE_VALUE_COMMANDS)
+            or (key == "team" and command_type in _NULLABLE_TEAM_COMMANDS)
+        ):
+            # An explicit "clear this" control, not a malformed field: down,
+            # distance, and possession are the only arguments any command may
+            # send as null, and only for the command types declared above.
+            fields[key] = None
+        elif key in _NUMERIC_ARGUMENTS:
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 return CommandError(
                     INVALID_ARGUMENTS,
@@ -325,6 +354,35 @@ def _spectator_quarter_label(label: str) -> str:
     return f"{label} Quarter" if label in {"1st", "2nd", "3rd", "4th"} else label
 
 
+#: Human labels for the "LAST: ..." strip that ``entry.field.replace("_", " ")``
+#: would otherwise render awkwardly (``"ball on"`` reads fine on its own, but
+#: ``"home timeouts"``/``"away timeouts"`` already say the team, so the team
+#: prefix _last_action_view adds for score fields must not double up).
+_LAST_ACTION_SUBJECTS: Final[dict[str, str]] = {
+    "down": "Down",
+    "distance": "Distance",
+    "possession": "Possession",
+    "ball_on": "Ball on",
+    "home_timeouts": "HOME timeouts",
+    "away_timeouts": "AWAY timeouts",
+}
+
+
+def _last_action_display(value: Any) -> Any:
+    """A JSON-compatible, human-readable rendering of one old/new value.
+
+    Every other undoable field is already a plain ``str``/``int``/``None``
+    that reads fine in ``f"{value}"``. ``BallSpot`` (``set_ball_on``) is the
+    one compound value reaching here directly through the generic undo path,
+    so it needs the same "readable, not a Python repr" treatment before it
+    goes into the last-action label or crosses the JSON boundary.
+    """
+
+    if isinstance(value, BallSpot):
+        return f"{value.team} {value.yard_line}"
+    return value
+
+
 def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
     """The previous reversible command and whether Undo can reverse it (U-008)."""
 
@@ -334,15 +392,41 @@ def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
         subject = f"{(entry.team or '').upper()} score"
     elif entry.field == "quarter":
         subject = "Quarter"
+    elif entry.field in _LAST_ACTION_SUBJECTS:
+        subject = _LAST_ACTION_SUBJECTS[entry.field]
     else:
         subject = entry.field.replace("_", " ").capitalize()
+    old_value = _last_action_display(entry.old_value)
+    new_value = _last_action_display(entry.new_value)
     return {
         "command": entry.command.value,
         "team": entry.team,
         "field": entry.field,
-        "old_value": entry.old_value,
-        "new_value": entry.new_value,
-        "label": f"{subject} {entry.old_value} → {entry.new_value}",
+        "old_value": old_value,
+        "new_value": new_value,
+        "label": f"{subject} {old_value} → {new_value}",
+    }
+
+
+def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[str, Any]:
+    """Down/distance/possession/ball-on/timeouts, plus their rendered text.
+
+    Every string here is produced in Python from
+    :mod:`scoreboard.domain.formatting`, on the same "JavaScript never derives
+    a displayed value" principle the clocks already follow: the operator
+    readout and the spectator board cannot disagree about what a down-and-
+    distance or a field position reads as.
+    """
+
+    team_name = home_name if state.ball_on.team == "home" else away_name
+    return {
+        "down": state.down,
+        "distance": state.distance,
+        "down_distance_display": format_down_and_distance(state.down, state.distance),
+        "possession": state.possession,
+        "ball_on": {"team": state.ball_on.team, "yard_line": state.ball_on.yard_line},
+        "ball_on_display": format_ball_on(state.ball_on.team, state.ball_on.yard_line, team_name),
+        "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
     }
 
 
@@ -397,6 +481,11 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
                 "warmup_follows": "3:00" if countdown_phase == "HALFTIME" else None,
             },
         },
+        # Meaningful only once a game is live; the spectator page hides this
+        # alongside the game board during PRE_GAME/HALFTIME (D-001).
+        "football": _football_view(
+            state, home_name=state.home_name, away_name=state.away_name
+        ),
     }
 
 

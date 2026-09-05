@@ -25,6 +25,7 @@ from scoreboard.application.service import ScoreboardService
 from scoreboard.application.snapshots import state_to_snapshot
 from scoreboard.domain.state import APP_VERSION, GameState, default_state
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
+from scoreboard.infrastructure.local_time import format_local_timestamp
 from scoreboard.infrastructure.paths import ScoreboardPaths
 from scoreboard.infrastructure.persistence import (
     DatabaseInvalid,
@@ -63,6 +64,11 @@ class RecoveryReport:
     state: GameState | None = None
     game_id: int | None = None
     checkpoint_at: str | None = None
+    #: ``checkpoint_at`` rendered as human-readable Eastern time for an
+    #: operator to read, e.g. ``"September 5, 2026 at 10:41 AM EDT"``.
+    #: ``checkpoint_at`` itself stays an unambiguous UTC ISO 8601 string, which
+    #: is what the database and diagnostics log keep using.
+    checkpoint_at_local: str | None = None
     checkpoint_kind: str | None = None
     primary_error: str | None = None
     backup_error: str | None = None
@@ -99,6 +105,7 @@ class RecoveryReport:
             "choices": list(self.choices),
             "game_id": self.game_id,
             "checkpoint_at": self.checkpoint_at,
+            "checkpoint_at_local": self.checkpoint_at_local,
             "checkpoint_kind": self.checkpoint_kind,
             "primary_error": self.primary_error,
             "backup_error": self.backup_error,
@@ -145,6 +152,7 @@ def _offer(stored: StoredGame, source: RecoverySource, message: str) -> Recovery
         state=_restored(stored.state),
         game_id=stored.game_id,
         checkpoint_at=stored.checkpoint_at,
+        checkpoint_at_local=format_local_timestamp(stored.checkpoint_at),
         checkpoint_kind=stored.checkpoint_kind,
         written_by_app_version=_written_by(stored),
     )
@@ -180,7 +188,7 @@ def inspect_recovery(
                     stored,
                     RecoverySource.PRIMARY,
                     "A saved game was found. Its clocks are stopped at the last "
-                    f"checkpoint ({stored.checkpoint_at}).",
+                    f"checkpoint ({format_local_timestamp(stored.checkpoint_at)}).",
                 )
                 log.recovery(source=report.source.value, message=report.message)
                 return report
@@ -210,12 +218,14 @@ def inspect_recovery(
                 message=(
                     "RECOVERED FROM BACKUP: the main game file could not be read, "
                     "so the last-known-good backup was loaded. Its clocks are "
-                    f"stopped at {stored.checkpoint_at}. Check the board against "
-                    "the real game before resuming." + _upgrade_note(stored)
+                    f"stopped at {format_local_timestamp(stored.checkpoint_at)}. "
+                    "Check the board against the real game before resuming."
+                    + _upgrade_note(stored)
                 ),
                 state=_restored(stored.state),
                 game_id=stored.game_id,
                 checkpoint_at=stored.checkpoint_at,
+                checkpoint_at_local=format_local_timestamp(stored.checkpoint_at),
                 checkpoint_kind=stored.checkpoint_kind,
                 primary_error=primary_error,
                 preserved_paths=preserved,

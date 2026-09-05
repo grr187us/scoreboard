@@ -63,13 +63,15 @@ The Phase 2 MVP provides, or will provide:
 | A folder picker for choosing where the game and logs are saved | Built |
 | Display selection, persisted identity, and disconnect recovery | Built and tested against injected screen lists; real two-display evidence remains open |
 | A repeatable offline Windows package and one-action launch | Built at version 0.1.0 after Task 10; clean-machine and target-laptop checks remain open |
+| Down, distance, possession, field position, and timeouts remaining | Built and tested; owner/officials decisions on the timeout default and halftime reset remain open |
+| Human-readable Eastern-time recovery timestamps | Built and tested |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
 
 Detailed, testable behavior is in [MVP requirements](docs/MVP_REQUIREMENTS.md).
 
 ## Intentionally deferred
 
-The MVP does not include OBS as a required runtime, media playback, replay, animations, down/distance, possession, timeouts, advanced statistics, roster management, sponsors, multiple operators, cloud services, automated HDMI switching, the physical USB controller, license-dongle investigation, or direct LED protocol work.
+The MVP does not include OBS as a required runtime, media playback, replay, animations, penalties, advanced statistics, roster management, sponsors, multiple operators, cloud services, automated HDMI switching, the physical USB controller, license-dongle investigation, direct LED protocol work, or the presentation layout editor.
 
 ## Architecture direction
 

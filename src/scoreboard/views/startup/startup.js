@@ -27,7 +27,8 @@
     Promise.resolve(api.get_recovery()).then(function (report) {
       R.setText(document.getElementById('message'), report.message);
       R.setText(document.getElementById('checkpoint'),
-        'Source: ' + report.source + ' · Last saved: ' + (report.checkpoint_at || 'unavailable'));
+        'Source: ' + report.source + ' · Last saved: ' +
+        (report.checkpoint_at_local || report.checkpoint_at || 'unavailable'));
       R.setText(document.getElementById('summary'), report.view ?
         report.view.teams.home.name + ' ' + report.view.teams.home.score + ' — ' +
         report.view.teams.away.name + ' ' + report.view.teams.away.score + '\n' +

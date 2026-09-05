@@ -1,10 +1,13 @@
-"""Pure display formatting for authoritative clock values (F-039, F-047).
+"""Pure display formatting for authoritative clock and football-state values.
 
-This module is a *derived view* of stored time. It never rounds, mutates, or
-writes back a stored value: callers format a materialized number of seconds and
-display the result. Persistence uses the same functions so a checkpoint cadence
-and an operator readout can never disagree about what "one displayed second"
-means (P-003, P-004).
+This module is a *derived view* of stored values (F-039, F-047). It never
+rounds, mutates, or writes back a stored value: callers format an already
+materialized value and display the result. Persistence uses the same clock
+functions so a checkpoint cadence and an operator readout can never disagree
+about what "one displayed second" means (P-003, P-004). The down/distance and
+field-position helpers below are the same kind of derived view for the
+expanded football state: Python renders the human-readable text once, so the
+operator readout and the spectator board can never disagree about it either.
 
 Every visible value rounds **upward**, so the board never understates the time
 remaining (roadmap decision, September 4, 2026):
@@ -131,14 +134,63 @@ def format_event_countdown(seconds: float) -> str:
     return _minutes_display(ceil_seconds(seconds))
 
 
+#: Ordinal words for downs 1-4. There is no NFHS-style "5th down" to format.
+_DOWN_ORDINALS: Final[dict[int, str]] = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+
+#: Shown for ``distance == 0``: the line to gain is the goal line itself, so a
+#: literal "& 0" would read as a typo rather than a goal-to-go situation.
+GOAL_TO_GO_DISPLAY: Final[str] = "Goal"
+
+
+def format_down_and_distance(down: int | None, distance: int | None) -> str:
+    """Format e.g. ``"3rd & 7"`` or ``"4th & Goal"``; blank when not set.
+
+    Either value being ``None`` (not yet set, or deliberately cleared by the
+    operator) blanks the whole display rather than showing a partial reading
+    like ``"3rd & —"``: a half-known down-and-distance is not a situation an
+    operator asked to display.
+    """
+
+    if down is None or distance is None:
+        return BLANK_DISPLAY
+    ordinal = _DOWN_ORDINALS.get(down)
+    if ordinal is None:
+        raise FormattingError(f"down must be 1-4, got {down!r}")
+    if distance < 0:
+        raise FormattingError("distance must not be negative")
+    to_go = GOAL_TO_GO_DISPLAY if distance == 0 else str(distance)
+    return f"{ordinal} & {to_go}"
+
+
+def format_ball_on(team: str, yard_line: int, team_name: str) -> str:
+    """Format field position as e.g. ``"TIGERS 35"``, or ``"50"`` at midfield.
+
+    ``yard_line`` is counted from ``team``'s own goal line (see
+    :class:`~scoreboard.domain.state.BallSpot`). Midfield is the same physical
+    point regardless of which team's side it is counted from, so the team name
+    is dropped there rather than printed with an arbitrary side attached.
+    """
+
+    if team not in ("home", "away"):
+        raise FormattingError(f"team must be 'home' or 'away', got {team!r}")
+    if not 0 <= yard_line <= 50:
+        raise FormattingError("yard_line must be between 0 and 50")
+    if yard_line == 50:
+        return "50"
+    return f"{team_name} {yard_line}"
+
+
 __all__ = [
     "BLANK_DISPLAY",
     "GAME_CLOCK_TENTHS_THRESHOLD",
+    "GOAL_TO_GO_DISPLAY",
     "PLAY_CLOCK_TENTHS_THRESHOLD",
     "FormattingError",
     "ceil_seconds",
     "ceil_tenths",
     "displayed_second",
+    "format_ball_on",
+    "format_down_and_distance",
     "format_event_countdown",
     "format_game_clock",
     "format_play_clock",

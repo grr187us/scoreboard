@@ -133,6 +133,39 @@ Stop, other commands, checkpoints and recovery preserve it. Legacy snapshots
 without the field retain the previous stopped-zero-is-blank interpretation;
 the old format cannot distinguish an expired zero from a cleared zero.
 
+### Expanded football state (September 5, 2026)
+
+`GameState` additively carries `down`, `distance`, `possession`,
+`home_timeouts`/`away_timeouts`, and `ball_on`. Each is independently settable
+through its own validated command and its own one-level Undo entry; none is
+derived from or coupled to a scoring, clock, or quarter command, on the same
+"no invented rule automation" principle as the rest of this document.
+
+Field position (`ball_on`) is one compound value, `BallSpot(team, yard_line)`,
+on the same immutable-frozen-dataclass pattern as `ClockValue` rather than two
+separate state fields. `yard_line` (0-50) is always counted from `team`'s own
+goal line. Keeping it one field lets the existing single-field, one-level Undo
+mechanism (`application.service._handle_undo`, generic over `entry.field`)
+reverse it as a unit with no special case, the same way it already reverses
+`game_clock`/`play_clock` corrections without knowing anything about clocks.
+
+A compound field reaching a generic `getattr(state, field)` path (Undo, and
+the durable action-history JSON encoder) is converted to its plain field
+dictionary rather than left as a domain object: `application/service.py`
+converts it before building the `EventIntent` Undo returns, and
+`infrastructure/persistence.py`'s history encoder converts any dataclass
+generically (`dataclasses.asdict`) as a second, structural safety net. This
+was found as a real defect during Task implementation -- the generic path
+briefly reached the JSON boundary with a raw `BallSpot` -- and both fixes are
+required together: the service-layer one keeps the immediate command result
+correct, and the persistence-layer one protects any future compound field
+whose own command handler forgets to convert it before logging.
+
+Like `play_clock_cleared`, every new field is additive: `snapshot_to_state()`
+defaults a snapshot with no `"football"` key to the same values
+`default_state()` carries, so a game saved before this change stays
+recoverable without a schema-version bump (P-004, P-006).
+
 ## 7. Clock model
 
 Use an injected `MonotonicClock` interface backed in production by `time.monotonic_ns()`. Wall-clock time is used only for human-readable log timestamps, never to calculate remaining game time.
@@ -207,6 +240,17 @@ Scoreboard/
 - diagnostic log: bounded rotating log for startup/errors; exact retention is a Phase 2 implementation detail.
 
 For every accepted state-changing command, validate in memory, update recoverable state and append its history row in one SQLite transaction, then commit. While a clock runs, checkpoint materialized values at each displayed-second boundary without adding synthetic tick events to the action history. Refresh the last-known-good backup after verified commits on a bounded, testable policy. On startup validate the primary database, fall back to the backup, and surface the source. Running clocks always recover stopped at the last persisted derived values, with a visible checkpoint timestamp so the operator can reconcile the game.
+
+**Stored and logged timestamps stay unambiguous UTC ISO 8601 strings** (P-010,
+September 5, 2026); nothing about the database schema, the action history, or
+`infrastructure/diagnostics.py`'s log lines changed. `infrastructure/local_time.py`
+is a pure, separate display-only conversion (`format_local_timestamp()`) used
+only where an operator *reads* a timestamp -- the recovery screen's "Last
+saved" line and its non-interactive CLI equivalent -- converting to Eastern
+local time (`America/New_York`) with correct daylight-saving handling. Windows
+does not ship the IANA time zone database that `zoneinfo` needs to resolve
+that name, so `tzdata` is a pinned runtime dependency rather than something
+the operating system is assumed to provide (R-001, W-006).
 
 ## 10. Windows startup and display selection
 

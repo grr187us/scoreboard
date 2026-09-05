@@ -12,7 +12,11 @@ from scoreboard.application.snapshots import (
 )
 from scoreboard.domain.state import (
     APP_VERSION,
+    MAX_DISTANCE,
     MAX_SCORE,
+    MAX_TIMEOUTS,
+    MAX_YARD_LINE,
+    BallSpot,
     ClockValue,
     GameState,
     StateValidationError,
@@ -133,6 +137,105 @@ class StateTests(unittest.TestCase):
         payload["teams"]["home"]["name"] = "Changed"
 
         self.assertEqual(default_state().home_name, "HOME")
+
+    def test_default_football_state_is_not_applicable(self) -> None:
+        state = default_state()
+
+        self.assertIsNone(state.down)
+        self.assertIsNone(state.distance)
+        self.assertIsNone(state.possession)
+        self.assertEqual(state.ball_on, BallSpot("home", 50))
+        self.assertEqual(state.home_timeouts, MAX_TIMEOUTS)
+        self.assertEqual(state.away_timeouts, MAX_TIMEOUTS)
+
+    def test_football_fields_accept_valid_values(self) -> None:
+        updated = default_state().evolve(
+            down=3,
+            distance=0,
+            possession="away",
+            ball_on=BallSpot("away", MAX_YARD_LINE),
+            home_timeouts=0,
+            away_timeouts=MAX_TIMEOUTS,
+        )
+
+        self.assertEqual(updated.down, 3)
+        self.assertEqual(updated.distance, 0)
+        self.assertEqual(updated.possession, "away")
+        self.assertEqual(updated.ball_on.yard_line, MAX_YARD_LINE)
+        self.assertEqual(updated.home_timeouts, 0)
+
+    def test_down_distance_and_timeouts_can_be_cleared_or_null(self) -> None:
+        state = default_state().evolve(down=2, distance=5, possession="home")
+
+        cleared = state.evolve(down=None, distance=None, possession=None)
+
+        self.assertIsNone(cleared.down)
+        self.assertIsNone(cleared.distance)
+        self.assertIsNone(cleared.possession)
+
+    def test_invalid_football_fields_are_rejected(self) -> None:
+        invalid_changes = (
+            {"down": 0},
+            {"down": 5},
+            {"down": 1.5},
+            {"distance": -1},
+            {"distance": MAX_DISTANCE + 1},
+            {"possession": "visitor"},
+            {"home_timeouts": -1},
+            {"away_timeouts": MAX_TIMEOUTS + 1},
+            {"ball_on": "home"},
+        )
+        for changes in invalid_changes:
+            with self.subTest(changes=changes), self.assertRaises(StateValidationError):
+                default_state().evolve(**changes)
+
+    def test_ball_spot_validates_its_own_fields(self) -> None:
+        BallSpot("home", 0)
+        BallSpot("away", MAX_YARD_LINE)
+
+        with self.assertRaises(StateValidationError):
+            BallSpot("visitor", 10)
+        with self.assertRaises(StateValidationError):
+            BallSpot("home", -1)
+        with self.assertRaises(StateValidationError):
+            BallSpot("home", MAX_YARD_LINE + 1)
+
+    def test_football_snapshot_round_trips(self) -> None:
+        state = default_state().evolve(
+            down=4,
+            distance=0,
+            possession="home",
+            ball_on=BallSpot("away", 12),
+            home_timeouts=1,
+            away_timeouts=2,
+        )
+
+        payload = state_to_snapshot(state)
+        restored = json_to_state(json.dumps(payload))
+
+        self.assertEqual(restored, state)
+        self.assertEqual(
+            payload["football"],
+            {
+                "down": 4,
+                "distance": 0,
+                "possession": "home",
+                "ball_on": {"team": "away", "yard_line": 12},
+                "timeouts": {"home": 1, "away": 2},
+            },
+        )
+
+    def test_a_pre_football_expansion_snapshot_still_loads(self) -> None:
+        """P-004/P-006: a snapshot without a "football" key predates this field
+        set and must still load with the same defaults default_state() carries.
+        """
+
+        payload = state_to_snapshot(default_state())
+        del payload["football"]
+
+        restored = snapshot_to_state(payload)
+
+        self.assertEqual(restored, default_state())
 
 
 if __name__ == "__main__":

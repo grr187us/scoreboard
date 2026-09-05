@@ -7,13 +7,17 @@ from typing import Any, Mapping
 
 from scoreboard.domain.state import (
     APP_VERSION,
+    BallSpot,
     ClockValue,
     GameState,
     MAX_GAME_CLOCK_SECONDS,
     MAX_PREGAME_CLOCK_SECONDS,
+    MAX_TIMEOUTS,
     StateValidationError,
     default_state,
 )
+
+_DEFAULT_BALL_ON = BallSpot()
 
 
 def state_to_snapshot(state: GameState) -> dict[str, Any]:
@@ -41,6 +45,13 @@ def state_to_snapshot(state: GameState) -> dict[str, Any]:
         },
         "event_phase": state.event_phase,
         "play_clock_cleared": state.play_clock_cleared,
+        "football": {
+            "down": state.down,
+            "distance": state.distance,
+            "possession": state.possession,
+            "ball_on": {"team": state.ball_on.team, "yard_line": state.ball_on.yard_line},
+            "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
+        },
     }
 
 
@@ -63,6 +74,13 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
         game = clocks["game"]
         play = clocks["play"]
         event = clocks["event"]
+        # Additive since the football-state expansion: a snapshot written
+        # before that change has no "football" key at all, and must still
+        # load with the same defaults a fresh GameState() carries (P-004,
+        # P-006) rather than becoming unrecoverable.
+        football = snapshot.get("football", {})
+        ball_on = football.get("ball_on", {})
+        timeouts = football.get("timeouts", {})
         return GameState(
             schema_version=snapshot["schema_version"],
             app_version=snapshot["app_version"],
@@ -83,6 +101,15 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
             event_phase=snapshot["event_phase"],
             play_clock_cleared=snapshot.get("play_clock_cleared",
                                             play["seconds"] == 0 and not play["running"]),
+            down=football.get("down"),
+            distance=football.get("distance"),
+            possession=football.get("possession"),
+            ball_on=BallSpot(
+                ball_on.get("team", _DEFAULT_BALL_ON.team),
+                ball_on.get("yard_line", _DEFAULT_BALL_ON.yard_line),
+            ),
+            home_timeouts=timeouts.get("home", MAX_TIMEOUTS),
+            away_timeouts=timeouts.get("away", MAX_TIMEOUTS),
         )
     except (KeyError, TypeError) as exc:
         raise StateValidationError(f"invalid snapshot shape: {exc}") from exc

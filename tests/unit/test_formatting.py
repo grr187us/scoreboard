@@ -12,6 +12,8 @@ from scoreboard.domain.formatting import (
     ceil_seconds,
     ceil_tenths,
     displayed_second,
+    format_ball_on,
+    format_down_and_distance,
     format_event_countdown,
     format_game_clock,
     format_play_clock,
@@ -142,6 +144,55 @@ class RoundingPrimitiveTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(FormattingError):
                     format_game_clock(value)
+
+
+class DownAndDistanceDisplayTests(unittest.TestCase):
+    """Deferred scoreboard fields: down/distance rendering."""
+
+    def test_every_down_with_an_ordinary_distance(self) -> None:
+        cases = [(1, 10, "1st & 10"), (2, 1, "2nd & 1"), (3, 99, "3rd & 99"), (4, 7, "4th & 7")]
+        for down, distance, expected in cases:
+            with self.subTest(down=down, distance=distance):
+                self.assertEqual(format_down_and_distance(down, distance), expected)
+
+    def test_zero_distance_displays_as_goal(self) -> None:
+        self.assertEqual(format_down_and_distance(1, 0), "1st & Goal")
+
+    def test_either_value_being_none_blanks_the_whole_display(self) -> None:
+        self.assertEqual(format_down_and_distance(None, 7), "")
+        self.assertEqual(format_down_and_distance(3, None), "")
+        self.assertEqual(format_down_and_distance(None, None), "")
+
+    def test_an_out_of_range_down_is_rejected(self) -> None:
+        with self.assertRaises(FormattingError):
+            format_down_and_distance(5, 3)
+        with self.assertRaises(FormattingError):
+            format_down_and_distance(0, 3)
+
+
+class BallOnDisplayTests(unittest.TestCase):
+    """Deferred scoreboard fields: field-position rendering."""
+
+    def test_a_teams_own_side_is_named(self) -> None:
+        self.assertEqual(format_ball_on("home", 35, "TIGERS"), "TIGERS 35")
+        self.assertEqual(format_ball_on("away", 1, "EAGLES"), "EAGLES 1")
+
+    def test_midfield_drops_the_team_name(self) -> None:
+        # 50 is the same physical yard line regardless of which team's goal
+        # line it is counted from, so no side is attached to it.
+        self.assertEqual(format_ball_on("home", 50, "TIGERS"), "50")
+        self.assertEqual(format_ball_on("away", 50, "EAGLES"), "50")
+
+    def test_the_goal_line_itself_is_zero(self) -> None:
+        self.assertEqual(format_ball_on("home", 0, "TIGERS"), "TIGERS 0")
+
+    def test_invalid_team_or_yard_line_is_rejected(self) -> None:
+        with self.assertRaises(FormattingError):
+            format_ball_on("visitor", 35, "TIGERS")
+        with self.assertRaises(FormattingError):
+            format_ball_on("home", 51, "TIGERS")
+        with self.assertRaises(FormattingError):
+            format_ball_on("home", -1, "TIGERS")
 
 
 if __name__ == "__main__":

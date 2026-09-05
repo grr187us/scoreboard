@@ -75,6 +75,14 @@
     renderHealth(model.health);
     renderLastAction(model);
     renderQuarterChoices(model.quarter_labels, model.quarter);
+    renderPossession(model.football.possession);
+  }
+
+  function renderPossession(possession) {
+    // Text, not colour alone (U-002's principle applied to a new field): the
+    // flag is a visible word next to the team name, not only a CSS class.
+    R.setText(document.getElementById('home-possession'), possession === 'home' ? ' ◀ BALL' : '');
+    R.setText(document.getElementById('away-possession'), possession === 'away' ? ' BALL ▶' : '');
   }
 
   function markState(id, isCurrent) {
@@ -164,7 +172,12 @@
    */
   function argumentsFor(button) {
     var args = {};
-    if (button.dataset.team) {
+    if (button.dataset.clearTeam === 'true') {
+      // An explicit "clear this" control (for example, clearing possession),
+      // not a missing field: only a few commands accept team: null at all,
+      // and Python's airlock still refuses it from anything else (F-016).
+      args.team = null;
+    } else if (button.dataset.team) {
       args.team = button.dataset.team;
     }
     if (button.dataset.points) {
@@ -176,10 +189,23 @@
     if (button.dataset.seconds) {
       args.seconds = Number(button.dataset.seconds);
     }
+    if (button.dataset.clearValue === 'true') {
+      args.value = null;
+    } else if (button.dataset.value !== undefined) {
+      args.value = Number(button.dataset.value);
+    }
     if (button.dataset.argMinutes && button.dataset.argSeconds) {
       var minutes = Number(fieldValue(button.dataset.argMinutes));
       var seconds = Number(fieldValue(button.dataset.argSeconds));
       args[button.dataset.argName] = minutes * 60 + seconds;
+    } else if (button.dataset.argSide) {
+      // Ball position needs a side plus a yard line together (they are one
+      // compound state field); the side comes from the local toggle group's
+      // selection, read here at click time exactly like a text field's value.
+      var sideGroup = document.querySelector(button.dataset.argSide);
+      args.team = sideGroup ? sideGroup.dataset.selected : null;
+      var yardLine = fieldValue(button.dataset.argSource);
+      args[button.dataset.argName] = yardLine === '' ? null : Number(yardLine);
     } else if (button.dataset.argSource) {
       var raw = fieldValue(button.dataset.argSource);
       if (button.dataset.argName === 'name') {
@@ -304,6 +330,19 @@
     }
     if (button.dataset.action) {
       handleAction(button.dataset.action);
+      return;
+    }
+    if (button.dataset.side) {
+      // A side toggle only changes which team a later "Set" reads (F-016's
+      // "typing changes nothing before Apply" applies here too); it sends no
+      // command and touches no game state on its own.
+      var group = button.closest('.side-toggle');
+      if (group) {
+        group.dataset.selected = button.dataset.side;
+        Array.prototype.forEach.call(group.querySelectorAll('[data-side]'), function (toggle) {
+          toggle.classList.toggle('is-current', toggle.dataset.side === button.dataset.side);
+        });
+      }
       return;
     }
     if (button.dataset.displayKey) {
@@ -472,6 +511,8 @@
       refreshDisplays();
     } else if (action === 'open_event') {
       openDrawer('event-drawer');
+    } else if (action === 'open_field') {
+      openDrawer('field-drawer');
     } else if (action === 'open_help') {
       openDrawer('shortcut-help');
     } else if (action === 'open_advanced') {
@@ -508,7 +549,7 @@
   }
 
   function closeDrawers() {
-    ['corrections', 'event-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
+    ['corrections', 'event-drawer', 'field-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
       var drawer = document.getElementById(id);
       if (drawer) {
         drawer.hidden = true;

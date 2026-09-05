@@ -1,7 +1,7 @@
 # Operator Workflow and Initial Layouts
 
 **Status:** Phase 1 wireframe baseline; visual design is not implemented
-**Last updated:** September 4, 2026
+**Last updated:** September 5, 2026 (added the field-status readout, the Field status drawer, and the recovery screen's local-time display)
 
 ## 1. Design intent
 
@@ -71,9 +71,9 @@ Visual priorities are scores first, game clock second, team names third, then qu
 │                          │ [ 25 LOAD ]   [40 LOAD]│                        │
 │                          │ [ START ]      [ STOP ]  │                        │
 ├──────────────────────────┴──────────────────────────┴────────────────────────┤
-│ QUARTER  [ ◀ ]   1st   [ ▶ ]    LAST: Away +6 (7)       [ UNDO ]            │
+│ QUARTER [◀] 1st [▶]  3rd & 7 · EAGLES 35 · TO 3/2   LAST: Away +6 (7) [UNDO] │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ [ Corrections ▸ ] [ Pregame / Settings ▸ ] [ Reopen Display ]               │
+│ [ Corrections ▸ ] [ Halftime ▸ ] [ Field ▸ ] [ Shortcut Help ] [ Advanced ▸ ] │
 │                                              [ End Game… ] [ New Game… ]     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -88,6 +88,12 @@ Visual priorities are scores first, game clock second, team names third, then qu
   supplementary cues.
 - Show the last reversible action and Undo without opening a menu.
 - A display-health failure must take over the health strip but must not obscure clocks or controls.
+- Down/distance, field position, and timeouts remaining (added September 5,
+  2026) read compactly in the quarter bar, next to the existing quarter
+  control rather than as a new row, so the U-001 no-scrolling measurement is
+  unaffected. Possession is a short text flag (`◀ BALL` / `BALL ▶`) next to the
+  team name it belongs to, not color alone (U-002's principle applied to a new
+  field). See section 5a for the controls that set these.
 
 ## 5. Corrections drawer
 
@@ -103,6 +109,43 @@ Visual priorities are scores first, game clock second, team names third, then qu
 ```
 
 Typing does not change live state. Apply opens a confirmation such as `Change HOME score from 14 to 8?`; cancel is the default focused action for destructive corrections. Minus corrections are logged and undoable.
+
+## 5a. Field status drawer (added September 5, 2026)
+
+```text
+┌───────────────────────────── FIELD STATUS ────────────────────────────────────┐
+│ Down 3rd & 7        [1st] [2nd] [3rd] [4th] [Clear]                          │
+│ Distance to go      [__] [Set] [Goal] [Clear]                                │
+│ Possession          [HOME] [AWAY] [Clear]                                    │
+│ Ball on EAGLES 35   (HOME|AWAY) [__] [Set]                                   │
+│ HOME timeouts 3     [Timeout used] [+1] [__] [Set]                          │
+│ AWAY timeouts 2     [Timeout used] [+1] [__] [Set]                          │
+│                                                                Close          │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Down/distance, possession, field position, and timeouts are frequent,
+low-risk, fully reversible corrections in the same sense as a scoring
+increment (F-060 through F-066), so **none of these controls require
+confirmation**, matching the owner's stated preference that routine reversible
+actions should not gain a confirmation dialog they did not ask for. They are
+collected in their own drawer, alongside Corrections/Halftime/Advanced,
+because the always-visible board is already at its U-001 budget; the
+compact readout in the quarter bar (section 4) is what stays always visible.
+
+Field position is one control, not two: the HOME/AWAY toggle only changes
+which team's goal line the yard-line field is counted from (a local UI
+selection, like a drafted score before Apply), and a single **Set** reads both
+at click time and submits one atomic command. This mirrors why the field is
+one state value rather than two -- entering a mismatched side and yard line
+can never happen, because there is no way to submit half of it.
+
+Down and distance are cleared independently (`Clear` next to each), for a
+situation where only one of the two is currently known -- for example,
+between plays before the next down is confirmed. Distance `0` is offered as a
+dedicated **Goal** button, since "4th & 0" reads as a typo rather than a
+goal-to-go situation; the board displays it as `4th & Goal` either way
+(F-061).
 
 ## 6. Workflows
 
@@ -166,7 +209,7 @@ Typing does not change live state. Apply opens a confirmation such as `Change HO
 ### 6.7 Recover after application restart/crash
 
 1. Relaunch from the normal shortcut/executable.
-2. The recovery screen states when the snapshot was saved and whether the primary or backup was used.
+2. The recovery screen states when the snapshot was saved and whether the primary or backup was used. **The saved time is shown in readable Eastern local time** (for example, `September 5, 2026 at 10:41 AM EDT`, added September 5, 2026), not a raw UTC timestamp; the underlying stored value remains UTC (P-010).
 3. Choose Resume to restore names, scores, quarter, and last clock values with both clocks stopped.
 4. Compare the restored state with the game situation, make logged corrections if needed, then deliberately restart clocks.
 5. If recovery is unavailable/corrupt, keep the vendor system available and use a new game only after confirming the correct live state.

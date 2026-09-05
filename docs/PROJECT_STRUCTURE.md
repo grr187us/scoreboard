@@ -49,7 +49,7 @@ scoreboard/
 │  │  ├─ state.py                  # immutable/value-oriented game snapshot
 │  │  ├─ commands.py               # validated score/quarter/lifecycle transitions
 │  │  ├─ clocks.py                 # pure monotonic/deadline calculations
-│  │  └─ formatting.py             # pure display rounding for every clock
+│  │  └─ formatting.py             # pure display rounding for every clock and football field
 │  ├─ application/
 │  │  ├─ service.py                # serializes commands; revision authority
 │  │  ├─ snapshots.py              # versioned view/adapter contract
@@ -57,7 +57,8 @@ scoreboard/
 │  ├─ infrastructure/
 │  │  ├─ paths.py                  # Windows per-user data locations
 │  │  ├─ persistence.py            # SQLite transactions, backup, action history
-│  │  └─ diagnostics.py            # rotating application diagnostics
+│  │  ├─ diagnostics.py            # rotating application diagnostics
+│  │  └─ local_time.py             # display-only UTC-to-Eastern timestamp conversion
 │  ├─ host/
 │  │  ├─ app.py                    # webview lifecycle and shutdown
 │  │  ├─ startup.py                # separate report/resume/new startup surface

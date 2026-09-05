@@ -51,6 +51,7 @@ Carry-over decisions recorded here
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import shutil
@@ -1055,13 +1056,30 @@ class GameStore:
         return self._status
 
 
+def _json_default(value: Any) -> Any:
+    """Fall back for a value ``json.dumps`` cannot serialize on its own.
+
+    A compound state field such as ``BallSpot`` (mirroring ``ClockValue``) can
+    reach here directly through :meth:`GameStore._handle_undo`'s generic
+    ``getattr(state, entry.field)``, which -- unlike a command's own
+    hand-built event dict -- has no chance to pre-convert it. Any dataclass
+    instance becomes its field dict so the audit trail stays structured JSON
+    rather than a Python ``repr()`` string; anything else still falls back to
+    ``str()``.
+    """
+
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    return str(value)
+
+
 def _encode(value: Any) -> str | None:
     """Serialize a history value as JSON so old/new keep their real shape."""
 
     if value is None:
         return None
     try:
-        return json.dumps(value, sort_keys=True, default=str)
+        return json.dumps(value, sort_keys=True, default=_json_default)
     except (TypeError, ValueError):
         return json.dumps(str(value))
 

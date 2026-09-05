@@ -11,17 +11,21 @@
     <div id="safe-area">
       <section id="game-board" hidden>
         <div class="team home">
-          <p class="name" data-field="teams.home.name"></p>
+          <p class="name"><span class="possession-mark" id="home-possession-mark"></span><span
+            data-field="teams.home.name"></span></p>
           <p class="score" data-field="teams.home.score"></p>
         </div>
         <div class="team away">
-          <p class="name" data-field="teams.away.name"></p>
+          <p class="name"><span data-field="teams.away.name"></span><span
+            class="possession-mark" id="away-possession-mark"></span></p>
           <p class="score" data-field="teams.away.score"></p>
         </div>
         <p class="game-clock" id="game-clock" data-field="clocks.game.display"></p>
-        <p class="quarter" data-field="quarter_display"></p>
+        <p class="quarter"><span data-field="quarter_display"></span><span class="field-line"
+          id="down-distance-line" data-field="football.down_distance_display"></span></p>
         <p class="play"><span class="label" id="play-label">PLAY CLOCK </span><span
-          class="play-clock" id="play-clock" data-field="clocks.play.display"></span></p>
+          class="play-clock" id="play-clock" data-field="clocks.play.display"></span><span
+          class="field-line" id="ball-on-line" data-field="football.ball_on_display"></span></p>
       </section>
       <section id="event-board" hidden>
         <p class="phase" id="event-phase" data-field="clocks.event.phase"></p>

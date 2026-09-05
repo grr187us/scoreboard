@@ -27,7 +27,7 @@
 
   <main class="board">
     <section class="team" aria-labelledby="home-heading">
-      <h2 id="home-heading">HOME</h2>
+      <h2 id="home-heading">HOME<span class="possession-flag" id="home-possession"></span></h2>
       <p class="team-name" data-field="teams.home.name">HOME</p>
       <p class="score numeric" data-field="teams.home.score">0</p>
       <div class="score-buttons">
@@ -73,7 +73,7 @@
     </section>
 
     <section class="team" aria-labelledby="away-heading">
-      <h2 id="away-heading">AWAY</h2>
+      <h2 id="away-heading">AWAY<span class="possession-flag" id="away-possession"></span></h2>
       <p class="team-name" data-field="teams.away.name">AWAY</p>
       <p class="score numeric" data-field="teams.away.score">0</p>
       <div class="score-buttons">
@@ -90,6 +90,13 @@
     <button type="button" data-command="quarter_back" aria-label="Previous quarter">&#9664;</button>
     <span class="quarter" data-field="quarter">PRE</span>
     <button type="button" data-command="quarter_forward" aria-label="Next quarter">&#9654;</button>
+    <span class="field-status" id="field-status" aria-label="Down, distance, field position, and timeouts">
+      <span data-field="football.down_distance_display">&nbsp;</span>
+      <span class="sep">&middot;</span>
+      <span data-field="football.ball_on_display">&nbsp;</span>
+      <span class="sep">&middot;</span>
+      <span>TO <span data-field="football.timeouts.home">3</span>/<span data-field="football.timeouts.away">3</span></span>
+    </span>
     <span class="last-action">LAST: <span id="last-action">nothing yet</span></span>
     <button type="button" id="undo" data-command="undo">UNDO</button>
   </section>
@@ -97,6 +104,7 @@
   <footer class="tools">
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
     <button type="button" id="open-event" data-action="open_event">Halftime &#9656;</button>
+    <button type="button" id="open-field" data-action="open_field">Field &#9656;</button>
     <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
     <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
     <span class="spacer"></span>
@@ -247,6 +255,76 @@
                 data-arg-seconds="#event-seconds" data-arg-name="seconds" data-confirm="local"
                 data-confirm-title="Set the countdown?"
                 data-confirm-detail="Editing stops the countdown. Remain stopped is the default; use START to run it.">Apply&hellip;</button>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="field-drawer" hidden aria-label="Field status">
+    <div class="drawer-panel">
+      <h2>FIELD STATUS</h2>
+      <p class="hint">Down, distance, possession, field position, and timeouts. None of these
+        affect the clocks, score, or quarter, and none of them are set automatically.</p>
+
+      <div class="row">
+        <span class="row-label">Down <span data-field="football.down_distance_display">&nbsp;</span></span>
+        <button type="button" data-command="set_down" data-value="1">1st</button>
+        <button type="button" data-command="set_down" data-value="2">2nd</button>
+        <button type="button" data-command="set_down" data-value="3">3rd</button>
+        <button type="button" data-command="set_down" data-value="4">4th</button>
+        <button type="button" data-command="set_down" data-clear-value="true">Clear</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Distance to go</span>
+        <input type="number" id="distance-input" min="0" max="99" step="1" data-draft="true"
+               aria-label="Yards to go">
+        <button type="button" data-command="set_distance" data-arg-source="#distance-input"
+                data-arg-name="value">Set</button>
+        <button type="button" data-command="set_distance" data-value="0">Goal</button>
+        <button type="button" data-command="set_distance" data-clear-value="true">Clear</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Possession</span>
+        <button type="button" data-command="set_possession" data-team="home">HOME</button>
+        <button type="button" data-command="set_possession" data-team="away">AWAY</button>
+        <button type="button" data-command="set_possession" data-clear-team="true">Clear</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Ball on <span data-field="football.ball_on_display">&nbsp;</span></span>
+        <span class="side-toggle" id="ball-on-side" data-selected="home">
+          <button type="button" class="toggle is-current" data-side="home">HOME</button>
+          <button type="button" class="toggle" data-side="away">AWAY</button>
+        </span>
+        <input type="number" id="ball-on-yard-line" min="0" max="50" step="1" value="50" data-draft="true"
+               aria-label="Yard line, counted from the selected team's own goal line">
+        <button type="button" data-command="set_ball_on" data-arg-side="#ball-on-side"
+                data-arg-source="#ball-on-yard-line" data-arg-name="value">Set</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">HOME timeouts <span class="numeric" data-field="football.timeouts.home">3</span></span>
+        <button type="button" data-command="timeout_used" data-team="home">Timeout used</button>
+        <button type="button" data-command="timeout_correct" data-team="home" data-points="1">+1</button>
+        <input type="number" id="home-timeouts-input" min="0" max="3" step="1" data-draft="true"
+               aria-label="Set home timeouts remaining">
+        <button type="button" data-command="set_timeouts" data-team="home"
+                data-arg-source="#home-timeouts-input" data-arg-name="value">Set</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">AWAY timeouts <span class="numeric" data-field="football.timeouts.away">3</span></span>
+        <button type="button" data-command="timeout_used" data-team="away">Timeout used</button>
+        <button type="button" data-command="timeout_correct" data-team="away" data-points="1">+1</button>
+        <input type="number" id="away-timeouts-input" min="0" max="3" step="1" data-draft="true"
+               aria-label="Set away timeouts remaining">
+        <button type="button" data-command="set_timeouts" data-team="away"
+                data-arg-source="#away-timeouts-input" data-arg-name="value">Set</button>
       </div>
 
       <div class="row end">

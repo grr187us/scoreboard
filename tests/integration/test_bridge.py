@@ -63,6 +63,13 @@ COMMAND_PAYLOADS: dict[str, dict] = {
     "event_countdown_stop": {},
     "event_countdown_reset": {},
     "event_countdown_correct": {"seconds": 120.0},
+    "set_down": {"value": 2},
+    "set_distance": {"value": 8},
+    "set_possession": {"team": "home"},
+    "set_ball_on": {"team": "away", "value": 35},
+    "timeout_used": {"team": "home"},
+    "timeout_correct": {"team": "home", "points": -1},
+    "set_timeouts": {"team": "away", "value": 1},
 }
 
 #: A few commands need the board to be somewhere first: there is nothing to
@@ -568,6 +575,71 @@ class JsonBoundaryTests(BridgeTestCase):
         # The page renders these strings; it does not build them.
         self.assertNotIn("Math.floor", OPERATOR_JS)
         self.assertNotIn("toFixed", OPERATOR_JS)
+
+
+class FootballStateViewTests(BridgeTestCase):
+    """Deferred scoreboard fields: rendered text, JSON safety, and Undo."""
+
+    def test_the_view_model_carries_rendered_football_text(self) -> None:
+        self.send("set_team_name", {"team": "away", "name": "Eagles"})
+        self.send("set_down", {"value": 3})
+        self.send("set_distance", {"value": 7})
+        self.send("set_possession", {"team": "away"})
+        result = self.send("set_ball_on", {"team": "away", "value": 35})
+
+        view = result["view"]
+        self.assertEqual(view["football"]["down_distance_display"], "3rd & 7")
+        self.assertEqual(view["football"]["ball_on_display"], "Eagles 35")
+        self.assertEqual(view["football"]["possession"], "away")
+        self.assertEqual(view["football"]["timeouts"], {"home": 3, "away": 3})
+
+    def test_clearing_down_or_distance_blanks_the_rendered_text(self) -> None:
+        self.send("set_down", {"value": 2})
+        self.send("set_distance", {"value": 10})
+
+        result = self.send("set_distance", {"value": None})
+
+        self.assertEqual(result["view"]["football"]["down_distance_display"], "")
+
+    def test_set_ball_on_followed_by_undo_stays_json_compatible(self) -> None:
+        """Regression: BallSpot must never reach the last-action payload raw.
+
+        set_ball_on is undoable, so immediately after it is accepted the undo
+        entry (and therefore ``last_action``) holds the same BallSpot value
+        that used to leak past the JSON boundary before the bridge converted
+        it to plain text.
+        """
+
+        self.send("set_ball_on", {"team": "home", "value": 40})
+        result = self.send("set_ball_on", {"team": "away", "value": 22})
+
+        json.dumps(result, allow_nan=False)
+        self.assertEqual(result["view"]["last_action"]["field"], "ball_on")
+        self.assertIsInstance(result["view"]["last_action"]["old_value"], str)
+        self.assertIsInstance(result["view"]["last_action"]["new_value"], str)
+
+        undone = self.send("undo")
+        json.dumps(undone, allow_nan=False)
+        self.assertEqual(undone["view"]["football"]["ball_on"], {"team": "home", "yard_line": 40})
+
+    def test_timeout_used_is_reachable_and_reported_in_last_action(self) -> None:
+        result = self.send("timeout_used", {"team": "home"})
+
+        self.assertTrue(result["accepted"], result["error"])
+        self.assertEqual(result["view"]["football"]["timeouts"]["home"], 2)
+        self.assertIn("HOME timeouts", result["view"]["last_action"]["label"])
+
+    def test_a_null_value_is_refused_for_any_other_command(self) -> None:
+        result = self.send("set_score", {"team": "home", "value": None})
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["error"]["code"], "INVALID_ARGUMENTS")
+
+    def test_possession_cannot_be_cleared_through_an_unrelated_command(self) -> None:
+        result = self.send("timeout_used", {"team": None})
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["error"]["code"], "INVALID_ARGUMENTS")
 
 
 class SpectatorBridgeTests(BridgeTestCase):
