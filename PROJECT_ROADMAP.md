@@ -102,6 +102,16 @@ Task 6's "checkpoint once per displayed second" policy and every Task 7 readout 
 - `displayed_second()` is the single checkpoint-cadence key shared by persistence and the operator readout, so a saved value and a displayed value can never disagree about which second is showing.
 - Verified at every documented boundary with exact literals: game clock 60.0→`1:00`, 59.99→`1:00`, 59.9→`59.9`, 12:25.1→`12:26`; play clock 5.0→`5`, 4.99→`5`, 4.9→`4.9`, 4.01→`4.1`; event countdown 15:00, 3:01, 3:00, 0:00. Two exhaustive sweeps also assert that the display never understates remaining time (0.00–60.00 in hundredths) and that no exact tenth from 0.0 to 720.0 rounds up twice. `tests.unit.test_formatting` passed 13/13.
 
+### Phase 2 Task 7 prerequisite — event-countdown engine and commands
+
+`GameState` carried `event_countdown` and `event_phase` with no engine or command behind them, while Task 7's boundary lists event-countdown controls. Option (a) was chosen and built before the UI, so no control is bound to a command that does not exist.
+
+- Added `EventCountdown` to [`src/scoreboard/domain/clocks.py`](src/scoreboard/domain/clocks.py) using the same monotonic-deadline model as the game and play clocks, plus five validated commands: Select, Start, Stop, Reset, and Edit Current Time (F-027, F-028).
+- `event_phase_for()` is a pure derived function reading the *displayed* second, so the label changes exactly between a shown `3:01` and a shown `3:00` while the countdown runs, without an operator command and without a new revision (F-026). `WARMUP` is not selectable: it is the second part of the same interval countdown, which continues without a reset.
+- `Start after applying?` is composed in the operator view as an Edit-Current-Time command optionally followed by a Start command, rather than adding a field to the Task 5 command model. `Remain stopped` is therefore the default by construction: not issuing the second command is the default path.
+- Independence is asserted in both directions: no countdown command changes the game or play clock, and a running countdown survives every game-clock, play-clock, and scoring command (F-025). `New Game` returns it to the stopped 30:00 pregame default.
+- Verified with `.\.venv\Scripts\python.exe -m unittest tests.unit.test_event_countdown -v` (28 tests) and the full suite (177 tests, 0 failures).
+
 ### Phase 2 Task 6 evidence
 
 - Added [`src/scoreboard/infrastructure/paths.py`](src/scoreboard/infrastructure/paths.py), [`persistence.py`](src/scoreboard/infrastructure/persistence.py), [`diagnostics.py`](src/scoreboard/infrastructure/diagnostics.py), and [`src/scoreboard/application/recovery.py`](src/scoreboard/application/recovery.py). Persistence observes and durably records transitions; it never produces one. `ScoreboardService` remains the only writer of the authoritative revision, and the restore path uses `dataclasses.replace` rather than `evolve` so recovering a game cannot invent a revision the service never issued.

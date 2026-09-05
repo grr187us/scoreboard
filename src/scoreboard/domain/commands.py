@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Final
 
-from scoreboard.domain.clocks import PLAY_CLOCK_PRESETS
+from scoreboard.domain.clocks import PLAY_CLOCK_PRESETS, SELECTABLE_EVENT_PHASES
 from scoreboard.domain.state import MAX_SCORE, QUARTER_LABELS
 
 #: Documented scoring buttons: ``+1`` conversion, ``+2`` conversion/safety,
@@ -55,6 +55,11 @@ class CommandType(str, Enum):
     PLAY_CLOCK_CLEAR = "play_clock_clear"
     PLAY_CLOCK_RESET = "play_clock_reset"
     PLAY_CLOCK_CORRECT = "play_clock_correct"
+    EVENT_COUNTDOWN_SELECT = "event_countdown_select"
+    EVENT_COUNTDOWN_START = "event_countdown_start"
+    EVENT_COUNTDOWN_STOP = "event_countdown_stop"
+    EVENT_COUNTDOWN_RESET = "event_countdown_reset"
+    EVENT_COUNTDOWN_CORRECT = "event_countdown_correct"
 
 
 # --- Error codes -----------------------------------------------------------
@@ -76,6 +81,7 @@ NOTHING_TO_UNDO: Final[str] = "NOTHING_TO_UNDO"
 NOT_UNDOABLE: Final[str] = "NOT_UNDOABLE"
 INVALID_CLOCK_TIME: Final[str] = "INVALID_CLOCK_TIME"
 INVALID_PLAY_CLOCK_PRESET: Final[str] = "INVALID_PLAY_CLOCK_PRESET"
+INVALID_EVENT_PHASE: Final[str] = "INVALID_EVENT_PHASE"
 STALE_REVISION: Final[str] = "STALE_REVISION"
 
 #: Commands whose effect a single Undo can reverse (F-014).
@@ -278,7 +284,20 @@ def validate_command(command: Command) -> CommandError | None:
                 "The play clock loads only the 25-second or 40-second preset.",
             )
 
-    if command.type in (CommandType.GAME_CLOCK_CORRECT, CommandType.PLAY_CLOCK_CORRECT):
+    if command.type is CommandType.EVENT_COUNTDOWN_SELECT:
+        if command.label not in SELECTABLE_EVENT_PHASES:
+            return CommandError(
+                INVALID_EVENT_PHASE,
+                "Choose the pregame or the halftime countdown; got "
+                f"{command.label!r}. WARMUP is part of the halftime countdown "
+                "and is not selected separately.",
+            )
+
+    if command.type in (
+        CommandType.GAME_CLOCK_CORRECT,
+        CommandType.PLAY_CLOCK_CORRECT,
+        CommandType.EVENT_COUNTDOWN_CORRECT,
+    ):
         if not _is_number(command.seconds):
             return CommandError(
                 INVALID_CLOCK_TIME, "A clock correction needs a number of seconds."
@@ -377,10 +396,35 @@ def play_clock_correct(seconds: float, *, source: str = "operator") -> Command:
     return Command(CommandType.PLAY_CLOCK_CORRECT, seconds=seconds, source=source)
 
 
+def event_countdown_select(label: str, *, source: str = "operator") -> Command:
+    """Load the 30:00 pregame or 15:00 interval countdown while stopped."""
+
+    return Command(CommandType.EVENT_COUNTDOWN_SELECT, label=label, source=source)
+
+
+def event_countdown_start(*, source: str = "operator") -> Command:
+    return Command(CommandType.EVENT_COUNTDOWN_START, source=source)
+
+
+def event_countdown_stop(*, source: str = "operator") -> Command:
+    return Command(CommandType.EVENT_COUNTDOWN_STOP, source=source)
+
+
+def event_countdown_reset(*, source: str = "operator") -> Command:
+    return Command(CommandType.EVENT_COUNTDOWN_RESET, source=source)
+
+
+def event_countdown_correct(seconds: float, *, source: str = "operator") -> Command:
+    """Edit Current Time; the service stops the countdown before applying."""
+
+    return Command(CommandType.EVENT_COUNTDOWN_CORRECT, seconds=seconds, source=source)
+
+
 __all__ = [
     "CONFIRMATION_REQUIRED",
     "INVALID_CLOCK_TIME",
     "INVALID_COMMAND",
+    "INVALID_EVENT_PHASE",
     "INVALID_PLAY_CLOCK_PRESET",
     "INVALID_QUARTER",
     "INVALID_SCORE_DELTA",
@@ -409,6 +453,11 @@ __all__ = [
     "add_score",
     "correct_score",
     "end_game",
+    "event_countdown_correct",
+    "event_countdown_reset",
+    "event_countdown_select",
+    "event_countdown_start",
+    "event_countdown_stop",
     "game_clock_correct",
     "game_clock_reset",
     "game_clock_start",

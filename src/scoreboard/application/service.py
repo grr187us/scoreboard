@@ -33,13 +33,16 @@ from typing import Any, Callable, Final
 
 from scoreboard.application.snapshots import state_to_snapshot
 from scoreboard.domain.clocks import (
+    EventCountdown,
     GameClock,
     PlayClock,
     clear_play_clock_on_game_clock_start,
+    event_phase_for,
 )
 from scoreboard.domain.commands import (
     CONFIRMATION_REQUIRED,
     INVALID_CLOCK_TIME,
+    INVALID_EVENT_PHASE,
     INVALID_COMMAND,
     INVALID_PLAY_CLOCK_PRESET,
     INVALID_TEAM_NAME,
@@ -81,6 +84,7 @@ class _Transition:
     changes: dict[str, Any] = field(default_factory=dict)
     game_clock: GameClock | None = None
     play_clock: PlayClock | None = None
+    event_clock: EventCountdown | None = None
     undo: UndoEntry | None = None
     clears_undo: bool = False
     replacement_state: GameState | None = None
@@ -115,6 +119,7 @@ class ScoreboardService:
         # persisted ClockValue contract; a preset command reloads it.
         self._game_clock = GameClock.from_state(initial, monotonic_clock=monotonic)
         self._play_clock = PlayClock.from_state(initial, monotonic_clock=monotonic)
+        self._event_clock = EventCountdown.from_state(initial, monotonic_clock=monotonic)
         self._undo: UndoEntry | None = None
         self._undo_blocked_by: CommandType | None = None
         self._applying = False
@@ -146,6 +151,10 @@ class ScoreboardService:
         return self._play_clock
 
     @property
+    def event_clock(self) -> EventCountdown:
+        return self._event_clock
+
+    @property
     def monotonic_clock(self) -> Callable[[], float]:
         """The single time source shared by the service and both engines."""
 
@@ -162,10 +171,15 @@ class ScoreboardService:
         """
 
         current = float(self._monotonic()) if now is None else float(now)
+        countdown = self._event_clock.to_clock_value(now=current)
         return replace(
             self._state,
             game_clock=self._game_clock.to_clock_value(now=current),
             play_clock=self._play_clock.to_clock_value(now=current),
+            event_countdown=countdown,
+            # The HALFTIME/WARMUP label is derived, so it changes at 3:00 while
+            # the countdown runs rather than waiting for the next command.
+            event_phase=event_phase_for(self._state.event_phase, countdown.seconds),
         )
 
     @property
@@ -232,6 +246,9 @@ class ScoreboardService:
     ) -> CommandResult:
         game_clock = self._game_clock if transition.game_clock is None else transition.game_clock
         play_clock = self._play_clock if transition.play_clock is None else transition.play_clock
+        event_clock = (
+            self._event_clock if transition.event_clock is None else transition.event_clock
+        )
 
         if transition.replacement_state is not None:
             next_state = transition.replacement_state
@@ -241,6 +258,11 @@ class ScoreboardService:
             # the snapshot is complete and current at the moment it was applied.
             changes.setdefault("game_clock", game_clock.to_clock_value(now=now))
             changes.setdefault("play_clock", play_clock.to_clock_value(now=now))
+            countdown = event_clock.to_clock_value(now=now)
+            changes.setdefault("event_countdown", countdown)
+            changes["event_phase"] = event_phase_for(
+                changes.get("event_phase", self._state.event_phase), countdown.seconds
+            )
             try:
                 next_state = self._state.evolve(**changes)
             except StateValidationError as exc:
@@ -251,6 +273,7 @@ class ScoreboardService:
         self._state = next_state
         self._game_clock = game_clock
         self._play_clock = play_clock
+        self._event_clock = event_clock
 
         # The declared eligibility sets have the final say, so a handler can
         # never quietly make a dangerous command undoable (F-014).
@@ -486,6 +509,7 @@ class ScoreboardService:
             replacement_state=fresh,
             game_clock=GameClock(value=fresh.game_clock, monotonic_clock=self._monotonic),
             play_clock=PlayClock(value=fresh.play_clock, monotonic_clock=self._monotonic),
+            event_clock=EventCountdown.from_state(fresh, monotonic_clock=self._monotonic),
             clears_undo=True,
         )
 
@@ -617,6 +641,74 @@ class ScoreboardService:
             return CommandError(INVALID_CLOCK_TIME, f"Play clock correction rejected: {exc}.")
         return self._play_clock_transition(command, now, corrected)
 
+    # --- Event countdowns ---------------------------------------------------
+
+    def _event_transition(
+        self,
+        command: Command,
+        now: float,
+        next_clock: EventCountdown,
+        *,
+        phase: str | None = None,
+    ) -> _Transition:
+        changes: dict[str, Any] = {}
+        if phase is not None:
+            changes["event_phase"] = phase
+        return _Transition(
+            changes=changes,
+            event=EventIntent(
+                command=command.type,
+                field="event_countdown",
+                old_value=_clock_snapshot(self._event_clock.current_value(now)),
+                new_value=_clock_snapshot(next_clock.current_value(now)),
+                source=command.source,
+            ),
+            event_clock=next_clock,
+        )
+
+    def _handle_event_countdown_select(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        # Selecting an event loads its configured length while stopped, so no
+        # countdown can begin without a separate, deliberate Start (F-028).
+        stopped = self._event_clock.stop(now=now)
+        try:
+            loaded = stopped.select(str(command.label), now=now)
+        except StateValidationError as exc:
+            return CommandError(INVALID_EVENT_PHASE, f"Event countdown rejected: {exc}.")
+        return self._event_transition(command, now, loaded, phase=str(command.label))
+
+    def _handle_event_countdown_start(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        # A countdown never alters the game or play clock (F-025).
+        return self._event_transition(command, now, self._event_clock.start(now=now))
+
+    def _handle_event_countdown_stop(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        return self._event_transition(command, now, self._event_clock.stop(now=now))
+
+    def _handle_event_countdown_reset(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        return self._event_transition(command, now, self._event_clock.reset())
+
+    def _handle_event_countdown_correct(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        # Edit Current Time stops a running countdown first. The optional
+        # start-after-applying choice is a separate Start command issued by the
+        # operator view, so remaining stopped is the default by construction.
+        stopped = self._event_clock.stop(now=now)
+        try:
+            corrected = stopped.correct(target=float(command.seconds), now=now)
+        except StateValidationError as exc:
+            return CommandError(
+                INVALID_CLOCK_TIME, f"Event countdown correction rejected: {exc}."
+            )
+        return self._event_transition(command, now, corrected)
+
     _HANDLERS: Final[dict[CommandType, Any]] = {
         CommandType.SET_TEAM_NAME: _handle_set_team_name,
         CommandType.ADD_SCORE: _handle_add_score,
@@ -638,6 +730,11 @@ class ScoreboardService:
         CommandType.PLAY_CLOCK_CLEAR: _handle_play_clock_clear,
         CommandType.PLAY_CLOCK_RESET: _handle_play_clock_reset,
         CommandType.PLAY_CLOCK_CORRECT: _handle_play_clock_correct,
+        CommandType.EVENT_COUNTDOWN_SELECT: _handle_event_countdown_select,
+        CommandType.EVENT_COUNTDOWN_START: _handle_event_countdown_start,
+        CommandType.EVENT_COUNTDOWN_STOP: _handle_event_countdown_stop,
+        CommandType.EVENT_COUNTDOWN_RESET: _handle_event_countdown_reset,
+        CommandType.EVENT_COUNTDOWN_CORRECT: _handle_event_countdown_correct,
     }
 
 
