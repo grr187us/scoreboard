@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-9 implemented and verified locally, and audited against this backlog on September 5, 2026; hardware/release evidence remains open in the roadmap. Tasks 10-12 are not started.
+**Status:** Tasks 1-9 and 11 implemented and verified locally; Tasks 1-9 audited against this backlog on September 5, 2026. Hardware and release evidence remains open in the roadmap. Task 10 and Task 12 are not started.
 **Last updated:** September 5, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
@@ -215,6 +215,8 @@ Each task is intended for one focused Codex session. Before starting, read the r
 **Boundaries:** One-folder build first. No auto-updater, installer framework, code signing purchase, Windows service, cloud distribution, or one-file optimization.
 
 **Dependencies:** Tasks 1–10; production-laptop constraints should be known before final acceptance.
+
+**Built out of order on September 5, 2026, before Task 10.** Task 10 needs a two-display machine; Task 11 needs none. The consequence is that the current package carries Task 1-era display behaviour and **must be rebuilt after Task 10 before any release**. See `PACKAGING.md` and the roadmap's Task 11 evidence.
 
 **Verification:** Build on Windows; copy to a clean Windows account/machine without Python/Node/OBS; disable network; launch via shortcut; verify assets/data locations/logs/version; restart and failure recovery; scan `git status` for build products.
 

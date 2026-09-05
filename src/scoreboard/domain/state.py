@@ -12,7 +12,7 @@ from typing import Any, Final
 
 
 SCHEMA_VERSION: Final[int] = 1
-APP_VERSION: Final[str] = "0.0.0"
+APP_VERSION: Final[str] = "0.1.0"
 MAX_TEAM_NAME_LENGTH: Final[int] = 24
 MAX_SCORE: Final[int] = 199
 MAX_GAME_CLOCK_SECONDS: Final[float] = 12 * 60

@@ -25,6 +25,7 @@ cannot reach the state engine (R-002).
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -52,7 +53,22 @@ from scoreboard.infrastructure.diagnostics import Diagnostics
 from scoreboard.infrastructure.paths import ScoreboardPaths, resolve_paths
 from scoreboard.infrastructure.persistence import GameStore, InstanceLock
 
-VIEWS = Path(__file__).resolve().parent.parent / "views"
+def _views_directory() -> Path:
+    """Where the bundled pages live, in a checkout and in a frozen build.
+
+    PyInstaller unpacks bundled data under ``sys._MEIPASS`` rather than beside
+    the source file, so resolving relative to ``__file__`` alone would find
+    nothing in a packaged application. Both layouts keep the same
+    ``scoreboard/views`` shape, so only the root differs (W-003, W-006).
+    """
+
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle is not None:
+        return Path(bundle) / "scoreboard" / "views"
+    return Path(__file__).resolve().parent.parent / "views"
+
+
+VIEWS = _views_directory()
 
 #: Four refreshes a second: fast enough that a tenths readout never looks
 #: frozen, slow enough that the checkpoint policy still writes once per

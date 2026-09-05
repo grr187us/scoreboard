@@ -4,9 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scoreboard"
-version = "0.0.0"
-description = "Phase 2 Task 1 Windows multi-window runtime proof"
+description = "Offline Windows football scoreboard for a stadium LED wall"
 requires-python = "==3.11.*"
+# One source of truth for the version. `scoreboard.domain.state.APP_VERSION` is
+# what the diagnostics log, the action history, and every stored snapshot
+# record (W-006), and a frozen build has no package metadata to read, so the
+# constant leads and this metadata follows rather than the reverse.
+dynamic = ["version"]
 dependencies = [
     "bottle==0.13.4",
     "cffi==2.1.1",
@@ -18,14 +22,24 @@ dependencies = [
     "typing_extensions==4.16.0",
 ]
 
+[project.optional-dependencies]
+# Build-time only. Nothing here ships inside the package, and the application
+# never imports any of it at runtime.
+build = ["pyinstaller==6.22.2"]
+
 [project.scripts]
-scoreboard-proof = "scoreboard.__main__:main"
+scoreboard = "scoreboard.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = {attr = "scoreboard.domain.state.APP_VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-scoreboard = ["views/**/*.html"]
+# Every file a window loads. An earlier pattern listed only "*.html", which
+# would have shipped the pages without their stylesheets or scripts.
+scoreboard = ["views/**/*.html", "views/**/*.css", "views/**/*.js"]

@@ -2,13 +2,13 @@
 
 This repository is the pre-implementation foundation for a reliable, offline-capable football scoreboard and future stadium video-production system. The immediate product is intentionally small: a Windows application that a student or volunteer can operate under game pressure and display fullscreen through the stadium's existing HDMI video processor.
 
-A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, and the fullscreen spectator window. It is **not** yet a release. Display selection, offline packaging, and the sustained rehearsal are unbuilt, and no result on the stadium wall has been recorded.
+A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, and the fullscreen spectator window. It also builds into an offline Windows package. It is **not** yet a release: display selection and the sustained rehearsal are unbuilt, and no result on the stadium wall has been recorded.
 
 ## Current status
 
 - **Phase 0 — discovery and feasibility:** substantially complete, with the critical stadium HDMI test still open.
 - **Phase 1 — repository, requirements, layout, and architecture:** documentation foundation created; owner decisions and field evidence remain open.
-- **Phase 2 — core MVP:** in progress. Backlog Tasks 1–9 are implemented and verified locally; Tasks 10 (display selection and failure recovery), 11 (Windows packaging), and 12 (sustained rehearsal) are not started.
+- **Phase 2 — core MVP:** in progress. Backlog Tasks 1–9 and 11 are implemented and verified locally; Task 10 (display selection and failure recovery) and Task 12 (sustained rehearsal) are not started.
 - **Production media, OBS, networking, and hardware-controller work:** deferred.
 
 `PROJECT_ROADMAP.md` is the authority on status and evidence. Nothing here may be treated as release-ready on the strength of a passing automated suite; the open hardware and rehearsal evidence is listed there.
@@ -61,7 +61,7 @@ The Phase 2 MVP provides, or will provide:
 | Separate operator and fullscreen spectator views | Built |
 | Offline operation, local recovery state, and a durable action history | Built |
 | Display selection, persisted identity, and disconnect recovery | Task 10, not started |
-| A repeatable offline Windows package and one-action launch | Task 11, not started |
+| A repeatable offline Windows package and one-action launch | Built; see [Packaging](docs/PACKAGING.md). Rebuild required after Task 10. |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
 
 Detailed, testable behavior is in [MVP requirements](docs/MVP_REQUIREMENTS.md).
@@ -89,6 +89,8 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/OPEN_SOURCE_REVIEW.md` | Evidence-based review of candidate projects |
 | `docs/PROJECT_STRUCTURE.md` | Minimal Phase 2 boundaries and proposed tree |
 | `docs/PHASE_2_BACKLOG.md` | Ordered, bounded implementation tasks |
+| `docs/PACKAGING.md` | How the offline Windows package is built, installed, and verified |
+| `tools/` | Build and measurement scripts; nothing here ships in the package |
 | `src/scoreboard/` | The application: `domain/`, `application/`, `infrastructure/`, `host/`, and the `views/` pages |
 | `tests/` | `unit/` domain and clock behaviour, `integration/` persistence, recovery, bridge and rehearsal, `ui/` optional browser checks |
 | `assets/` | Versioned, redistributable static presentation assets |
@@ -109,7 +111,7 @@ Environment setup, exact dependency pins, offline behavior, and the original mul
 .\.venv\Scripts\python.exe -m scoreboard
 ```
 
-That launches the recovery screen or the operator window, and opens the fullscreen spectator window on the selected display. It is a developer launch from a checkout, not the offline package Task 11 will produce, and it requires Python and the pinned dependencies on the machine.
+That launches the recovery screen or the operator window, and opens the fullscreen spectator window on the selected display. It is a developer launch from a checkout, not the offline package, and it requires Python and the pinned dependencies on the machine. To build the package an operator can run without any of that, see [Packaging](docs/PACKAGING.md).
 
 Run the automated suite from the repository root:
 

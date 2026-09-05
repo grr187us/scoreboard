@@ -11,6 +11,7 @@ from scoreboard.application.snapshots import (
     state_to_snapshot,
 )
 from scoreboard.domain.state import (
+    APP_VERSION,
     MAX_SCORE,
     ClockValue,
     GameState,
@@ -94,7 +95,7 @@ class StateTests(unittest.TestCase):
 
         self.assertEqual(restored, state)
         self.assertEqual(payload["schema_version"], 1)
-        self.assertEqual(payload["app_version"], "0.0.0")
+        self.assertEqual(payload["app_version"], APP_VERSION)
         self.assertEqual(payload["state_revision"], 1)
         self.assertEqual(snapshot_to_state(payload), state)
         self.assertIn('"state_revision":1', snapshot_to_json(state))
