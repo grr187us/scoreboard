@@ -57,11 +57,9 @@ def main() -> int:
         auto_close_after_seconds=args.auto_close_after_seconds,
     )
     try:
-        host.run(startup_choice=args.startup_choice)
+        host.run(startup_choice=args.startup_choice, interactive=True)
     except RecoveryChoiceRequired as exc:
-        # Nothing is resumed and nothing is replaced until the operator says
-        # which (P-005). The in-window recovery screen is not built yet, so the
-        # choice is made here and the report is shown in full.
+        # Defensive fallback for a non-interactive host adapter.
         report = exc.report
         print(report.message)
         if report.checkpoint_at:

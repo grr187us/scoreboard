@@ -134,6 +134,8 @@ The one deliberate game/play-clock coupling is a game-clock transition from stop
 
 ## 8. View bridge and process model
 
+Startup recovery uses a separate `StartupBridge` with report/resume/new methods. Only after an explicit choice does the host create the operator with `ScoreboardBridge`; the startup window is retired. Non-interactive launches retain `RecoveryChoiceRequired`.
+
 - One Python process creates both webview windows and starts the application event loop.
 - The operator JavaScript invokes a deliberately small Python API such as `command(name, args, expected_revision)` and `get_snapshot()`.
 - Python notifies both windows after an accepted command or clock-display boundary. The JavaScript renderer replaces displayed values from the snapshot.

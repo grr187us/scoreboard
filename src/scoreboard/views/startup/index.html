@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recover scoreboard</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <style>
+    body { padding: clamp(1rem, 4vw, 3rem); max-width: 60rem; margin: auto; }
+    p, pre { margin-block: 1rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+    button { min-height: 3rem; margin: .5rem; padding: .75rem; }
+    :focus-visible { outline: .2rem solid white; outline-offset: .2rem; }
+  </style>
+</head>
+<body>
+  <h1>Review saved game</h1>
+  <p id="message">Reading saved game…</p>
+  <p id="checkpoint"></p>
+  <pre id="summary"></pre>
+  <p>Every recovered clock is stopped. Verify the score and time against the field before starting a clock.</p>
+  <button id="resume" disabled>Resume recovered game</button>
+  <button id="new" disabled>Start new game</button>
+  <section id="new-confirm" hidden aria-label="Confirm new game">
+    <p>Start a clean stopped board? The saved game stays in the action history.</p>
+    <button id="cancel">Cancel</button><button id="accept">Confirm new game</button>
+  </section>
+  <p id="error" role="alert"></p>
+  <script src="../shared/render.js"></script>
+  <script src="startup.js"></script>
+</body>
+</html>

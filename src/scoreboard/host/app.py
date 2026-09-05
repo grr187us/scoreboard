@@ -44,7 +44,9 @@ from scoreboard.host.bridge import (
     DisplayLink,
     ScoreboardBridge,
     SpectatorBridge,
+    spectator_view_model,
 )
+from scoreboard.host.startup import StartupBridge
 from scoreboard.host.displays import enumerate_displays, selected_screen
 from scoreboard.infrastructure.diagnostics import Diagnostics
 from scoreboard.infrastructure.paths import ScoreboardPaths, resolve_paths
@@ -110,7 +112,10 @@ class ScoreboardApplication:
     def recovery_payload(self) -> dict[str, Any]:
         """The JSON-compatible recovery report the operator chooses from."""
 
-        return self.report.to_dict()
+        payload = self.report.to_dict()
+        payload["view"] = (None if self.report.state is None
+                           else spectator_view_model(self.report.state))
+        return payload
 
     def resume(self) -> ScoreboardBridge:
         """Continue the recovered game, with every clock stopped."""
@@ -260,6 +265,7 @@ class WindowHost:
         self.application = application
         self.initial_display_index = initial_display_index
         self.auto_close_after_seconds = auto_close_after_seconds
+        self.startup_window: webview.Window | None = None
         self.operator_window: webview.Window | None = None
         self.spectator_window: webview.Window | None = None
         self.status = "STARTING"
@@ -270,43 +276,49 @@ class WindowHost:
 
     # --- Lifecycle ----------------------------------------------------------
 
-    def run(self, startup_choice: str | None = None) -> None:
-        """Open both windows for an explicitly chosen game.
-
-        ``startup_choice`` is ``"resume"`` or ``"new"``. When a recoverable
-        game exists, one of them is required: no game is resumed and no game is
-        replaced without the operator saying which (P-005). The in-window
-        recovery screen is not built yet, so the choice arrives from the launch
-        command; the report is returned here so the caller can show it.
-        """
-
-        if self.application.can_resume and startup_choice is None:
-            raise RecoveryChoiceRequired(self.application.report)
-        bridge = (
-            self.application.resume()
-            if startup_choice == "resume"
-            else self.application.start_new()
-        )
-        self.operator_window = webview.create_window(
-            "Scoreboard control",
-            url=view_url("operator"),
-            js_api=bridge,
-            width=1180,
-            height=720,
-            min_size=(1024, 600),
-        )
-        self.operator_window.events.loaded += self._operator_loaded
-        self.operator_window.events.closing += self._operator_closing
-        if self.auto_close_after_seconds is None:
-            webview.start()
+    def run(self, startup_choice: str | None = None, *, interactive: bool = False) -> None:
+        """Offer recovery in interactive launches; retain the headless guard."""
+        needs_choice = self.application.report.source is not RecoverySource.NONE
+        if needs_choice and startup_choice is None:
+            if not interactive:
+                raise RecoveryChoiceRequired(self.application.report)
+            self.startup_window = webview.create_window(
+                "Recover scoreboard", url=view_url("startup"),
+                js_api=StartupBridge(self.application.recovery_payload, self._choose_startup),
+                width=800, height=650, min_size=(600, 500),
+            )
         else:
-            webview.start(self._close_after_delay, (self.auto_close_after_seconds,))
-        self.application.shutdown()
+            self._choose_startup(startup_choice or "new")
+        try:
+            if self.auto_close_after_seconds is None:
+                webview.start()
+            else:
+                webview.start(self._close_after_delay, (self.auto_close_after_seconds,))
+        finally:
+            self.application.shutdown()
+
+    def _choose_startup(self, choice: str) -> None:
+        with self._lock:
+            if self.application.bridge is not None:
+                return  # Double clicks cannot create a second session or window.
+            if choice not in ("resume", "new"):
+                raise ValueError("Choose Resume recovered game or Start new game")
+            bridge = self.application.resume() if choice == "resume" else self.application.start_new()
+            self.operator_window = webview.create_window(
+                "Scoreboard control", url=view_url("operator"), js_api=bridge,
+                width=1180, height=720, min_size=(1024, 600),
+            )
+            self.operator_window.events.loaded += self._operator_loaded
+            self.operator_window.events.closing += self._operator_closing
+            startup, self.startup_window = self.startup_window, None
+        if startup is not None:
+            startup.destroy()
 
     def _close_after_delay(self, seconds: float) -> None:
         threading.Event().wait(seconds)
-        if self.operator_window is not None:
-            self.operator_window.destroy()
+        window = self.operator_window or self.startup_window
+        if window is not None:
+            window.destroy()
 
     def _operator_loaded(self) -> None:
         self.open_spectator(self.initial_display_index)
