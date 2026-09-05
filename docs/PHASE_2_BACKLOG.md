@@ -1,7 +1,9 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-9 implemented and verified locally; hardware/release evidence remains open in the roadmap. Tasks 10-12 are not started.
-**Last updated:** September 4, 2026
+**Status:** Tasks 1-9 implemented and verified locally, and audited against this backlog on September 5, 2026; hardware/release evidence remains open in the roadmap. Tasks 10-12 are not started.
+**Last updated:** September 5, 2026
+
+The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
 
 Each task is intended for one focused Codex session. Before starting, read the roadmap, requirements, architecture, and this task's dependencies. Afterward, update tests, documentation, and the roadmap with evidence.
 

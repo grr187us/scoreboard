@@ -6,9 +6,12 @@ Tests sit at the lowest layer that can prove the behavior, as described in `../d
 |---|---|
 | `unit/` | Pure domain and application behavior: state validation, clock math, display formatting, and command transitions, all under an injected fake monotonic clock. |
 | `integration/` | Persistence, recovery, diagnostics, and the view bridge, each inside its own temporary data directory with injected fake wall and monotonic clocks. |
+| `integration/test_full_game_rehearsal.py` | One whole game through the real bridge: pregame countdown, four quarters of snap-by-snap play, halftime with the warmup boundary, an undo, a crash and resume in the third quarter, and End Game. It takes roughly 30 seconds because it is also a persistence soak — several thousand refresh ticks and their checkpoints. |
 | `test_displays.py` | Host display-selection helpers that need no window. |
 
 No test sleeps, reads real wall-clock or monotonic time, or writes outside its temporary directory. Packaged launch, display placement, sustained rehearsal, and the operator visual matrix are release-evidence checklists rather than automated tests.
+
+The fake-time rehearsal is not the Task 12 acceptance run. It proves the layers stay consistent across a game-length command sequence; it cannot measure real clock accuracy, WebView2 behavior, or anything about the target laptop.
 
 Run the suite from the repository root:
 

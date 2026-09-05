@@ -100,6 +100,16 @@ SESSION_STARTED: Final[str] = "session_started"
 SESSION_RESUMED: Final[str] = "session_resumed"
 SESSION_SHUTDOWN: Final[str] = "session_shutdown"
 
+#: A clock that counted down to zero on its own. It is not an operator command
+#: -- nobody pressed anything -- but F-037 and F-046 require expiration in the
+#: durable history alongside starts, stops, presets, and corrections. The
+#: ``system`` source keeps it distinguishable from anything an operator did.
+CLOCK_EXPIRED: Final[dict[str, str]] = {
+    "game": "game_clock_expired",
+    "play": "play_clock_expired",
+    "event": "event_countdown_expired",
+}
+
 #: A failed write keeps its history rows in memory and retries them on the next
 #: successful transaction. The cap stops an all-session outage from growing
 #: without bound; it is far larger than a game's realistic command count.
@@ -321,7 +331,12 @@ class InstanceLock:
 def connect(path: Path) -> sqlite3.Connection:
     """Open one database with durable, explicitly controlled transactions."""
 
-    connection = sqlite3.connect(str(path), isolation_level=None)
+    # The webview host creates the store before starting its refresh worker.
+    # ScoreboardApplication's command lock serializes every store operation, so
+    # allow that one connection to cross the startup/refresh thread boundary.
+    connection = sqlite3.connect(
+        str(path), isolation_level=None, check_same_thread=False
+    )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     # Full synchronisation is the point of this module: a game-day power loss
@@ -697,6 +712,49 @@ class GameStore:
         self._refresh_backup()
         return self._succeed(state, timestamp, "Game state saved.")
 
+    def record_expiration(
+        self, clock: str, state: GameState, *, from_seconds: float
+    ) -> PersistenceStatus:
+        """Record that ``clock`` reached 0:00 by itself (F-037, F-046).
+
+        The zero state and its history row commit in one transaction, exactly
+        like an accepted command, so a crash can never leave a board at zero
+        with no record of how it got there. No revision is advanced: expiration
+        is something the clock did, not a mutation an operator requested, and
+        the service remains the only writer of the authoritative revision.
+        """
+
+        if self._game_id is None:
+            raise NoActiveGame("begin_session() must be called before recording expiry")
+        if clock not in CLOCK_EXPIRED:
+            raise ValueError(f"unknown clock: {clock!r}")
+        timestamp = self._timestamp()
+        row = (
+            timestamp,
+            CLOCK_EXPIRED[clock],
+            SYSTEM_SOURCE,
+            None,
+            f"{clock}_clock" if clock != "event" else "event_countdown",
+            _encode({"seconds": float(from_seconds), "running": True}),
+            _encode({"seconds": 0.0, "running": False}),
+            RESULT_ACCEPTED,
+            None,
+            None,
+            state.revision,
+            self._app_version,
+        )
+        try:
+            with self._transaction() as connection:
+                self._flush_pending(connection)
+                self._write_state(connection, state, timestamp, CHECKPOINT_CLOCK_TICK)
+                self._insert_history(connection, row)
+        except (sqlite3.Error, OSError) as exc:
+            self._queue_pending(row)
+            return self._fail("record_expiration", exc)
+        self._reset_display_cadence(state)
+        self._refresh_backup()
+        return self._succeed(state, timestamp, "Game state saved.")
+
     # --- Running-clock checkpoints -----------------------------------------
 
     def checkpoint(self, state: GameState, *, force: bool = False) -> bool:
@@ -995,6 +1053,7 @@ HISTORY_COLUMNS: Final[Sequence[str]] = (
 
 
 __all__ = [
+    "CLOCK_EXPIRED",
     "CHECKPOINT_CLOCK_TICK",
     "CHECKPOINT_COMMAND",
     "CHECKPOINT_RECOVERED",

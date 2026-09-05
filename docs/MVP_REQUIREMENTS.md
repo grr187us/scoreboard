@@ -1,7 +1,7 @@
 # MVP Requirements
 
-**Status:** Phase 1 baseline; implementation has not begun
-**Last updated:** September 4, 2026
+**Status:** Phase 1 baseline, updated by the September 5, 2026 Phase 2 audit; Tasks 1-9 of the implementation backlog are built.
+**Last updated:** September 5, 2026
 
 ## 1. Purpose and requirement language
 
@@ -28,13 +28,13 @@ These values make implementation and testing concrete without claiming to settle
 | Regulation quarter length | 12:00 | Owner decision, consistent with NFHS-style high-school football | Local/state exception only |
 | Game-clock direction | Count down to 0:00 | Owner decision | Local/state exception only |
 | Pregame countdown | 30:00 countdown to game beginning | Owner decision | Control/start workflow still needs confirmation |
-| Halftime and warmup | One 15:00 total countdown until the second half: `HALFTIME` is the current phase from 15:00 through 3:01 and `WARMUP` from 3:00 through 0:00; show `Warmup follows: 3:00` during halftime | Owner decision | Control/start workflow still needs confirmation |
+| Halftime and warmup | One 15:00 total countdown until the second half: `HALFTIME` is the current phase from 15:00 through 3:01 and `WARMUP` from 3:00 through 0:00; show `Warmup follows: 3:00` during halftime | Owner decision | Control/start workflow still needs confirmation. **Open (audit A-2):** NFHS-style practice is commonly a 15-minute intermission *followed by* a 3-minute warmup, which totals 18:00. Confirm the arithmetic against local practice. |
 | Game-clock display precision | At one minute or more, display remaining whole seconds rounded up (for example, internal 12:25.1 displays `12:26`); below one minute, display seconds and tenths rounded up | Owner decision | Confirmed |
 | Play-clock display precision | Display tenths rounded up during the final five seconds | Owner decision | Confirmed |
 | Clock accuracy target | Absolute error no greater than 0.25 seconds over a continuous 12-minute run on the target laptop | Strict enough to expose drift while achievable with monotonic elapsed time | Owner must accept or replace tolerance |
 | Play-clock preset action | Pressing `25` or `40` loads the selected value while stopped; a separate Start command begins the countdown | Owner decision | Confirmed |
 | Play-clock venue role | This spectator scoreboard is the stadium's only play-clock display | Owner confirmation | Recovery/visibility requirements are therefore critical |
-| Play-clock behavior when game clock starts | When the game clock transitions from stopped to running, clear the play clock: stop it and make it visibly blank. If the game clock was already running, a play-clock countdown continues normally to zero unless an operator clears or changes it. | Owner decision | Define how an expected zero during a live play is presented without a misleading alert |
+| Play-clock behavior when game clock starts | When the game clock transitions from stopped to running, clear the play clock: stop it and make it visibly blank. If the game clock was already running, a play-clock countdown continues normally to zero unless an operator clears or changes it. | Owner decision | Define how an expected zero during a live play is presented without a misleading alert. **Open (audit A-1):** this assumes the game clock starts at the snap. Under NFHS-style rules the game clock also starts on the ready-for-play, with the play clock already running; the rule as written would blank the stadium's only play-clock display in those situations. Confirm with the owner and officials before live use. |
 | Quarter labels | `PRE`, `1st`, `2nd`, `HALF`, `3rd`, `4th`, `OT`, `FINAL`; changed manually | Owner selected a manually chosen overtime workflow pending local confirmation | Confirm local overtime procedure before live use |
 | Quarter change | Stop both clocks, then require confirmation if either was running | Conservative protection against an accidental transition | Confirm |
 | Restart recovery | Restore team identity, scores, quarter/phase, and each clock's last persisted remaining whole-second value; never auto-resume a running clock. Require operator verification before resuming recovered state. | Owner decision | Confirmed |
@@ -95,7 +95,7 @@ No expiry advances lifecycle. Team names are editable only in PRE_GAME.
 | F-034 | UI repaint rate MUST NOT affect authoritative time. After a pause/stall, the next state MUST reflect actual monotonic elapsed time. | Simulate a 3-second callback stall. |
 | F-035 | Reset MUST stop the clock and restore configured quarter length. If the current value is not already the default, reset MUST require confirmation or a two-step armed action. | Cancel/confirm UI test. |
 | F-036 | A correction workflow MUST allow setting game-clock minutes and seconds. Opening it MUST stop a running game clock; seconds MUST be 0–59; invalid values MUST be rejected without changing state. The confirmation MUST offer `Start after applying?`, defaulting to `Remain stopped`. | Boundary, running-clock, and UI tests. |
-| F-037 | Starting, stopping, resetting, expiring, and correcting the clock MUST be logged with old/new values. High-frequency display ticks MUST NOT flood the event log. | Log inspection. |
+| F-037 | Starting, stopping, resetting, expiring, and correcting the clock MUST be logged with old/new values. High-frequency display ticks MUST NOT flood the event log. Expiration has no operator command behind it and is recorded by the refresh tick with source `system`, without advancing a state revision. | Log inspection; expiry-edge tests. |
 | F-038 | The clock MUST preserve sub-second remainder internally across stop/start so repeated pauses do not systematically gain or lose time. | Fake-clock pause/resume sequence. |
 | F-039 | The game clock MUST display remaining whole seconds rounded up while its rounded tenths value is at least 60.0, then display tenths rounded up. Thus 60.0 displays `1:00`, 59.99 displays `1:00`, 59.9 displays `59.9`, and 12:25.1 displays `12:26`. | Boundary formatter tests using exact nanosecond values. |
 
@@ -109,7 +109,7 @@ No expiry advances lifecycle. Team names are editable only in PRE_GAME.
 | F-043 | The play clock MUST use the same monotonic/deadline timing model as the game clock and MUST stop at zero. | Fake-clock delayed-callback test. |
 | F-044 | Resetting the play clock MUST NOT alter the game clock. | Integration test. |
 | F-045 | Clock expiration MUST stop the applicable clock at zero without audio, a persistent visual alert, or an automatic lifecycle/quarter change. The stopped zero remains visible unless a separate clear rule applies. | Fake-time expiration and UI tests. |
-| F-046 | Preset, start, stop, correction, and expiration events MUST be logged without logging every display tick. | Log inspection. |
+| F-046 | Preset, start, stop, correction, and expiration events MUST be logged without logging every display tick. A zero reached by an accepted command (a correction to `0`, or the F-048 clear at a game-clock Start) is that command's history row, not an expiration. | Log inspection; expiry-edge tests. |
 | F-047 | The play clock MUST display remaining whole seconds rounded up until its rounded tenths value is below 5.0, then display tenths rounded up. Thus 5.0 displays `5`, 4.99 displays `5`, 4.9 displays `4.9`, and 4.01 displays `4.1`. | Boundary formatter tests using exact nanosecond values. |
 | F-048 | When the game clock changes from stopped to running, the application MUST stop and clear the play clock, making the spectator play-clock area blank. A game-clock Start command issued while the game clock is already running MUST NOT affect the play clock. | Integration tests for stopped-to-running and already-running cases. |
 | F-049 | A play clock that is not cleared by a stopped-to-running game-clock transition MUST continue to zero and stop there unless changed by an operator. | Fake-time tests for both game-clock states. |
@@ -177,6 +177,7 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 | ID | Requirement | Verification |
 |---|---|---|
+| P-000 | A stored game MUST remain recoverable across an application update. Compatibility MUST be decided by the state schema version alone; the application version is provenance and MUST be reported to the operator when it differs, never used to refuse a saved game. | Write a snapshot stamped with an older application version and recover it. |
 | P-001 | Configuration MAY use versioned local files, but recoverable state and action history MUST use one embedded SQLite database under a per-user application-data directory. No database server is permitted. | Install/run inspection. |
 | P-002 | State changes and their durable action-history entries MUST commit in one SQLite transaction. Maintain an automatically refreshed last-known-good database backup. | Simulated interrupted transaction; validate coherent current or backup database. |
 | P-003 | Save after every accepted command and at clean shutdown. While any countdown runs, checkpoint its materialized remaining value at least once per displayed second without adding tick events to the game log. A write failure MUST be visible to the operator and logged where possible. | Permission/full-disk simulation and running-clock checkpoint inspection. |
@@ -235,6 +236,8 @@ The MVP is acceptable only when all of the following are evidenced:
 
 The following do not block architecture or early implementation but block final MVP sign-off:
 
+- **whether a game-clock Start should always clear the play clock** (audit A-1). The rule as built assumes the game clock starts at the snap; on a ready-for-play start it would blank a play clock that is still legitimately running. This is the one open decision that can visibly mislead the field, because this board is the stadium's only play-clock display;
+- **whether the interval is 15:00 total or 15:00 plus a 3:00 warmup** (audit A-2);
 - local/state exceptions to the NFHS-style rules baseline, including the overtime procedure;
 - acceptable clock-accuracy tolerance;
 - overtime labels/workflow;

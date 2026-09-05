@@ -383,6 +383,9 @@ class ScoreboardBridge:
         # checkpoint can never read a half-applied command.
         self._lock = threading.RLock() if lock is None else lock
         self._on_accepted = on_accepted
+        # The previous tick's (revision, per-clock running/remaining), used to
+        # notice a clock that ran itself down to zero. See _record_expirations.
+        self._observed: tuple[int, dict[str, tuple[bool, float]]] | None = None
 
     # --- The JavaScript API ------------------------------------------------
 
@@ -405,9 +408,12 @@ class ScoreboardBridge:
             if isinstance(built, CommandError):
                 # Refused before the service saw it: nothing changed, and there
                 # is no accepted command to persist.
+                # Report the source the view actually claimed, so a keyboard
+                # rejection is not filed against the mouse (K-001).
+                claimed = args.get("source") if isinstance(args, dict) else None
                 self._diagnostics.command_rejected(
                     command=str(name), code=built.code, message=built.message,
-                    source=OPERATOR_MOUSE_SOURCE,
+                    source=claimed if isinstance(claimed, str) else OPERATOR_MOUSE_SOURCE,
                 )
                 return self._result_payload(accepted=False, error=built)
 
@@ -447,10 +453,40 @@ class ScoreboardBridge:
         with self._lock:
             state = self._service.materialized_state(now)
             try:
+                self._record_expirations(state)
                 self._store.checkpoint(state)
             except Exception as exc:  # noqa: BLE001 - saving must not stop a clock
                 self._diagnostics.persistence_failure(operation="checkpoint", error=str(exc))
             return self._view(now)
+
+    def _record_expirations(self, state: GameState) -> None:
+        """Write a history row for any clock that just counted down to zero.
+
+        A clock reaching 0:00 is not an operator command, so nothing here
+        submits one or advances a revision -- but F-037 and F-046 require the
+        expiration in the durable history next to the start that preceded it.
+
+        The revision is the discriminator. If it moved since the last tick, an
+        accepted command produced the zero (a correction to 0:00, or a
+        game-clock Start clearing the play clock), and that command already has
+        its own history row. Only an unchanged revision means the clock got
+        there on its own.
+        """
+
+        current = {
+            "game": (state.game_clock.running, state.game_clock.seconds),
+            "play": (state.play_clock.running, state.play_clock.seconds),
+            "event": (state.event_countdown.running, state.event_countdown.seconds),
+        }
+        previous = self._observed
+        self._observed = (state.revision, current)
+        if previous is None or previous[0] != state.revision:
+            return
+        for clock, (running, seconds) in current.items():
+            was_running, was_seconds = previous[1][clock]
+            if was_running and was_seconds > 0.0 and not running and seconds <= 0.0:
+                self._store.record_expiration(clock, state, from_seconds=was_seconds)
+                self._diagnostics.clock_expired(clock=clock, revision=state.revision)
 
     def display_opened(self, target: str | None = None) -> dict[str, Any]:
         with self._lock:

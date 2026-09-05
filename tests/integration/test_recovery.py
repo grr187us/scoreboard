@@ -19,6 +19,7 @@ from scoreboard.application.recovery import (
 )
 from scoreboard.domain import commands as cmd
 from scoreboard.domain.formatting import displayed_second
+from scoreboard.domain.state import APP_VERSION
 from scoreboard.infrastructure.persistence import (
     read_action_history,
     read_stored_game,
@@ -272,6 +273,85 @@ class CorruptDatabaseTests(TemporaryDataDirectoryTest):
 
         self.assertEqual(report.source, RecoverySource.BACKUP)
         self.assertEqual(report.state.home_score, 6)
+
+
+class ApplicationUpgradeRecoveryTests(TemporaryDataDirectoryTest):
+    """A build change between the interruption and the restart (P-004, W-006).
+
+    Packaging (Task 11) will move the application off ``0.0.0``. A game saved
+    by the previous build must still be offered, because the most likely moment
+    to install an update is between two launches of a laptop that is mid-season.
+    """
+
+    def saved_game_from_another_version(self, written_by: str = "0.9.3") -> None:
+        service, store = self.started_session(app_version=written_by)
+        self.submit(service, store, cmd.set_team_name("home", "Tigers"))
+        self.submit(service, store, cmd.add_score("home", 6))
+        self.submit(service, store, cmd.set_quarter("2nd"))
+        self.submit(service, store, cmd.game_clock_start())
+        self.monotonic.advance(5.0)
+        store.checkpoint(service.materialized_state())
+        store.close()
+        # Rewrite the stored snapshot as the older build would have written it.
+        self.restamp_stored_snapshot(written_by)
+
+    def restamp_stored_snapshot(self, app_version: str) -> None:
+        import sqlite3
+
+        for path in (self.paths.database, self.paths.backup):
+            connection = sqlite3.connect(str(path))
+            try:
+                for game_id, payload in connection.execute(
+                    "SELECT game_id, snapshot_json FROM game_state"
+                ).fetchall():
+                    snapshot = json.loads(payload)
+                    snapshot["app_version"] = app_version
+                    connection.execute(
+                        "UPDATE game_state SET snapshot_json = ?, app_version = ? "
+                        "WHERE game_id = ?",
+                        (json.dumps(snapshot), app_version, game_id),
+                    )
+                connection.commit()
+            finally:
+                connection.close()
+
+    def test_a_game_saved_by_an_older_build_is_still_offered(self) -> None:
+        self.saved_game_from_another_version("0.9.3")
+
+        report = inspect_recovery(self.paths)
+
+        self.assertEqual(report.source, RecoverySource.PRIMARY)
+        self.assertTrue(report.can_resume)
+        self.assertEqual(report.state.home_name, "Tigers")
+        self.assertEqual(report.state.home_score, 6)
+        self.assertEqual(report.state.quarter, "2nd")
+        self.assertFalse(report.state.game_clock.running)
+
+    def test_the_saving_version_is_reported_rather_than_lost(self) -> None:
+        self.saved_game_from_another_version("0.9.3")
+
+        report = inspect_recovery(self.paths)
+
+        self.assertEqual(report.written_by_app_version, "0.9.3")
+        self.assertIn("0.9.3", report.message)
+        self.assertEqual(report.to_dict()["written_by_app_version"], "0.9.3")
+
+    def test_the_resumed_game_runs_under_the_current_build(self) -> None:
+        self.saved_game_from_another_version("0.9.3")
+        report = inspect_recovery(self.paths)
+
+        service = resume_recovered_game(report, monotonic_clock=self.monotonic)
+
+        self.assertEqual(service.state.app_version, APP_VERSION)
+        self.assertEqual(service.state.home_score, 6)
+
+    def test_a_matching_version_reports_no_upgrade(self) -> None:
+        self.saved_game_from_another_version(APP_VERSION)
+
+        report = inspect_recovery(self.paths)
+
+        self.assertIsNone(report.written_by_app_version)
+        self.assertNotIn("is being opened by", report.message)
 
 
 if __name__ == "__main__":

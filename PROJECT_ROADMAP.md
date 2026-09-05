@@ -2,7 +2,7 @@
 
 > **Document purpose:** This is the living command-center document for the scoreboard project. It records the current plan, phase status, major decisions, unanswered questions, and the next concrete action.
 >
-> **Last updated:** September 4, 2026
+> **Last updated:** September 5, 2026
 
 ## How to Use This Document
 
@@ -67,10 +67,66 @@ The system may eventually support sophisticated graphics, videos, sponsor conten
 |---:|---|---|---|
 | 0 | Discovery and feasibility | Validate the project boundary and document the existing system. | 🟡 Substantially complete; one critical HDMI test remains |
 | 1 | Repository, requirements, and architecture | Establish a clean project foundation and an implementation-ready MVP design. | 🟡 In progress; repository/docs are established, owner confirmations and layout agreement remain |
-| 2 | Core scoreboard MVP | Produce a dependable local Windows scoreboard with correct football controls and fullscreen output. | 🟡 In progress; Task 1 host proof is implemented, with normal two-display manual evidence pending |
+| 2 | Core scoreboard MVP | Produce a dependable local Windows scoreboard with correct football controls and fullscreen output. | 🟡 In progress; Tasks 1-9 implemented, audited September 5, 2026, and locally verified. Tasks 10-12 and all hardware/release evidence remain. |
 | 3 | Production graphics and OBS/media integration | Add controlled media, scenes, custom cutscenes, and polished presentation without compromising the core scoreboard. | ➖ Deferred |
 | 4 | External controls and expanded operation | Investigate and integrate the physical controller and other operator-control options. | ➖ Deferred |
 | 5 | Stadium production hardening | Validate full-game reliability, recovery, deployment, operating procedures, and fallback behavior. | ➖ Deferred |
+
+### Phase 2 audit — September 5, 2026
+
+A full read of the implemented code against `docs/MVP_REQUIREMENTS.md`, `docs/PHASE_2_BACKLOG.md`, and this roadmap. The purpose was to find where the working documents and the working software had drifted apart before Task 10 begins.
+
+**What held up.** Every acceptance criterion in backlog Tasks 1-9 is met by code, and the layer boundaries the architecture asks for are intact: the service is still the only writer of the authoritative revision, no clock arithmetic exists outside `domain/`, every displayed clock string is produced in Python, and no domain object crosses the bridge. `docs/PROJECT_STRUCTURE.md` still describes the tree that exists.
+
+**Two requirement-level defects, both fixed.** Each sat *between* two tasks, which is why nine rounds of task-by-task verification missed them.
+
+1. **Clock expiration was never recorded** (F-037, F-046). The engines have `expire()` and it is unit tested, but nothing in the service, bridge, or host ever called it, and no `CommandType` covers it. A clock that ran itself to 0:00 left a start in the durable history and then silence, so an audit after a disputed end-of-quarter could not show when the clock reached zero. Fixed below.
+2. **The application version was a hard compatibility gate on saved games** (P-004, P-006, W-006). `GameState` refused any snapshot whose `app_version` was not exactly the running build's. Confirmed by experiment: with the stored version at `0.0.0` and the running build moved to `0.1.0`, `inspect_recovery` reported `UNRECOVERABLE` on both the primary database and its backup. Task 11 packaging necessarily moves the version off `0.0.0`, so installing an update between two launches would have destroyed the recoverability of a game in progress — the exact moment recovery matters most. Fixed below.
+
+**Documentation drift corrected.** `README.md` still said "No working scoreboard application exists in this repository yet" and "Phase 2 — core MVP: not started", and `src/scoreboard/README.md` said no application code existed. Both are rewritten. The launch and test commands in `README.md` are now the real ones.
+
+**Open questions raised by the audit, not defects.** Recorded here so they reach the owner rather than being settled silently in code:
+
+| # | Question | Why it matters | Status |
+|---:|---|---|---|
+| A-1 | Should a game-clock Start always blank the play clock? | F-048 assumes the game clock starts at the snap. Under NFHS-style rules the game clock also starts on the ready-for-play — after an out-of-bounds play or a penalty — with the play clock already running to the snap. In those situations the current rule blanks the stadium's only play-clock display and the operator must reload a preset. | 🧪 Needs owner/officials confirmation before live use |
+| A-2 | Is 15:00 the correct total interval? | The modelled interval is 15:00 total, split `HALFTIME` 15:00-3:01 and `WARMUP` 3:00-0:00. NFHS-style practice is commonly a 15-minute intermission *followed by* a 3-minute warmup, which is 18:00 total. The split is a documented owner decision; the arithmetic should be confirmed against local practice. | 🧪 Needs owner confirmation |
+| A-3 | Is a single 12:00 quarter length enough? | `MAX_GAME_CLOCK_SECONDS` is simultaneously the reset default, the correction ceiling, and a state invariant. A shorter JV quarter or a different overtime clock would require a code change, not a setting. | ➖ Deferred; revisit if a second quarter length is ever needed |
+| A-4 | The play-clock preset is not persisted. | `preset_seconds` is engine-only, so after a recovery the play clock's RESET blanks the board instead of restoring 25 or 40 until a preset is pressed again. Documented, and pressing `25`/`40` is normal per-snap operation anyway. | ➖ Accepted; note in the operator guide |
+| A-5 | Bridge-level rejections are not in the durable history. | An unknown command name or a malformed argument is refused before the service sees it and reaches only the rotating diagnostic log, not the action history. Defensible for a name that is not a command; a malformed argument from a real control is closer to a rejected operator request under P-007. | ➖ Accepted for the MVP; revisit if a rejection is ever missing during rehearsal |
+
+### Phase 2 defect fix — clock expiration is recorded (F-037, F-046)
+
+- The refresh tick now notices a clock that counted itself to zero and writes one `game_clock_expired` / `play_clock_expired` / `event_countdown_expired` row with source `system`, its old running value, and the zero it reached. The zero state and its history row commit in one transaction, exactly like an accepted command.
+- Nothing about the command model changed. No revision is advanced, no `CommandType` was added, and the refresh loop still never submits a command: expiration is something a clock did, not a mutation an operator requested.
+- The state revision is the discriminator that keeps it honest. If the revision moved since the previous tick, an accepted command produced the zero — a correction to 0:00, or a game-clock Start blanking a running play clock under F-048 — and that command already has its own row, so no expiration is invented. Only an unchanged revision means the clock got there on its own.
+- Seven focused tests in [`tests/integration/test_bridge.py`](tests/integration/test_bridge.py) cover expiry recorded exactly once for the game and play clocks, the revision left alone, and the three non-expiry cases: a clock stopped short of zero, a play clock cleared by a game-clock Start, and a running clock corrected to 0:00.
+
+### Phase 2 defect fix — a saved game survives an application update (P-004, P-006)
+
+- `app_version` is now provenance, not a compatibility gate: only `schema_version` decides whether a stored game can be read. Gating on the build number made every saved game unrecoverable the moment the version changed.
+- The saving version is reported rather than discarded. `RecoveryReport` carries `written_by_app_version`, the recovery message names both versions when they differ ("saved by version X ... opened by version Y; check the board before resuming"), and the resumed game runs stamped with the current build, which is the version now responsible for it.
+- Four tests in [`tests/integration/test_recovery.py`](tests/integration/test_recovery.py) rewrite a stored snapshot as an older build would have written it and assert the game is still offered with its names, scores, quarter, and stopped clocks; that the saving version reaches the report and its JSON payload; that the resumed service runs under the current build; and that a matching version reports no upgrade. The unit test that previously asserted the unsafe behaviour now asserts the safe one.
+
+### Phase 2 verification — whole-game rehearsal under fake time (R-006 partial)
+
+- Added [`tests/integration/test_full_game_rehearsal.py`](tests/integration/test_full_game_rehearsal.py): one complete game through the real bridge, service, store, and recovery path. Pregame 30:00 countdown run to expiry; four quarters of 30 snaps each, every snap loading a 40-second preset, starting the play clock, snapping (game-clock Start blanks it), running the game clock and stopping it; scoring across both teams; a mis-click and its Undo; the halftime countdown driven across the 3:01/3:00 `HALFTIME`→`WARMUP` boundary; a crash with both clocks running in the third quarter followed by inspection and resume; a post-whistle correction; End Game.
+- It asserts what a scorer would check afterwards: final scores match the arithmetic of every increment, correction, and undo; the game clock consumed exactly the simulated playing time across the crash; lifecycle is `FINAL` with both clocks stopped; no clock left its 0-to-maximum range; persistence reported `SAVED` after every command; the recovered board was no more than one displayed second behind and never ahead; the action-history sequence is strictly increasing and gap-free; and every command class the game used, plus `session_resumed` and the countdown expiry, appears in the history.
+- It is also a persistence soak by construction: several thousand refresh ticks and their checkpoints, which is why it takes roughly 30 seconds. It is **not** the Task 12 acceptance run. Nothing here measures real elapsed time, WebView2, display behaviour, or the target laptop.
+
+### Phase 2 verification — real-time clock measurement on the development host (R-005 partial)
+
+Every clock test until now used an injected fake clock, which proves the arithmetic but never lets a real second pass. This is a first real-time reading, on this development host only.
+
+| Measurement | Result | Tolerance |
+|---|---|---|
+| Worst absolute error over a continuous 12:00 run, sampled 2,875 times | 0.0129 s | 0.25 s |
+| Absolute error at the end of the 12:00 run | 0.000179 s | 0.25 s |
+| Cumulative drift across 401 stop/start cycles | 0.0060 s | 0.25 s |
+
+The worst-case figure is dominated by the gap between reading the reference and reading the engine inside one sample, not by drift: the final error after twelve continuous minutes is under a fifth of a millisecond, and 401 pause/resume cycles accumulated six milliseconds. That is the expected shape for a monotonic-deadline clock and confirms there is no per-tick or per-pause accumulation.
+
+**Not claimed.** This is `time.monotonic` measured against `time.perf_counter` on a development machine with no window open. R-005 asks for the target laptop, under the real refresh loop, a real WebView2 window, and an independent reference. That measurement stays open.
 
 ### Phase 2 Task 3 evidence
 
@@ -116,6 +172,12 @@ Task 6's "checkpoint once per displayed second" policy and every Task 7 readout 
 - Focused Task 9 tests 3/3; full suite 261/261. `compileall`, `pip check`, JavaScript syntax, diff whitespace, UTF-8 and relative Markdown file-link checks passed. No runtime database or log is in the repository. [Complete change inventory](docs/TASK_8_9_CHANGE_REPORT.md).
 - Numpad behavior, actual Windows repeat timing, novice rehearsal and physical WebView2 scaling remain release evidence. Browser automation cannot establish these results. No Task 10, packaging, OBS, controller or networking work was started.
 
+### Persistence runtime follow-up
+
+- The first real control launch exposed a runtime-only defect: SQLite created its connection on the webview thread, while the refresh worker and shutdown path attempted checkpoints on other threads. Python's default SQLite thread-affinity check therefore reported `NOT SAVED`, even though the database and persistence code were present.
+- Updated [`src/scoreboard/infrastructure/persistence.py`](src/scoreboard/infrastructure/persistence.py) to allow the single connection to cross that boundary; the existing application `RLock` continues to serialize commands, checkpoints, and shutdown.
+- Added a worker-thread checkpoint regression test in [`tests/integration/test_host_application.py`](tests/integration/test_host_application.py). The focused host/persistence suite passed 38/38, the regression passed, and an actual Windows host launch exited 0 with no persistence failure in its isolated log.
+
 ### Phase 2 Task 8 evidence
 
 - Spectator page now renders mutually exclusive game/event presentations inside a centered logical 16:9 canvas with configurable 4% inset, proportional type and local fonts. Only documented fields appear; blank play-clock space differs from expired `0.0`.
@@ -137,7 +199,7 @@ Task 6's "checkpoint once per displayed second" policy and every Task 7 readout 
 - The health strip reports the spectator connection, the persistence status, and the authoritative revision. A simulated write failure shows `NOT SAVED` while the game keeps running and the next successful command restores `SAVED`; a closed display shows `DISPLAY CLOSED` with one-click reopen, does not stop a running clock, and a reopen that itself fails is reported without touching the game (D-005, U-005, R-002).
 - `expected_revision` comes from the rendered view model, so a stale control is rejected with `STALE_REVISION` rather than applied.
 - The Task 1 host now owns the game: [`host/app.py`](src/scoreboard/host/app.py) takes the single-instance lock, inspects recovery, opens one service and one store behind the bridge, and runs a four-per-second refresh loop that checkpoints and pushes view models without ever submitting a command. `ScoreboardApplication` is separated from `WindowHost` so the wiring is testable without opening a window.
-- Nothing auto-resumes. When a recoverable game exists and no choice was made, `WindowHost.run` raises `RecoveryChoiceRequired` carrying the report instead of guessing; `--resume` and `--new-game` make the choice. **The in-window recovery screen is not built**: the choice currently arrives from the launch command, which satisfies P-005 but is not the workflow described in `docs/UX_AND_LAYOUT.md` section 6.7. It is recorded below as remaining work.
+- Nothing auto-resumes. At the Task 7 boundary, when a recoverable game existed and no choice was made, `WindowHost.run` raised `RecoveryChoiceRequired` carrying the report instead of guessing; `--resume` and `--new-game` made the choice. The in-window recovery screen was then added as the Task 8 prerequisite: `StartupBridge` now presents the report and creates the normal operator only after Resume or New Game. Native WebView2 interaction remains release evidence.
 - Verified with `.\.venv\Scripts\python.exe -m unittest discover -s tests -v` (245 tests, 0 failures), `compileall`, and `pip check`.
 
 #### Task 7 manual observation — 1366x768 at 100% and 125% (U-001)
@@ -358,7 +420,7 @@ Only create a technical proof when it answers a decision that documents alone ca
 | MVP requirements | Ambiguous behavior has been resolved and written down. | 🟡 Testable provisional baseline in `docs/MVP_REQUIREMENTS.md`; owner-only clock decisions remain. |
 | Display and operator wireframes | Layouts are understandable before visual polish begins. | ✅ `docs/UX_AND_LAYOUT.md`; owner/operator agreement still requested before UI build. |
 | Architecture decision record | Selected approach, rejected alternatives, tradeoffs, and extension boundaries are documented. | ✅ `docs/ARCHITECTURE.md`. |
-| Project skeleton | Minimal structure exists for the selected architecture. | ✅ Source/test/asset boundaries exist without feature code; detailed tree in `docs/PROJECT_STRUCTURE.md`. |
+| Project skeleton | Minimal structure exists for the selected architecture. | ✅ Source/test/asset boundaries established; Phase 2 implementation now fills the documented boundaries. Detailed tree in `docs/PROJECT_STRUCTURE.md`. |
 | Testing strategy | Core logic, UI behavior, fullscreen output, and recovery have explicit test approaches. | ✅ Requirements, architecture, and backlog contain verification methods. |
 | Phase 2 implementation backlog | Small, ordered tasks exist with acceptance criteria. | ✅ Twelve bounded tasks in `docs/PHASE_2_BACKLOG.md`. |
 
@@ -511,6 +573,9 @@ Record decisions here so later implementation work does not silently reverse the
 
 | Date | Decision | Reason | Revisit when |
 |---|---|---|---|
+| September 5, 2026 | `schema_version` is the only compatibility gate on a stored game; `app_version` is provenance and is reported, never enforced. | Gating on the build number made every saved game unrecoverable the moment the version changed, which Task 11 packaging guarantees will happen. A mid-season update installed between two launches would have destroyed a game in progress. | A future schema change that genuinely cannot be read by an older or newer build; that is what `schema_version` is for. |
+| September 5, 2026 | Record clock expiration as a `system`-sourced action-history row written by the refresh tick, rather than adding an expire command or letting the tick submit one. | F-037 and F-046 require expiration in the durable history, but nobody presses anything when a clock reaches zero. Keeping it out of the command model preserves the rule that the service is the only writer of the authoritative revision. | If expiration ever needs to change game state — an automatic quarter advance, for example — at which point it becomes a real command and needs a confirmation policy. |
+| September 5, 2026 | Distinguish a genuine expiry from a commanded zero by comparing the state revision between refresh ticks. | A game-clock Start blanks a running play clock (F-048) and a correction can set 0:00; both reach zero without expiring. The command that caused them already has its own history row, so inventing an expiration as well would misreport the field. | If a future command changes a clock without advancing a revision. |
 | September 4, 2026 | Task 8 gap 1: lifecycle follows accepted quarter commands (including quarter Undo): PRE → PRE_GAME, HALF → HALFTIME, FINAL → FINAL, all playing labels → IN_PROGRESS. A successful game-clock Start leaving pregame/halftime enters IN_PROGRESS; End Game sets FINAL and New Game restores PRE_GAME. PRE/HALF entry selects its stopped event preset only when switching countdown kind; an already selected countdown retains its time. | No overlapping lifecycle control; team-name validation now leaves pregame. Expiry never advances lifecycle. | Operator rehearsal. |
 | September 4, 2026 | Persist an additive play_clock_cleared flag; retain old blank-zero interpretation for legacy snapshots lacking it. | The old model erased expiry versus clear intent; the renderer cannot recreate it safely. | Recovery compatibility/rehearsal. |
 | September 4, 2026 | Task 8 gap 2: publish after accepted commands under the existing serialization lock, retaining ticks for timed refresh/checkpoint work. | Removes the 250 ms scheduler wait; push-count tests prove delivery without a tick. Physical latency remains release evidence. | Target laptop measurement. |
@@ -567,21 +632,34 @@ Record decisions here so later implementation work does not silently reverse the
 | September 4, 2026 | Task 8 recovery prerequisite | Five focused tests; full suite 250/250; compileall, pip check, diff checks passed. | `tests/integration/test_startup.py`; prerequisite evidence above | Native recovery interaction remains release evidence. |
 | September 4, 2026 | Task 8 spectator foundation | Full suite 258/258; 36 browser layout cases; syntax/compileall/pip/diff checks passed. | `tests/integration/test_spectator.py`; `tests/ui/`; `docs/evidence/task8/` | Browser observations only; LED/two-display and end-to-end latency remain pending. |
 | September 4, 2026 | Task 9 keyboard/input safety | Full suite 261/261, including real browser to real bridge/storage input tests; compileall/pip/syntax/diff/link checks passed. | `tests/ui/keyboard.cjs`; `tests/integration/test_keyboard_source.py`; Task 9 evidence above | Real OS repeat, numpad and novice rehearsal remain pending. |
+| September 5, 2026 | Phase 2 audit of the implemented code against the requirements, backlog, and this roadmap | Every Task 1-9 acceptance criterion met by code; two requirement-level defects found and fixed (unrecorded clock expiration; the application version gating recovery); stale status text in `README.md` and `src/scoreboard/README.md` corrected; five open questions raised for the owner | Audit section above; `docs/PHASE_2_BACKLOG.md` status note | Task 10 may begin from an accurate baseline. A-1 (play-clock behaviour on a ready-for-play game-clock start) needs an answer before live use. |
+| September 5, 2026 | Application-version recovery experiment | With the stored version at `0.0.0` and the running build moved to `0.1.0`, `inspect_recovery` reported `UNRECOVERABLE` for both the primary database and its backup. After the fix, the same game is offered with names, scores, quarter, and stopped clocks intact, and the saving version is reported. | `tests/integration/test_recovery.py::ApplicationUpgradeRecoveryTests` | Removed a defect that would have first appeared during Task 11 packaging, in the field, mid-season. |
+| September 5, 2026 | Whole-game fake-time rehearsal through the real bridge | Pass. Four quarters of 120 snaps, both countdowns, an undo, a crash and resume in the third quarter, and End Game left the scores, the consumed game time, the lifecycle, and the action history all consistent. Several thousand refresh ticks and their checkpoints reported `SAVED` throughout. | `tests/integration/test_full_game_rehearsal.py` | Partial R-006 evidence only. The two-hour soak, the real clock tolerance, and every hardware behaviour remain release evidence. |
+| September 5, 2026 | Real-time 12-minute clock measurement on the development host | Worst absolute error 0.0129 s, final error 0.000179 s, and 0.0060 s cumulative drift across 401 pause/resume cycles, against a 0.25 s tolerance | Measurement above | No per-tick or per-pause accumulation exists in the engine. R-005 still requires the target laptop under a real window. |
+| September 5, 2026 | Full automated suite on this host after the audit fixes | 273 Python tests passed. The two `tests/ui/` browser checks errored because Node.js and Playwright are not installed here; by design they fail explicitly rather than skipping. `compileall` and `pip check` passed. | Session output | A clean machine without the browser tooling reports 273 passed and 2 errors. That is the expected shape, not a regression. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
 ## Current Status
 
 | Item | Current state |
 |---|---|
-| Active phase | Phase 2 Tasks 8-9 implemented; Phase 0 hardware gate remains open in parallel |
+| Active phase | Phase 2, between Task 9 and Task 10. Tasks 1-9 are implemented and were audited on September 5, 2026; Phase 0's hardware gate remains open in parallel |
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
-| Implementation status | Tasks 1-9 implemented and verified locally: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator game/countdown layout, keyboard safety and generated shortcut help. Task 10 and later remain unstarted. |
-| Repository status | `main` tracks `origin/main`; Phase 1 foundation commit `6f9fc18` pushed and independently cloned cleanly |
+| Implementation status | Tasks 1-9 implemented and verified locally: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator game/countdown layout, keyboard safety and generated shortcut help. The September 5 audit added expiration recording, application-version-safe recovery, and a whole-game rehearsal. Tasks 10-12 remain unstarted. |
+| Automated suite | 273 Python tests pass on this host; the two `tests/ui/` browser checks require Node.js and Playwright and error explicitly without them. |
+| Repository status | `main` tracks `origin/main`; the last commit is `d03066e`, three commits ahead of `origin/main`. The Phase 1 foundation commit `6f9fc18` was pushed and independently cloned cleanly. The audit work and the earlier persistence thread-affinity fix are **uncommitted** in the working tree. |
 
 ## Next Action
 
-Tasks 8 and 9 are verified locally and committed in order after the recovery prerequisite. Next collect target-laptop keyboard/recovery/scaling rehearsal evidence; do not infer hardware acceptance from browser tests. Task 10 remains a separate future task. Separately, on Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.
+**On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and Task 10's stadium-specific acceptance depends on it. Nothing else on this list is time-boxed.
+
+Then, in order:
+
+1. **Commit the audit work.** The working tree holds the September 5 fixes plus the earlier persistence thread-affinity fix, uncommitted. Review the complete diff and commit before starting Task 10.
+2. **Answer question A-1** from the audit — whether a game-clock Start should always blank the play clock, given that the game clock also starts on the ready-for-play. This is a football-rules question for the owner and the officials, not a code decision, and it affects the stadium's only play-clock display.
+3. **Task 10 — display selection, fullscreen, and failure recovery.** It is the next backlog task and the one the stadium test feeds directly. It needs a two-display machine, which this development host does not have.
+4. **Task 11 — Windows packaging** and **Task 12 — sustained rehearsal**, in that order. Task 11 will move the application version off `0.0.0`; the recovery fix above is what makes that safe.
 
 Carried forward as open items, none of which may be treated as completed on the strength of a passing automated suite:
 
@@ -592,3 +670,5 @@ Carried forward as open items, none of which may be treated as completed on the 
 
 5. **Keyboard release evidence.** Verify numpad, real Windows repeat timing, novice shortcut rehearsal and focused-window behavior on the target laptop.
 6. **Visible latency.** Measure command-to-visible-pixels latency on the target laptop; immediate push counts remove scheduler waiting but do not prove D-004 end-to-end.
+7. **Clock tolerance on the target laptop (R-005).** A 12-minute real-time run on the development host finished 0.000179 s from an independent reference with 0.0060 s of drift across 401 pause/resume cycles, so the engine has no accumulation. The tolerance itself must still be established on the production laptop, under the real refresh loop and a real WebView2 window.
+8. **Sustained soak (R-006).** The fake-time rehearsal covers a game-length command sequence but no real elapsed time. The two-hour soak and the four-quarter run on the target laptop stay open.

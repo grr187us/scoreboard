@@ -44,6 +44,7 @@ brand-baseline/
 .obs-studio/
 obs-profiles/
 obs-scenes/
+*.lnk
 
 # Credentials and secrets
 .env

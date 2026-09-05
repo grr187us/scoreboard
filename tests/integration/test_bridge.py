@@ -616,5 +616,108 @@ class TickTests(BridgeTestCase):
         self.assertFalse(view["health"]["persistence"]["saved"])
 
 
+class ExpirationHistoryTests(BridgeTestCase):
+    """F-037, F-046: a clock that runs itself to zero is recorded.
+
+    Expiration is the one clock event with no operator command behind it, so
+    without this the history would show a start and then silence.
+    """
+
+    def run_to(self, seconds: float, step: float = 0.25) -> None:
+        elapsed = 0.0
+        while elapsed < seconds:
+            self.monotonic.advance(step)
+            elapsed += step
+            self.bridge.tick()
+
+    def expirations(self) -> list[dict]:
+        return [
+            row
+            for row in read_action_history(self.paths.database)
+            if str(row["command"]).endswith("_expired")
+        ]
+
+    def test_a_play_clock_that_reaches_zero_is_recorded_once(self) -> None:
+        self.send("play_clock_preset", {"seconds": 25})
+        self.send("play_clock_start")
+
+        self.run_to(27.0)
+
+        rows = self.expirations()
+        self.assertEqual([row["command"] for row in rows], ["play_clock_expired"])
+        self.assertEqual(rows[0]["source"], "system")
+        self.assertEqual(rows[0]["result"], "ACCEPTED")
+        self.assertEqual(decode(rows[0]["new_value"]), {"seconds": 0.0, "running": False})
+        self.assertTrue(decode(rows[0]["old_value"])["running"])
+
+    def test_a_game_clock_that_reaches_zero_is_recorded(self) -> None:
+        self.send("game_clock_correct", {"seconds": 3.0})
+        self.send("game_clock_start")
+
+        self.run_to(5.0)
+
+        self.assertEqual(
+            [row["command"] for row in self.expirations()], ["game_clock_expired"]
+        )
+
+    def test_the_revision_is_not_advanced_by_an_expiration(self) -> None:
+        self.send("game_clock_correct", {"seconds": 2.0})
+        self.send("game_clock_start")
+        revision = self.service.revision
+
+        self.run_to(4.0)
+
+        self.assertEqual(self.service.revision, revision)
+        self.assertEqual(len(self.expirations()), 1)
+
+    def test_a_running_clock_that_is_stopped_short_of_zero_is_not_an_expiry(self) -> None:
+        self.send("game_clock_correct", {"seconds": 5.0})
+        self.send("game_clock_start")
+
+        self.run_to(2.0)
+        self.send("game_clock_stop")
+        self.run_to(4.0)
+
+        self.assertEqual(self.expirations(), [])
+
+    def test_clearing_the_play_clock_at_a_start_is_not_an_expiry(self) -> None:
+        """A game-clock Start blanks a running play clock (F-048).
+
+        The play clock reaches zero, but a command put it there and that
+        command has its own history row; inventing an expiration as well would
+        misreport what happened on the field.
+        """
+
+        self.send("play_clock_preset", {"seconds": 25})
+        self.send("play_clock_start")
+        self.run_to(2.0)
+
+        self.send("game_clock_start")
+        self.run_to(2.0)
+
+        self.assertEqual(self.expirations(), [])
+
+    def test_correcting_a_running_clock_to_zero_is_not_double_recorded(self) -> None:
+        self.send("game_clock_correct", {"seconds": 30.0})
+        self.send("game_clock_start")
+        self.run_to(2.0)
+
+        self.send("game_clock_correct", {"seconds": 0.0})
+        self.run_to(2.0)
+
+        self.assertEqual(self.expirations(), [])
+
+    def test_an_expired_zero_survives_in_the_stored_state(self) -> None:
+        self.send("game_clock_correct", {"seconds": 2.0})
+        self.send("game_clock_start")
+
+        self.run_to(4.0)
+
+        view = self.bridge.get_snapshot()
+        self.assertEqual(view["clocks"]["game"]["display"], "0.0")
+        self.assertFalse(view["clocks"]["game"]["running"])
+        self.assertTrue(view["health"]["persistence"]["saved"])
+
+
 if __name__ == "__main__":
     unittest.main()

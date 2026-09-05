@@ -51,10 +51,11 @@ def _require_version(schema_version: int, app_version: str) -> None:
         )
     if not isinstance(app_version, str) or not app_version.strip():
         raise StateValidationError("app_version must be a non-empty string")
-    if app_version != APP_VERSION:
-        raise StateValidationError(
-            f"unsupported app_version {app_version!r}; expected {APP_VERSION!r}"
-        )
+    # app_version is provenance, not a compatibility gate. Only schema_version
+    # decides whether a stored game can be read. Gating on the application
+    # version would make every saved game unrecoverable the moment the build
+    # number changes, which is exactly when a mid-game restart is most likely
+    # (P-004, P-006, W-006).
 
 
 def _require_revision(revision: int) -> None:

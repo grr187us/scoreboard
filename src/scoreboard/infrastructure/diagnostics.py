@@ -130,6 +130,15 @@ class Diagnostics:
     def display_closed(self, *, reason: str, **fields: Any) -> None:
         self._logger.info(_render("DISPLAY_CLOSED", {"reason": reason, **fields}))
 
+    def clock_expired(self, *, clock: str, **fields: Any) -> None:
+        """A clock counted itself down to 0:00 (F-037, F-046).
+
+        The durable record lives in the action history; this line is the
+        program-level trace beside the start that preceded it.
+        """
+
+        self._logger.info(_render("CLOCK_EXPIRED", {"clock": clock, **fields}))
+
     def command_rejected(self, *, command: str, code: str, message: str, **fields: Any) -> None:
         self._logger.warning(
             _render(

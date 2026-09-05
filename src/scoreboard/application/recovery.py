@@ -17,13 +17,13 @@ This module returns models. It renders nothing: the operator view is Task 7.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, Callable
 
 from scoreboard.application.service import ScoreboardService
 from scoreboard.application.snapshots import state_to_snapshot
-from scoreboard.domain.state import GameState, default_state
+from scoreboard.domain.state import APP_VERSION, GameState, default_state
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import ScoreboardPaths
 from scoreboard.infrastructure.persistence import (
@@ -67,6 +67,10 @@ class RecoveryReport:
     primary_error: str | None = None
     backup_error: str | None = None
     preserved_paths: tuple[str, ...] = ()
+    #: The application version that wrote the offered game, when it differs
+    #: from the running build. Shown so the operator knows an update happened
+    #: between the interruption and this launch; it never blocks recovery.
+    written_by_app_version: str | None = None
 
     @property
     def can_resume(self) -> bool:
@@ -99,19 +103,50 @@ class RecoveryReport:
             "primary_error": self.primary_error,
             "backup_error": self.backup_error,
             "preserved_paths": list(self.preserved_paths),
+            "written_by_app_version": self.written_by_app_version,
             "snapshot": None if self.state is None else state_to_snapshot(self.state),
         }
+
+
+def _restored(state: GameState) -> GameState:
+    """The offered state: every clock stopped, running under this build.
+
+    ``app_version`` is stamped to the running build because that is the version
+    now responsible for the game; the version that wrote it is reported
+    separately on :class:`RecoveryReport` rather than being silently lost. The
+    revision is untouched, so restoring still invents nothing (P-004).
+    """
+
+    return replace(stopped_state(state), app_version=APP_VERSION)
+
+
+def _written_by(stored: StoredGame) -> str | None:
+    """The saving version, when a build change happened across the restart."""
+
+    written = stored.state.app_version
+    return None if written == APP_VERSION else written
+
+
+def _upgrade_note(stored: StoredGame) -> str:
+    written = _written_by(stored)
+    if written is None:
+        return ""
+    return (
+        f" This game was saved by version {written} and is being opened by "
+        f"version {APP_VERSION}; check the board before resuming."
+    )
 
 
 def _offer(stored: StoredGame, source: RecoverySource, message: str) -> RecoveryReport:
     return RecoveryReport(
         source=source,
-        message=message,
+        message=message + _upgrade_note(stored),
         # Stopping the clocks happens here, once, so no caller can forget it.
-        state=stopped_state(stored.state),
+        state=_restored(stored.state),
         game_id=stored.game_id,
         checkpoint_at=stored.checkpoint_at,
         checkpoint_kind=stored.checkpoint_kind,
+        written_by_app_version=_written_by(stored),
     )
 
 
@@ -176,14 +211,15 @@ def inspect_recovery(
                     "RECOVERED FROM BACKUP: the main game file could not be read, "
                     "so the last-known-good backup was loaded. Its clocks are "
                     f"stopped at {stored.checkpoint_at}. Check the board against "
-                    "the real game before resuming."
+                    "the real game before resuming." + _upgrade_note(stored)
                 ),
-                state=stopped_state(stored.state),
+                state=_restored(stored.state),
                 game_id=stored.game_id,
                 checkpoint_at=stored.checkpoint_at,
                 checkpoint_kind=stored.checkpoint_kind,
                 primary_error=primary_error,
                 preserved_paths=preserved,
+                written_by_app_version=_written_by(stored),
             )
             log.recovery(
                 source=report.source.value,

@@ -1,0 +1,10 @@
+{
+  "duration_seconds": 720.0,
+  "samples": 2875,
+  "worst_absolute_error_seconds": 0.012894,
+  "final_absolute_error_seconds": 0.000179,
+  "pause_resume_cycles": 401,
+  "pause_resume_drift_seconds": 0.006034,
+  "tolerance_seconds": 0.25,
+  "within_tolerance": true
+}

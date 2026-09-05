@@ -7,6 +7,7 @@ opening a window, which is the point of separating it from ``WindowHost``.
 from __future__ import annotations
 
 import json
+import threading
 import unittest
 
 from scoreboard.host.app import RecoveryChoiceRequired, ScoreboardApplication, view_url
@@ -127,6 +128,29 @@ class RecoveryChoiceTests(ApplicationTestCase):
 
 class RefreshTests(ApplicationTestCase):
     """The refresh loop displays and checkpoints; it never commands."""
+
+    def test_a_worker_refresh_can_checkpoint_the_shared_store(self) -> None:
+        application = self.make_application()
+        bridge = application.start_new()
+        bridge.command("game_clock_start", {}, 0)
+        self.monotonic.advance(1.0)
+        errors: list[BaseException] = []
+
+        def refresh() -> None:
+            try:
+                application.tick()
+            except BaseException as exc:  # pragma: no cover - assertion below
+                errors.append(exc)
+
+        worker = threading.Thread(target=refresh)
+        worker.start()
+        worker.join()
+
+        self.assertEqual(errors, [])
+        self.assertTrue(bridge.get_snapshot()["health"]["persistence"]["saved"])
+        stored = read_stored_game(self.paths.database)
+        self.assertIsNotNone(stored)
+        self.assertAlmostEqual(stored.state.game_clock.seconds, 719.0, places=6)
 
     def test_a_tick_publishes_to_both_windows(self) -> None:
         application = self.make_application()

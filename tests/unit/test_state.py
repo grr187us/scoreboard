@@ -107,9 +107,25 @@ class StateTests(unittest.TestCase):
             snapshot_to_state(payload)
 
         payload = state_to_snapshot(default_state())
-        payload["app_version"] = "9.9.9"
+        payload["app_version"] = ""
         with self.assertRaises(StateValidationError):
             snapshot_to_state(payload)
+
+    def test_a_snapshot_from_another_application_version_still_loads(self) -> None:
+        """Only the schema gates compatibility; the build number is provenance.
+
+        A game saved before an update must still be recoverable afterwards,
+        because a mid-game restart is exactly when an update is most likely to
+        have happened (P-004, P-006).
+        """
+
+        payload = state_to_snapshot(default_state())
+        payload["app_version"] = "9.9.9"
+
+        restored = snapshot_to_state(payload)
+
+        self.assertEqual(restored.app_version, "9.9.9")
+        self.assertEqual(restored.home_score, 0)
 
     def test_snapshot_is_detached_from_state(self) -> None:
         payload = state_to_snapshot(default_state())

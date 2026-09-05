@@ -2,14 +2,16 @@
 
 This repository is the pre-implementation foundation for a reliable, offline-capable football scoreboard and future stadium video-production system. The immediate product is intentionally small: a Windows application that a student or volunteer can operate under game pressure and display fullscreen through the stadium's existing HDMI video processor.
 
-No working scoreboard application exists in this repository yet. Phase 1 defines what to build, why, and how it will be verified; feature implementation begins in Phase 2.
+A working scoreboard now runs from this repository on a development Windows host: authoritative state, both clocks, the event countdowns, persistence and recovery, the operator window, and the fullscreen spectator window. It is **not** yet a release. Display selection, offline packaging, and the sustained rehearsal are unbuilt, and no result on the stadium wall has been recorded.
 
 ## Current status
 
 - **Phase 0 — discovery and feasibility:** substantially complete, with the critical stadium HDMI test still open.
 - **Phase 1 — repository, requirements, layout, and architecture:** documentation foundation created; owner decisions and field evidence remain open.
-- **Phase 2 — core MVP:** not started.
+- **Phase 2 — core MVP:** in progress. Backlog Tasks 1–9 are implemented and verified locally; Tasks 10 (display selection and failure recovery), 11 (Windows packaging), and 12 (sustained rehearsal) are not started.
 - **Production media, OBS, networking, and hardware-controller work:** deferred.
+
+`PROJECT_ROADMAP.md` is the authority on status and evidence. Nothing here may be treated as release-ready on the strength of a passing automated suite; the open hardware and rehearsal evidence is listed there.
 
 The local repository uses `main` and is intended to synchronize with `https://github.com/grr187us/scoreboard.git`.
 
@@ -45,17 +47,22 @@ Phase 0 must not be marked complete until that evidence is supplied.
 
 ## MVP scope
 
-The Phase 2 MVP will provide:
+The Phase 2 MVP provides, or will provide:
 
-- Editable home and away team names and scores.
-- Home and away scoring controls for `+1`, `+2`, `+3`, and `+6`, plus safe correction.
-- Manual quarter control.
-- A crucial countdown game clock.
-- A crucial independent play clock with 25-second and 40-second presets.
-- Mouse and keyboard operation.
-- Separate operator and fullscreen spectator views.
-- Offline operation, local recovery state, and an event log.
-- A repeatable Windows launch/package path.
+| Capability | State |
+|---|---|
+| Editable home and away team names and scores | Built |
+| Scoring controls for `+1`, `+2`, `+3`, `+6`, plus corrections and one-level undo | Built |
+| Manual quarter control with running-clock confirmation | Built |
+| Countdown game clock on a monotonic deadline | Built |
+| Independent play clock with 25-second and 40-second presets | Built |
+| Pregame and halftime/warmup event countdowns | Built |
+| Mouse and keyboard operation with generated shortcut help | Built |
+| Separate operator and fullscreen spectator views | Built |
+| Offline operation, local recovery state, and a durable action history | Built |
+| Display selection, persisted identity, and disconnect recovery | Task 10, not started |
+| A repeatable offline Windows package and one-action launch | Task 11, not started |
+| Sustained rehearsal and recovery acceptance | Task 12, not started |
 
 Detailed, testable behavior is in [MVP requirements](docs/MVP_REQUIREMENTS.md).
 
@@ -82,8 +89,8 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/OPEN_SOURCE_REVIEW.md` | Evidence-based review of candidate projects |
 | `docs/PROJECT_STRUCTURE.md` | Minimal Phase 2 boundaries and proposed tree |
 | `docs/PHASE_2_BACKLOG.md` | Ordered, bounded implementation tasks |
-| `src/scoreboard/` | Reserved application package boundary; no feature code yet |
-| `tests/` | Test strategy and future automated tests |
+| `src/scoreboard/` | The application: `domain/`, `application/`, `infrastructure/`, `host/`, and the `views/` pages |
+| `tests/` | `unit/` domain and clock behaviour, `integration/` persistence, recovery, bridge and rehearsal, `ui/` optional browser checks |
 | `assets/` | Versioned, redistributable static presentation assets |
 
 ## Development organization
@@ -96,7 +103,21 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 
 ## Setup and run
 
-Phase 2 Task 1 provides a narrow, installable Windows multi-window proof. It is not a scoreboard yet: it opens only operator/spectator placeholder pages and display-host controls. Setup, exact pins, offline behavior, and the manual proof checklist are in [the Task 1 runtime proof](docs/PHASE_2_TASK_1_RUNTIME_PROOF.md).
+Environment setup, exact dependency pins, offline behavior, and the original multi-window proof checklist are in [the Task 1 runtime proof](docs/PHASE_2_TASK_1_RUNTIME_PROOF.md). With that virtual environment in place, from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m scoreboard
+```
+
+That launches the recovery screen or the operator window, and opens the fullscreen spectator window on the selected display. It is a developer launch from a checkout, not the offline package Task 11 will produce, and it requires Python and the pinned dependencies on the machine.
+
+Run the automated suite from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+The two `tests/ui/` checks additionally need Node.js, Playwright, and Edge; they fail explicitly rather than skipping when that tooling is absent, so a machine without it reports errors on those two tests and passes the rest.
 
 ## Licensing
 
