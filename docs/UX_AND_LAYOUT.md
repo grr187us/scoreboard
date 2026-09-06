@@ -56,7 +56,7 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Test at 1280×720, 1366×768, 1920×1080, and one portrait/narrow mode before stadium dimensions are known.
 - After the HDMI test, add the confirmed resolution/refresh/overscan mode to the test matrix rather than hard-coding a new layout.
 
-**Widget-rendered board (added September 5, 2026).** The board above is now drawn from fifteen individually positioned, sized, and colored widgets (`views/shared/board.js`) rather than a fixed CSS grid, so the arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) keeps its own separate markup and CSS and is **not** covered by the editor in v1 (section 10.8).
+**Widget-rendered board (added September 5, 2026).** The board above is now drawn from fifteen individually positioned, sized, and colored widgets (`views/shared/board.js`) rather than a fixed CSS grid, so the arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) keeps its own separate markup and CSS — since the September 5 deep-dive audit it also carries both team names and the score beneath the countdown, so the wall is never scoreless during an intermission — and is **not** covered by the editor in v1 (section 10.8).
 
 ## 4. Operator-screen wireframe
 

@@ -6,12 +6,15 @@ no real time, and no write outside the temporary directory.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scoreboard.domain import commands as cmd
 from scoreboard.domain.formatting import displayed_second
+from scoreboard.infrastructure import paths as paths_module
 from scoreboard.infrastructure.paths import (
     PathResolutionError,
     ScoreboardPaths,
@@ -41,8 +44,26 @@ from tests.integration.support import (
 class DataLocationTests(TemporaryDataDirectoryTest):
     """P-001, W-005, P-009: runtime data lives outside the repository."""
 
+    def platform_default(self) -> ScoreboardPaths:
+        """``resolve_paths()`` with nothing an operator or a shell can add.
+
+        The resolver's documented order is override, then the environment
+        variable, then the folder the operator chose through the picker, then
+        the platform default. These two tests are about the *platform default*
+        alone, so both of the middle layers are removed for the call -- without
+        this, the test silently asserted against whatever folder the developer
+        had last picked in the real app, and failed on any machine where that
+        was not named ``Scoreboard``.
+        """
+
+        with mock.patch.dict(os.environ), mock.patch.object(
+            paths_module, "read_chosen_root", return_value=None
+        ):
+            os.environ.pop(paths_module.DATA_DIRECTORY_ENVIRONMENT_VARIABLE, None)
+            return resolve_paths()
+
     def test_the_default_root_is_an_absolute_per_user_location(self) -> None:
-        paths = resolve_paths()
+        paths = self.platform_default()
 
         self.assertTrue(paths.root.is_absolute())
         self.assertEqual(paths.root.name, "Scoreboard")
@@ -51,9 +72,10 @@ class DataLocationTests(TemporaryDataDirectoryTest):
 
     def test_the_default_root_is_not_inside_this_repository(self) -> None:
         repository_root = ScoreboardPaths(Path(__file__).resolve().parents[2]).root
+        default = self.platform_default().root
 
-        self.assertNotIn(repository_root, resolve_paths().root.parents)
-        self.assertNotEqual(repository_root, resolve_paths().root)
+        self.assertNotIn(repository_root, default.parents)
+        self.assertNotEqual(repository_root, default)
 
     def test_a_repository_relative_path_is_refused(self) -> None:
         for candidate in ("data/state", "./scoreboard", "src"):

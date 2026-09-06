@@ -16,8 +16,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from scoreboard.host import folders
@@ -276,6 +278,49 @@ class BridgeFolderTests(TemporaryDataDirectoryTest):
             display=DisplayLink(),
             folder_chooser=lambda: self.choice,
         )
+
+    def test_the_open_picker_does_not_hold_up_the_game(self) -> None:
+        """A game command submitted while the dialog is open must complete.
+
+        The picker is modal and blocks until the operator answers. If it ran
+        under the command lock, every score and clock command -- and the
+        refresh tick -- would wait behind it, freezing the board for as long
+        as the dialog stayed open. This test opens a "dialog" that, before it
+        returns, submits a real command from another thread and waits for it.
+        """
+
+        outcome: dict[str, Any] = {}
+        finished = threading.Event()
+
+        def command_from_the_operator() -> None:
+            outcome["result"] = self.bridge.command(
+                "game_clock_start", {}, self.service.revision
+            )
+            finished.set()
+
+        def blocking_picker() -> folders.FolderChoice:
+            worker = threading.Thread(target=command_from_the_operator)
+            worker.start()
+            # Two seconds is far longer than a real command takes; the only way
+            # to run out of time is to be waiting on the lock this thread holds.
+            outcome["completed_while_open"] = finished.wait(timeout=2.0)
+            worker.join(timeout=2.0)
+            return self.choice
+
+        self.bridge = ScoreboardBridge(
+            self.service,
+            self.store,
+            display=DisplayLink(),
+            folder_chooser=blocking_picker,
+        )
+
+        payload = self.bridge.choose_data_folder()
+
+        self.assertTrue(outcome["completed_while_open"],
+                        "a command waited behind the open folder dialog")
+        self.assertTrue(outcome["result"]["accepted"], outcome["result"].get("error"))
+        self.assertTrue(payload["changed"])
+        self.assertTrue(self.service.state.game_clock.running)
 
     def test_choosing_a_folder_advances_no_revision(self) -> None:
         self.bridge.command("game_clock_start", {}, self.service.revision)

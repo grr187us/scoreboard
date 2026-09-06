@@ -16,6 +16,18 @@
       <p class="event-title" data-field="clocks.event.title"></p>
       <p class="event-clock" data-field="clocks.event.display"></p>
       <p class="warmup" id="warmup">Warmup follows: <span data-field="clocks.event.warmup_follows"></span></p>
+      <!-- The score stays on the wall through pregame and halftime. Before
+           this line existed the countdown replaced the game board outright,
+           so for the whole intermission the stadium's only scoreboard showed
+           no score at all. Plain data-field spans: bound by the same pass as
+           everything else here, never computed on this side. -->
+      <p class="event-score" id="event-score" aria-label="Score">
+        <span class="event-team" data-field="teams.home.name"></span>
+        <span class="event-points" data-field="teams.home.score"></span>
+        <span class="event-dash" aria-hidden="true">&ndash;</span>
+        <span class="event-points" data-field="teams.away.score"></span>
+        <span class="event-team" data-field="teams.away.name"></span>
+      </p>
     </section>
   </main>
   <script src="../shared/render.js"></script>

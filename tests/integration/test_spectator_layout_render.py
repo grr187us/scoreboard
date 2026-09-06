@@ -192,3 +192,31 @@ class WidgetFieldsResolveInARealViewModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EventBoardScoreTests(unittest.TestCase):
+    """Pregame and halftime keep the score on the wall.
+
+    The countdown board replaces the widget board during those phases. Until
+    September 5, 2026 it carried only the phase, title, clock, and warmup note,
+    so for a whole halftime the stadium's one scoreboard showed no score. The
+    fix is four bound spans; this pins them, and pins that they are still plain
+    data-field bindings rather than anything computed on the spectator side.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        html = (VIEWS_ROOT / "spectator" / "index.html").read_text(encoding="utf-8")
+        start = html.index('id="event-board"')
+        end = html.index("</section>", start)
+        cls.event_board = html[start:end]
+
+    def test_the_event_board_binds_both_names_and_both_scores(self) -> None:
+        for field in ("teams.home.name", "teams.home.score",
+                      "teams.away.name", "teams.away.score"):
+            self.assertIn(f'data-field="{field}"', self.event_board, field)
+
+    def test_the_score_is_bound_not_computed(self) -> None:
+        # A bound span carries no text of its own; the model supplies it.
+        self.assertNotRegex(self.event_board, r'data-field="teams\.[a-z]+\.score">\s*\d')
+        self.assertNotIn("<script", self.event_board)

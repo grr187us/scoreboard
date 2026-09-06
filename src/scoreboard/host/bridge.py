@@ -16,7 +16,9 @@ The operator bridge exposes deliberately few methods:
 * ``data_folder()``, ``choose_data_folder()``, and ``use_default_folder()`` --
   report and change where the game and its logs are saved;
 * ``presentation_layout()`` and ``open_layout_editor()`` -- report the active
-  spectator layout and open the layout editor window.
+  spectator layout and open the layout editor window;
+* ``open_logs_folder()`` -- show the diagnostics log folder in Explorer so a
+  bad game can be reported. It never reads or sends the file.
 
 Every group above is a host action, not a game command. Each advances no
 revision, writes nothing to the game database, and is asserted to leave a
@@ -40,8 +42,10 @@ checkpoint can never disagree about what is on the board.
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import asdict, dataclass, is_dataclass
+from pathlib import Path
 from typing import Any, Callable, Final
 
 from scoreboard.application.service import ScoreboardService
@@ -629,6 +633,12 @@ class FieldAssistantBridge:
         return self._operator.finalize_field_action(action, expected_revision)
 
 
+def _open_in_explorer(folder: Path) -> None:
+    """Show a folder in Windows Explorer. Returns at once; never reads it."""
+
+    os.startfile(str(folder))  # noqa: S606 - a folder, chosen by this application
+
+
 class ScoreboardBridge:
     """The operator's only path to authoritative state.
 
@@ -649,6 +659,7 @@ class ScoreboardBridge:
         folder_chooser: Callable[[], FolderChoice] | None = None,
         layouts: PresentationLayouts | None = None,
         field_assistant_opener: Callable[[], dict[str, str]] | None = None,
+        logs_opener: Callable[[Path], None] | None = None,
     ) -> None:
         self._service = service
         self._store = store
@@ -659,6 +670,9 @@ class ScoreboardBridge:
         # is absent, exactly like a display or a folder that is not there yet.
         self._layouts = layouts
         self._field_assistant_opener = field_assistant_opener
+        # Explorer by default; tests inject a recorder. `os.startfile` is
+        # Windows-only, which is the only platform this application targets.
+        self._logs_opener = logs_opener or _open_in_explorer
         # One lock serialises commands against the display-refresh tick, so a
         # checkpoint can never read a half-applied command.
         self._lock = threading.RLock() if lock is None else lock
@@ -819,12 +833,59 @@ class ScoreboardBridge:
         was, and the payload says so in words the operator can act on.
         """
 
+        # The picker is a modal Windows dialog: this call does not return until
+        # the operator chooses or cancels, which may be a while. It must run
+        # OUTSIDE the command lock -- that lock is the same one every score,
+        # clock, and quarter command and the refresh tick need, so holding it
+        # here froze the whole board for as long as the dialog stayed open,
+        # with the clocks visibly stuck while real time kept moving. Only the
+        # bookkeeping afterwards needs the lock, and only briefly.
+        choice = self._folder_chooser()
         with self._lock:
-            choice = self._folder_chooser()
             payload = choice.to_dict()
             self._diagnostics.data_folder_choice(
                 outcome=choice.outcome, root=choice.root or "unchanged"
             )
+            payload["view"] = self._view()
+            return payload
+
+    def open_logs_folder(self) -> dict[str, Any]:
+        """Show the diagnostics log folder, so a bad game can be reported.
+
+        A host action like the folder picker: it advances no revision and
+        touches nothing in the game. The application already keeps a bounded
+        rotating log of every accepted command, expiry, display event, and
+        failure, but until now nothing in the window pointed at it -- the only
+        way to find it after a bad night was to know the path. Opening the
+        folder in Explorer is deliberately all this does; it never reads or
+        sends the file itself.
+        """
+
+        log_file = self._diagnostics.log_file
+        if log_file is None:
+            payload: dict[str, Any] = {
+                "opened": False,
+                "path": None,
+                "message": "There is no diagnostics log in this session.",
+            }
+        else:
+            folder = Path(log_file).parent
+            try:
+                self._logs_opener(folder)
+                payload = {
+                    "opened": True,
+                    "path": str(folder),
+                    "message": f"Opened the logs folder: {folder}",
+                }
+                self._diagnostics.note("logs_folder_opened", path=str(folder))
+            except Exception as exc:  # noqa: BLE001 - reported to the operator, never raised
+                payload = {
+                    "opened": False,
+                    "path": str(folder),
+                    "message": f"Could not open the logs folder. It is at: {folder}",
+                }
+                self._diagnostics.unhandled_error(context="open_logs_folder", error=exc)
+        with self._lock:
             payload["view"] = self._view()
             return payload
 

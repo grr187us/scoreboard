@@ -27,3 +27,11 @@ p { margin: 0; }
 .event-clock { font-size: calc(var(--canvas-width) * .14); line-height: 1.5; font-weight: 700;
   font-variant-numeric: tabular-nums; }
 .warmup { font-size: calc(var(--canvas-width) * .035); }
+/* The score line under the countdown: readable from the stands, but smaller
+ * than the countdown itself, which is what pregame and halftime are about. */
+.event-score { display: flex; align-items: baseline; gap: calc(var(--canvas-width) * .02);
+  margin-top: calc(var(--canvas-width) * .01); font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.event-team { font-size: calc(var(--canvas-width) * .04); }
+.event-points { font-size: calc(var(--canvas-width) * .07); }
+.event-dash { font-size: calc(var(--canvas-width) * .05); opacity: .7; }

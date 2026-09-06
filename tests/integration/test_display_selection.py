@@ -755,3 +755,37 @@ class ConfigFileTests(TemporaryDataDirectoryTest):
 
         self.assertEqual(config.read_section(self.paths, "display"), {"x": 1366})
         self.assertFalse(self.paths.config.with_suffix(".json.tmp").exists())
+
+
+class StartupGuardTests(DisplayHostTestCase):
+    """A display problem at startup must not stop the clock.
+
+    ``_operator_loaded`` opens the spectator window and then starts the refresh
+    loop. Windows can refuse to enumerate screens at exactly that moment (a
+    dock or monitor still settling), and before the guard that exception
+    escaped before ``start_refresh()`` ran -- which has exactly one caller, so
+    the 10 Hz tick, every checkpoint, and every clock repaint between button
+    presses were dead for the life of the process, silently.
+    """
+
+    def test_a_failing_screen_read_at_startup_still_starts_the_refresh_loop(self) -> None:
+        def screens_unavailable() -> list[Any]:
+            raise RuntimeError("Screen.AllScreens is not ready")
+
+        host = self.make_host(read_screens=screens_unavailable)
+        self.addCleanup(self.application.stop_refresh)
+
+        host._operator_loaded()  # must not raise
+
+        self.assertIsNotNone(self.application._refresh, "the refresh loop never started")
+        self.assertTrue(self.application._refresh.is_alive())
+
+    def test_a_healthy_startup_still_opens_the_display_and_starts_the_loop(self) -> None:
+        host = self.make_host()
+        self.save_wall(host)
+        self.addCleanup(self.application.stop_refresh)
+
+        host._operator_loaded()
+
+        self.assertIsNotNone(self.application._refresh)
+        self.assertIsNotNone(host.spectator_window, "the guard must not swallow a good open")

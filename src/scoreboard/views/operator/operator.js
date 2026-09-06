@@ -497,6 +497,16 @@
       });
       return;
     }
+    if (action === 'open_logs_folder') {
+      // A host action: shows the diagnostics folder in Explorer so an operator
+      // can send the log after a bad game. Reads nothing, changes nothing.
+      Promise.resolve(api.open_logs_folder()).then(function (result) {
+        showAlert((result && result.message) || 'Opened the logs folder.');
+      }).catch(function (error) {
+        showAlert('The logs folder could not be opened: ' + error);
+      });
+      return;
+    }
     if (action === 'open_layout_editor') {
       // A host action, like the test window: it opens a presentation-only
       // window and cannot reach the game. Both outcomes are reported plainly

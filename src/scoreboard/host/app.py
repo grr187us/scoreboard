@@ -505,7 +505,27 @@ class WindowHost:
             window.destroy()
 
     def _operator_loaded(self) -> None:
-        self.open_spectator(self.initial_display_index)
+        # Opening the spectator window is the one startup step that asks
+        # Windows a question -- "what displays are there?" -- and WinForms'
+        # Screen.AllScreens is known to throw intermittently while a monitor
+        # or dock is settling. Before this guard, that exception escaped here
+        # and the line below never ran: start_refresh() has exactly one
+        # caller, so the 10 Hz tick loop (and with it every checkpoint and
+        # every clock repaint between button presses) was dead for the life of
+        # the process, with nothing in the log to say so. The display is
+        # something the operator can fix from the health strip; a refresh loop
+        # that never started is not.
+        try:
+            self.open_spectator(self.initial_display_index)
+        except Exception as exc:  # noqa: BLE001 - a display problem must not stop the clock
+            self.application.diagnostics.unhandled_error(
+                context="open_spectator_at_startup", error=exc
+            )
+            self.application.spectator_closed(
+                "DISPLAY NOT OPENED: the displays could not be read at startup. "
+                "Use Reopen Display or pick a display.",
+                needs_selection=True,
+            )
         self.application.start_refresh()
 
     def _operator_closing(self) -> None:
