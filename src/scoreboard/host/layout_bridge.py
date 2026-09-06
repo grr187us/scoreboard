@@ -134,6 +134,10 @@ class PresentationLayouts:
             # Built-in starting points the editor offers as a gallery. Each is
             # a complete, validated layout document (spec section 1.7).
             "presets": layout_module.preset_descriptors(),
+            # Per-screen descriptors and presets for the pre-game/halftime
+            # event screens (presentation-screens spec section 4).
+            "screens": layout_module.screen_descriptors(),
+            "screen_presets": layout_module.screen_preset_descriptors(),
             "issues": [issue.to_dict() for issue in library.issues],
             "fell_back": library.fell_back,
             "saved": self._saved,
@@ -153,18 +157,20 @@ class PresentationLayouts:
         result["warnings"] = [issue.to_dict() for issue in clamp_issues] + result["warnings"]
         return result
 
-    def reset_widget(self, widget_id: Any, payload: Any) -> dict[str, Any]:
-        """Reset one widget of a draft to its default. Returns a draft, writes nothing.
+    def reset_widget(self, widget_id: Any, payload: Any, screen: Any = "game") -> dict[str, Any]:
+        """Reset one widget of one screen of a draft to its default.
 
-        The rest of the draft is repaired with :func:`~scoreboard.presentation
-        .layout.clamp_layout` first (coordinates only, never colours or
-        overlaps) rather than strictly validated, so resetting one broken
-        widget can never discard every other change already made in the same
-        editing session.
+        Returns a draft, writes nothing. The rest of the draft is repaired
+        with :func:`~scoreboard.presentation.layout.clamp_layout` first
+        (coordinates only, never colours or overlaps) rather than strictly
+        validated, so resetting one broken widget can never discard every
+        other change already made in the same editing session. ``screen``
+        defaults to ``"game"`` so every pre-existing caller keeps resetting a
+        game widget exactly as before.
         """
 
         normalized, _clamp_issues = layout_module.clamp_layout(payload)
-        updated = layout_module.reset_widget(normalized, widget_id)
+        updated = layout_module.reset_widget(normalized, widget_id, screen)
         return layout_module.validate_layout(updated).to_dict()
 
     def save(self, name: Any, payload: Any) -> dict[str, Any]:
@@ -314,8 +320,8 @@ class LayoutEditorBridge:
     def clamp_layout(self, payload: Any) -> dict[str, Any]:
         return self._layouts.clamp(payload)
 
-    def reset_widget(self, widget_id: Any, payload: Any) -> dict[str, Any]:
-        return self._layouts.reset_widget(widget_id, payload)
+    def reset_widget(self, widget_id: Any, payload: Any, screen: Any = "game") -> dict[str, Any]:
+        return self._layouts.reset_widget(widget_id, payload, screen)
 
     def save_layout(self, name: Any, payload: Any) -> dict[str, Any]:
         return self._layouts.save(name, payload)

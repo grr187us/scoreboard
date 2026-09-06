@@ -48,14 +48,15 @@ from __future__ import annotations
 
 import base64
 import re
-from dataclasses import dataclass
-from typing import Any, Final, Mapping
+from dataclasses import dataclass, replace
+from typing import Any, Collection, Final, Mapping
 
-# --- Schema constants (spec section 4, extended by v2 spec section 1) -------
+# --- Schema constants (spec section 4, extended by v2 spec section 1,
+# extended again by v3 spec section 1 [pre-game/halftime screens]) ---------
 
-LAYOUT_SCHEMA_VERSION: Final[int] = 2
+LAYOUT_SCHEMA_VERSION: Final[int] = 3
 #: schema_version values a document may declare; anything else is refused.
-_ACCEPTED_SCHEMA_VERSIONS: Final[tuple[int, ...]] = (1, 2)
+_ACCEPTED_SCHEMA_VERSIONS: Final[tuple[int, ...]] = (1, 2, 3)
 DEFAULT_LAYOUT_NAME: Final[str] = "Default"
 
 WIDGET_IDS: Final[tuple[str, ...]] = (
@@ -65,6 +66,19 @@ WIDGET_IDS: Final[tuple[str, ...]] = (
     "play_clock_label", "play_clock_value", "ball_on",
     "home_timeouts", "away_timeouts",
 )
+
+# --- Screens (spec v3 section 1.1) ------------------------------------------
+#: A "screen" is one of the three boards a layout document can describe. A
+#: "kind" (below) names which *widget registry* a screen draws from.
+SCREEN_IDS: Final[tuple[str, ...]] = ("game", "pregame", "halftime")
+EVENT_SCREEN_IDS: Final[tuple[str, ...]] = ("pregame", "halftime")
+SCREEN_LABELS: Final[dict[str, str]] = {
+    "game": "Game", "pregame": "Pre-game", "halftime": "Halftime",
+}
+SCREEN_KINDS: Final[dict[str, str]] = {
+    "game": "game", "pregame": "event", "halftime": "event",
+}
+WIDGET_KINDS: Final[tuple[str, ...]] = ("game", "event")
 
 TEXT_ALIGNMENTS: Final[tuple[str, ...]] = ("left", "center", "right")
 VERTICAL_ALIGNMENTS: Final[tuple[str, ...]] = ("top", "middle", "bottom")
@@ -87,6 +101,9 @@ DEFAULT_SAFE_INSET: Final[float] = 0.04
 SERIOUS_OVERLAP_RATIO: Final[float] = 0.25
 #: Coordinates are rounded to this many decimals whenever they are normalized.
 COORDINATE_PRECISION: Final[int] = 4
+#: A value this close to a bound counts as touching it, not crossing it
+#: (float arithmetic on ``1 - left - right`` lands a hair off the exact edge).
+_BOUNDARY_TOLERANCE: Final[float] = 1e-6
 
 #: v2 widget/text style ranges (spec section 1.3 / 1.6).
 MIN_LETTER_SPACING: Final[float] = -0.05
@@ -215,6 +232,74 @@ WIDGET_GROUPS: Final[dict[str, str]] = {
     "home_timeouts": "Field", "away_timeouts": "Field",
 }
 WIDGET_GROUP_ORDER: Final[tuple[str, ...]] = ("Teams", "Clocks", "Field")
+
+# --- Event widget metadata (spec v3 section 1.1): the pre-game/halftime -----
+# registry. Same shape as the game metadata above, one "event" widget set
+# shared by both event screens (only geometry/visibility differ per screen).
+
+EVENT_WIDGET_IDS: Final[tuple[str, ...]] = (
+    "home_name", "home_score", "away_name", "away_score",
+    "event_phase", "event_title", "event_clock", "warmup",
+)
+EVENT_WIDGET_LABELS: Final[dict[str, str]] = {
+    "home_name": "Home team name", "home_score": "Home score",
+    "away_name": "Away team name", "away_score": "Away score",
+    "event_phase": "Phase label", "event_title": "Countdown title",
+    "event_clock": "Countdown", "warmup": "Warmup line",
+}
+EVENT_WIDGET_FIELDS: Final[dict[str, str | None]] = {
+    "home_name": "teams.home.name", "home_score": "teams.home.score",
+    "away_name": "teams.away.name", "away_score": "teams.away.score",
+    "event_phase": "clocks.event.phase", "event_title": "clocks.event.title",
+    "event_clock": "clocks.event.display", "warmup": "clocks.event.warmup_display",
+}
+#: No static labels on event screens -- every event widget draws a real value.
+EVENT_WIDGET_TEXTS: Final[dict[str, str]] = {}
+#: Hidden when the value is empty/None (spec v3 section 1.1).
+EVENT_OPTIONAL_WIDGET_IDS: Final[frozenset[str]] = frozenset({"warmup"})
+EVENT_WIDGET_GROUPS: Final[dict[str, str]] = {
+    "home_name": "Teams", "home_score": "Teams", "away_name": "Teams",
+    "away_score": "Teams", "event_phase": "Countdown", "event_title": "Countdown",
+    "event_clock": "Countdown", "warmup": "Countdown",
+}
+EVENT_WIDGET_GROUP_ORDER: Final[tuple[str, ...]] = ("Teams", "Countdown")
+
+
+@dataclass(frozen=True, slots=True)
+class WidgetRegistry:
+    """One widget set -- "game" or "event" -- and everything a validator or
+    the editor needs to know about it (spec v3 section 1.1). The existing
+    module-level ``WIDGET_*`` names stay the public surface for the game
+    registry; this dataclass just lets validation and descriptor code be
+    written once and parameterized by kind instead of duplicated per kind.
+    """
+
+    ids: tuple[str, ...]
+    labels: dict[str, str]
+    fields: dict[str, str | None]
+    texts: dict[str, str]
+    optional: frozenset[str]
+    groups: dict[str, str]
+    group_order: tuple[str, ...]
+
+
+WIDGET_REGISTRIES: Final[dict[str, WidgetRegistry]] = {
+    "game": WidgetRegistry(
+        WIDGET_IDS, WIDGET_LABELS, WIDGET_FIELDS, WIDGET_TEXTS,
+        OPTIONAL_WIDGET_IDS, WIDGET_GROUPS, WIDGET_GROUP_ORDER,
+    ),
+    "event": WidgetRegistry(
+        EVENT_WIDGET_IDS, EVENT_WIDGET_LABELS, EVENT_WIDGET_FIELDS, EVENT_WIDGET_TEXTS,
+        EVENT_OPTIONAL_WIDGET_IDS, EVENT_WIDGET_GROUPS, EVENT_WIDGET_GROUP_ORDER,
+    ),
+}
+
+
+def registry_for(kind: str) -> WidgetRegistry:
+    """The :class:`WidgetRegistry` for ``kind`` (``"game"`` or ``"event"``)."""
+
+    return WIDGET_REGISTRIES[kind]
+
 
 # --- Element metadata (spec section 1.4) ------------------------------------
 
@@ -388,6 +473,63 @@ for _widget in _DEFAULT_WIDGETS.values():
     _widget.update(_STYLE_DEFAULTS)
 del _widget
 
+# --- Default event-screen widgets (spec v3 section 1.2) ---------------------
+#: Shared geometry for both event screens -- only ``visible`` differs between
+#: the pre-game and halftime screen (spec table, section 1.2). Reproduces
+#: today's centred event board: title, big countdown, score line; the phase
+#: label and warmup line only ever show at halftime.
+_EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, Any]]] = {
+    "event_phase": {"x": 0.30, "y": 0.05, "width": 0.40, "height": 0.09,
+                     "font_scale": 0.045, "font_weight": 700, "text_align": "center",
+                     "pregame_visible": False, "halftime_visible": True},
+    "event_title": {"x": 0.10, "y": 0.15, "width": 0.80, "height": 0.10,
+                     "font_scale": 0.050, "font_weight": 400, "text_align": "center",
+                     "pregame_visible": True, "halftime_visible": True},
+    "event_clock": {"x": 0.10, "y": 0.26, "width": 0.80, "height": 0.32,
+                     "font_scale": 0.140, "font_weight": 700, "text_align": "center",
+                     "pregame_visible": True, "halftime_visible": True},
+    "warmup": {"x": 0.25, "y": 0.59, "width": 0.50, "height": 0.07,
+               "font_scale": 0.035, "font_weight": 400, "text_align": "center",
+               "pregame_visible": False, "halftime_visible": True},
+    "home_name": {"x": 0.04, "y": 0.72, "width": 0.30, "height": 0.12,
+                  "font_scale": 0.040, "font_weight": 700, "text_align": "right",
+                  "pregame_visible": True, "halftime_visible": True},
+    "home_score": {"x": 0.35, "y": 0.70, "width": 0.12, "height": 0.16,
+                   "font_scale": 0.070, "font_weight": 700, "text_align": "center",
+                   "pregame_visible": True, "halftime_visible": True},
+    "away_score": {"x": 0.53, "y": 0.70, "width": 0.12, "height": 0.16,
+                   "font_scale": 0.070, "font_weight": 700, "text_align": "center",
+                   "pregame_visible": True, "halftime_visible": True},
+    "away_name": {"x": 0.66, "y": 0.72, "width": 0.30, "height": 0.12,
+                  "font_scale": 0.040, "font_weight": 700, "text_align": "left",
+                  "pregame_visible": True, "halftime_visible": True},
+}
+
+
+def _build_default_event_widget(widget_id: str, screen_id: str) -> dict[str, Any]:
+    geometry = _EVENT_WIDGET_GEOMETRY[widget_id]
+    visible = geometry["pregame_visible"] if screen_id == "pregame" else geometry["halftime_visible"]
+    widget: dict[str, Any] = {
+        "id": widget_id, "visible": visible,
+        "x": geometry["x"], "y": geometry["y"],
+        "width": geometry["width"], "height": geometry["height"],
+        "font_scale": geometry["font_scale"], "color": "#FFFFFF",
+        "text_align": geometry["text_align"], "vertical_align": "middle",
+        "font_weight": geometry["font_weight"], "z_index": 0,
+    }
+    widget.update(_STYLE_DEFAULTS)
+    return widget
+
+
+#: Every event widget's default, per event screen (spec v3 section 1.2).
+_DEFAULT_EVENT_WIDGETS: Final[dict[str, dict[str, dict[str, Any]]]] = {
+    screen_id: {
+        widget_id: _build_default_event_widget(widget_id, screen_id)
+        for widget_id in EVENT_WIDGET_IDS
+    }
+    for screen_id in EVENT_SCREEN_IDS
+}
+
 _DEFAULT_SAFE_AREA: Final[dict[str, float]] = {
     "top": DEFAULT_SAFE_INSET, "right": DEFAULT_SAFE_INSET,
     "bottom": DEFAULT_SAFE_INSET, "left": DEFAULT_SAFE_INSET,
@@ -409,12 +551,18 @@ class LayoutIssue:
     ``widget_id`` carries that id when there is one (a widget id, or an
     element's own id) so a UI can select the affected item; it is ``None``
     for document-wide issues.
+
+    ``screen`` (spec v3 section 1.3) names which screen (``"game"``,
+    ``"pregame"``, or ``"halftime"``) the issue was raised inside; it is
+    ``None`` for a document-wide issue (``SCHEMA_VERSION``, ``LAYOUT_NAME``,
+    ``SCREENS``, ``UNKNOWN_SCREEN``...) that is not about any one screen.
     """
 
     code: str
     message: str
     widget_id: str | None = None
     severity: str = "error"
+    screen: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -422,6 +570,7 @@ class LayoutIssue:
             "message": self.message,
             "widget_id": self.widget_id,
             "severity": self.severity,
+            "screen": self.screen,
         }
 
 
@@ -487,10 +636,14 @@ def _clamp_number(
     ok, number = _is_finite_number(value)
     if not ok:
         return _round_coordinate(fallback), True
+    # A bound computed as ``1 - left - right`` can land a hair below the value
+    # of a widget that exactly touches it (0.9199999999999999 against 0.92).
+    # Snapping to the bound is right; *reporting* that as an adjustment is
+    # not -- validate_layout uses the same tolerance and calls it inside.
     if number < minimum:
-        return _round_coordinate(minimum), True
+        return _round_coordinate(minimum), minimum - number > _BOUNDARY_TOLERANCE
     if number > maximum:
-        return _round_coordinate(maximum), True
+        return _round_coordinate(maximum), number - maximum > _BOUNDARY_TOLERANCE
     return _round_coordinate(number), False
 
 
@@ -832,10 +985,11 @@ def _validate_text_extra_style(
 
 
 def _validate_widget(
-    widget_id: str, raw: Any, safe_area: Mapping[str, float]
+    widget_id: str, raw: Any, safe_area: Mapping[str, float],
+    registry: WidgetRegistry, defaults: Mapping[str, dict[str, Any]],
 ) -> tuple[dict[str, Any] | None, list[LayoutIssue], list[LayoutIssue]]:
-    label = WIDGET_LABELS[widget_id]
-    default = _DEFAULT_WIDGETS[widget_id]
+    label = registry.labels[widget_id]
+    default = defaults[widget_id]
     errors: list[LayoutIssue] = []
     warnings: list[LayoutIssue] = []
 
@@ -1024,7 +1178,7 @@ def _validate_widget(
 
 
 def _check_overlaps(
-    widgets: Mapping[str, dict[str, Any]],
+    widgets: Mapping[str, dict[str, Any]], registry: WidgetRegistry,
 ) -> tuple[list[LayoutIssue], list[LayoutIssue]]:
     """Overlap is checked among **visible** widgets only (spec section 4.4):
     a hidden widget cannot visually collide with anything. Elements never
@@ -1034,7 +1188,7 @@ def _check_overlaps(
 
     errors: list[LayoutIssue] = []
     warnings: list[LayoutIssue] = []
-    ids = list(WIDGET_IDS)
+    ids = list(registry.ids)
     for i, first_id in enumerate(ids):
         first = widgets[first_id]
         if not first.get("visible"):
@@ -1046,7 +1200,7 @@ def _check_overlaps(
             ratio = _rect_overlap_ratio(first, second)
             if ratio <= 0.0:
                 continue
-            message = f"{WIDGET_LABELS[first_id]} and {WIDGET_LABELS[second_id]} overlap."
+            message = f"{registry.labels[first_id]} and {registry.labels[second_id]} overlap."
             if ratio >= SERIOUS_OVERLAP_RATIO:
                 errors.append(LayoutIssue("OVERLAP", message, first_id))
             else:
@@ -1176,7 +1330,7 @@ def _validate_image_src(value: Any, label: str) -> tuple[str, int | None, list[L
 
 
 def _validate_element(
-    index: int, raw: Any, safe_area: Mapping[str, float]
+    index: int, raw: Any, safe_area: Mapping[str, float], widget_ids: Collection[str]
 ) -> tuple[dict[str, Any], list[LayoutIssue], list[LayoutIssue], str | None, int | None]:
     """Validate one raw element entry.
 
@@ -1218,7 +1372,7 @@ def _validate_element(
                 element_id_for_issues,
             )
         )
-    elif id_value in WIDGET_IDS:
+    elif id_value in widget_ids:
         errors.append(
             LayoutIssue(
                 "ELEMENT_ID",
@@ -1493,120 +1647,83 @@ def _clamp_element(raw: Any, safe_area: Mapping[str, float]) -> dict[str, Any] |
     return clamped
 
 
-# --- Public API (spec section 4.6, extended by v2 section 1) ---------------
+# --- Screen validation (spec v3 section 1.3) --------------------------------
 
 
-def default_widget(widget_id: str) -> dict[str, Any]:
-    """A fresh copy of ``widget_id``'s built-in default widget."""
+def _validate_screen(
+    raw: Any, screen_id: str
+) -> tuple[dict[str, Any] | None, list[LayoutIssue], list[LayoutIssue]]:
+    """Validate one screen's mini-document: safe area, background, widgets
+    (against the registry for this screen's kind), overlaps, and elements.
 
-    return dict(_DEFAULT_WIDGETS[widget_id])
-
-
-def default_layout(name: str = DEFAULT_LAYOUT_NAME) -> dict[str, Any]:
-    """The built-in default layout, which reproduces today's spectator board
-    pixel-for-pixel: same geometry, Arial, no backgrounds, no effects, no
-    elements (spec section 1.1).
+    The game screen is validated by calling this with the whole top-level
+    document and ``screen_id="game"`` -- its codes and messages are
+    byte-identical to schema v1/v2 (no prefix), which is how existing tests
+    keep passing untouched. An event screen's issues get their label as a
+    message prefix (``"Pre-game: "`` / ``"Halftime: "``) and every issue
+    raised in here -- game included -- carries ``screen_id``.
     """
 
-    return {
-        "schema_version": LAYOUT_SCHEMA_VERSION,
-        "name": name,
-        "safe_area": dict(_DEFAULT_SAFE_AREA),
-        "background": dict(_DEFAULT_BACKGROUND),
-        "widgets": {widget_id: default_widget(widget_id) for widget_id in WIDGET_IDS},
-        "elements": [],
-    }
+    kind = SCREEN_KINDS[screen_id]
+    registry = WIDGET_REGISTRIES[kind]
+    defaults = default_screen(screen_id)["widgets"]
+    prefix = "" if screen_id == "game" else f"{SCREEN_LABELS[screen_id]}: "
 
+    def tag(issue: LayoutIssue) -> LayoutIssue:
+        message = f"{prefix}{issue.message}" if prefix else issue.message
+        return replace(issue, message=message, screen=screen_id)
 
-def validate_layout(payload: Any) -> LayoutValidation:
-    """Strictly validate ``payload`` as a layout document.
-
-    See the module docstring for what counts as an error versus a warning.
-    This function never raises: every check is a type/membership test before
-    any value is used, so arbitrary JSON-decoded input is safe to pass in
-    directly. A document whose ``schema_version`` is 1 is accepted and
-    upgraded to 2 with a warning; any other version is refused.
-    """
-
-    if not isinstance(payload, dict):
-        return LayoutValidation(
-            None, (LayoutIssue("NOT_AN_OBJECT", "A layout must be an object."),)
-        )
+    if not isinstance(raw, dict):
+        return None, [tag(LayoutIssue("SCREEN", "The screen must be an object."))], []
 
     errors: list[LayoutIssue] = []
     warnings: list[LayoutIssue] = []
 
-    version = payload.get("schema_version")
-    if isinstance(version, bool) or not isinstance(version, int) or version not in _ACCEPTED_SCHEMA_VERSIONS:
-        errors.append(
-            LayoutIssue(
-                "SCHEMA_VERSION",
-                f"schema_version must be 1 or {LAYOUT_SCHEMA_VERSION}; got {version!r}.",
-            )
-        )
-    elif version == 1:
-        warnings.append(
-            LayoutIssue(
-                "SCHEMA_UPGRADED",
-                "This layout was saved by an earlier version and was upgraded; "
-                "save it to keep the upgrade.",
-                severity="warning",
-            )
-        )
-
-    name_value = payload.get("name", DEFAULT_LAYOUT_NAME)
-    name_issue = validate_layout_name(name_value)
-    if name_issue is not None:
-        errors.append(name_issue)
-        normalized_name = DEFAULT_LAYOUT_NAME
-    else:
-        normalized_name = name_value.strip()
-
-    safe_area, safe_area_issues = _validate_safe_area(payload.get("safe_area"))
+    safe_area, safe_area_issues = _validate_safe_area(raw.get("safe_area"))
     # A supplied default is a warning; a value that cannot be read is an error.
     errors.extend(i for i in safe_area_issues if i.severity != "warning")
     warnings.extend(i for i in safe_area_issues if i.severity == "warning")
 
-    background, background_issues = _validate_background(payload.get("background"))
+    background, background_issues = _validate_background(raw.get("background"))
     errors.extend(i for i in background_issues if i.severity != "warning")
     warnings.extend(i for i in background_issues if i.severity == "warning")
 
-    raw_widgets = payload.get("widgets", {})
+    raw_widgets = raw.get("widgets", {})
     if not isinstance(raw_widgets, dict):
         errors.append(LayoutIssue("WIDGETS", "widgets must be an object."))
         raw_widgets = {}
 
     for key in raw_widgets:
-        if key not in WIDGET_IDS:
+        if key not in registry.ids:
             warnings.append(
                 LayoutIssue("UNKNOWN_WIDGET", f"Unknown widget {key!r} was ignored.", severity="warning")
             )
 
     normalized_widgets: dict[str, dict[str, Any]] = {}
-    for widget_id in WIDGET_IDS:
+    for widget_id in registry.ids:
         if widget_id not in raw_widgets:
             warnings.append(
                 LayoutIssue(
                     "MISSING_WIDGET",
-                    f"{WIDGET_LABELS[widget_id]} was missing and was filled with its default.",
+                    f"{registry.labels[widget_id]} was missing and was filled with its default.",
                     widget_id,
                     severity="warning",
                 )
             )
-            normalized_widgets[widget_id] = default_widget(widget_id)
+            normalized_widgets[widget_id] = dict(defaults[widget_id])
             continue
         normalized, widget_errors, widget_warnings = _validate_widget(
-            widget_id, raw_widgets[widget_id], safe_area
+            widget_id, raw_widgets[widget_id], safe_area, registry, defaults
         )
         errors.extend(widget_errors)
         warnings.extend(widget_warnings)
-        normalized_widgets[widget_id] = normalized if normalized is not None else default_widget(widget_id)
+        normalized_widgets[widget_id] = normalized if normalized is not None else dict(defaults[widget_id])
 
-    overlap_errors, overlap_warnings = _check_overlaps(normalized_widgets)
+    overlap_errors, overlap_warnings = _check_overlaps(normalized_widgets, registry)
     errors.extend(overlap_errors)
     warnings.extend(overlap_warnings)
 
-    raw_elements = payload.get("elements", [])
+    raw_elements = raw.get("elements", [])
     if not isinstance(raw_elements, list):
         errors.append(LayoutIssue("ELEMENTS", "elements must be a list."))
         raw_elements = []
@@ -1625,9 +1742,9 @@ def validate_layout(payload: Any) -> LayoutValidation:
     total_image_bytes = 0
     for index, raw_element in enumerate(raw_elements):
         normalized_element, element_errors, element_warnings, element_id, image_bytes = _validate_element(
-            index, raw_element, safe_area
+            index, raw_element, safe_area, registry.ids
         )
-        if element_id is not None and element_id not in WIDGET_IDS:
+        if element_id is not None and element_id not in registry.ids:
             if element_id in seen_element_ids:
                 element_errors.append(
                     LayoutIssue(
@@ -1653,16 +1770,200 @@ def validate_layout(payload: Any) -> LayoutValidation:
             )
         )
 
+    tagged_errors = [tag(issue) for issue in errors]
+    tagged_warnings = [tag(issue) for issue in warnings]
+
+    if errors:
+        return None, tagged_errors, tagged_warnings
+
+    screen_doc = {
+        "safe_area": safe_area,
+        "background": background,
+        "widgets": {widget_id: normalized_widgets[widget_id] for widget_id in registry.ids},
+        "elements": normalized_elements,
+    }
+    return screen_doc, tagged_errors, tagged_warnings
+
+
+# --- Public API (spec section 4.6, extended by v2 section 1, v3 section 1) -
+
+
+def default_widget(widget_id: str) -> dict[str, Any]:
+    """A fresh copy of ``widget_id``'s built-in default (game) widget."""
+
+    return dict(_DEFAULT_WIDGETS[widget_id])
+
+
+def default_screen_widget(screen_id: str, widget_id: str) -> dict[str, Any]:
+    """A fresh copy of ``widget_id``'s built-in default on ``screen_id``
+    (spec v3 section 1.2). For ``"game"`` this is exactly
+    :func:`default_widget`; for an event screen it comes from that screen's
+    own default (pre-game and halftime share geometry but not visibility).
+    """
+
+    if screen_id == "game":
+        return default_widget(widget_id)
+    return dict(_DEFAULT_EVENT_WIDGETS[screen_id][widget_id])
+
+
+def default_screen(screen_id: str) -> dict[str, Any]:
+    """The built-in default mini-document for one screen (spec v3 section
+    1.2): the standard safe area, black background, no free elements, and
+    every widget of that screen's registry at its default geometry/style.
+    """
+
+    kind = SCREEN_KINDS[screen_id]
+    registry = WIDGET_REGISTRIES[kind]
+    return {
+        "safe_area": dict(_DEFAULT_SAFE_AREA),
+        "background": dict(_DEFAULT_BACKGROUND),
+        "widgets": {widget_id: default_screen_widget(screen_id, widget_id) for widget_id in registry.ids},
+        "elements": [],
+    }
+
+
+def default_layout(name: str = DEFAULT_LAYOUT_NAME) -> dict[str, Any]:
+    """The built-in default layout, which reproduces today's spectator board
+    pixel-for-pixel: same geometry, Arial, no backgrounds, no effects, no
+    elements (spec section 1.1); now also carries the default pre-game and
+    halftime screens (spec v3 section 1.2).
+    """
+
+    return {
+        "schema_version": LAYOUT_SCHEMA_VERSION,
+        "name": name,
+        "safe_area": dict(_DEFAULT_SAFE_AREA),
+        "background": dict(_DEFAULT_BACKGROUND),
+        "widgets": {widget_id: default_widget(widget_id) for widget_id in WIDGET_IDS},
+        "elements": [],
+        "screens": {
+            "pregame": default_screen("pregame"),
+            "halftime": default_screen("halftime"),
+        },
+    }
+
+
+def validate_layout(payload: Any) -> LayoutValidation:
+    """Strictly validate ``payload`` as a layout document.
+
+    See the module docstring for what counts as an error versus a warning.
+    This function never raises: every check is a type/membership test before
+    any value is used, so arbitrary JSON-decoded input is safe to pass in
+    directly. A document whose ``schema_version`` is 1 or 2 is accepted and
+    upgraded to 3 with a warning; any other version is refused.
+
+    The top level of the document is the **game** screen (spec v3 section
+    1.3): its codes and messages are unprefixed and identical to schema
+    v1/v2, so every existing caller keeps working untouched. Two more
+    screens -- ``screens.pregame`` and ``screens.halftime`` -- are validated
+    the same way against the *event* widget registry, with their issues'
+    messages prefixed by their label.
+    """
+
+    if not isinstance(payload, dict):
+        return LayoutValidation(
+            None, (LayoutIssue("NOT_AN_OBJECT", "A layout must be an object."),)
+        )
+
+    errors: list[LayoutIssue] = []
+    warnings: list[LayoutIssue] = []
+
+    version = payload.get("schema_version")
+    is_upgrade = False
+    if isinstance(version, bool) or not isinstance(version, int) or version not in _ACCEPTED_SCHEMA_VERSIONS:
+        errors.append(
+            LayoutIssue(
+                "SCHEMA_VERSION",
+                f"schema_version must be 1, 2, or 3; got {version!r}.",
+            )
+        )
+    elif version in (1, 2):
+        is_upgrade = True
+        warnings.append(
+            LayoutIssue(
+                "SCHEMA_UPGRADED",
+                "This layout was saved by an earlier version and was upgraded; "
+                "save it to keep the upgrade.",
+                severity="warning",
+            )
+        )
+
+    name_value = payload.get("name", DEFAULT_LAYOUT_NAME)
+    name_issue = validate_layout_name(name_value)
+    if name_issue is not None:
+        errors.append(name_issue)
+        normalized_name = DEFAULT_LAYOUT_NAME
+    else:
+        normalized_name = name_value.strip()
+
+    game_screen, game_errors, game_warnings = _validate_screen(payload, "game")
+    errors.extend(game_errors)
+    warnings.extend(game_warnings)
+
+    raw_screens = payload.get("screens")
+    screen_docs: dict[str, dict[str, Any]] = {}
+    if raw_screens is None:
+        # Missing entirely: fill both from defaults with one warning -- but
+        # not when the document is a v1/v2 upgrade, since SCHEMA_UPGRADED
+        # already told the operator everything new was filled in (spec v3
+        # section 1.3).
+        if not is_upgrade:
+            warnings.append(
+                LayoutIssue(
+                    "MISSING_SCREENS",
+                    "The pre-game and halftime screens were missing and were "
+                    "filled with their defaults.",
+                    severity="warning",
+                )
+            )
+        for screen_id in EVENT_SCREEN_IDS:
+            screen_docs[screen_id] = default_screen(screen_id)
+    elif not isinstance(raw_screens, dict):
+        errors.append(LayoutIssue("SCREENS", "screens must be an object."))
+        for screen_id in EVENT_SCREEN_IDS:
+            screen_docs[screen_id] = default_screen(screen_id)
+    else:
+        for key in raw_screens:
+            if key not in EVENT_SCREEN_IDS:
+                warnings.append(
+                    LayoutIssue("UNKNOWN_SCREEN", f"Unknown screen {key!r} was ignored.", severity="warning")
+                )
+        for screen_id in EVENT_SCREEN_IDS:
+            if screen_id not in raw_screens:
+                warnings.append(
+                    LayoutIssue(
+                        "MISSING_SCREEN",
+                        f"The {SCREEN_LABELS[screen_id]} screen was missing and was "
+                        f"filled with its default.",
+                        severity="warning",
+                    )
+                )
+                screen_docs[screen_id] = default_screen(screen_id)
+                continue
+            normalized_screen, screen_errors, screen_warnings = _validate_screen(
+                raw_screens[screen_id], screen_id
+            )
+            errors.extend(screen_errors)
+            warnings.extend(screen_warnings)
+            screen_docs[screen_id] = (
+                normalized_screen if normalized_screen is not None else default_screen(screen_id)
+            )
+
     if errors:
         return LayoutValidation(None, tuple(errors), tuple(warnings))
 
+    assert game_screen is not None
     layout = {
         "schema_version": LAYOUT_SCHEMA_VERSION,
         "name": normalized_name,
-        "safe_area": safe_area,
-        "background": background,
-        "widgets": {widget_id: normalized_widgets[widget_id] for widget_id in WIDGET_IDS},
-        "elements": normalized_elements,
+        "safe_area": game_screen["safe_area"],
+        "background": game_screen["background"],
+        "widgets": game_screen["widgets"],
+        "elements": game_screen["elements"],
+        "screens": {
+            "pregame": screen_docs["pregame"],
+            "halftime": screen_docs["halftime"],
+        },
     }
     return LayoutValidation(layout, tuple(errors), tuple(warnings))
 
@@ -1740,79 +2041,91 @@ def clamp_layout(payload: Any) -> tuple[dict[str, Any], tuple[LayoutIssue, ...]]
         return default_layout(), ()
 
 
-def _clamp_layout(payload: Any) -> tuple[dict[str, Any], tuple[LayoutIssue, ...]]:
-    if not isinstance(payload, dict):
-        return default_layout(), ()
+_CLAMP_PASSTHROUGH_PROPERTIES: Final[tuple[str, ...]] = (
+    "visible", "color", "text_align", "vertical_align", "font_weight", "z_index",
+    "font_family", "letter_spacing", "text_transform", "text_effect",
+    "background", "background_opacity", "border_color", "border_width",
+    "corner_radius", "padding",
+)
+
+
+def _clamp_screen(
+    raw: Any, registry: WidgetRegistry, defaults: Mapping[str, dict[str, Any]], screen_id: str,
+) -> tuple[dict[str, Any], list[LayoutIssue]]:
+    """Best-effort geometry repair for one screen (spec v3 section 1.3): the
+    same repair :func:`_clamp_layout` always did for the top level, just
+    parameterized by registry/defaults so it can run again for each event
+    screen.
+    """
 
     issues: list[LayoutIssue] = []
-    safe_area = _coerce_safe_area(payload.get("safe_area"))
-    raw_widgets = payload.get("widgets")
+    safe_area = _coerce_safe_area(raw.get("safe_area") if isinstance(raw, dict) else None)
+    raw_widgets = raw.get("widgets") if isinstance(raw, dict) else None
     if not isinstance(raw_widgets, dict):
         raw_widgets = {}
 
-    passthrough_properties = (
-        "visible", "color", "text_align", "vertical_align", "font_weight", "z_index",
-        "font_family", "letter_spacing", "text_transform", "text_effect",
-        "background", "background_opacity", "border_color", "border_width",
-        "corner_radius", "padding",
-    )
-
     normalized_widgets: dict[str, dict[str, Any]] = {}
-    for widget_id in WIDGET_IDS:
-        default = default_widget(widget_id)
-        raw = raw_widgets.get(widget_id)
-        if not isinstance(raw, dict):
-            normalized_widgets[widget_id] = default
+    for widget_id in registry.ids:
+        default = defaults[widget_id]
+        raw_widget = raw_widgets.get(widget_id)
+        if not isinstance(raw_widget, dict):
+            normalized_widgets[widget_id] = dict(default)
             continue
 
-        label = WIDGET_LABELS[widget_id]
+        label = registry.labels[widget_id]
         widget = dict(default)
-        for passthrough in passthrough_properties:
-            if passthrough in raw:
-                widget[passthrough] = raw[passthrough]
+        for passthrough in _CLAMP_PASSTHROUGH_PROPERTIES:
+            if passthrough in raw_widget:
+                widget[passthrough] = raw_widget[passthrough]
 
         available_width = max(MIN_WIDGET_WIDTH, 1.0 - safe_area["left"] - safe_area["right"])
         available_height = max(MIN_WIDGET_HEIGHT, 1.0 - safe_area["top"] - safe_area["bottom"])
         width, width_changed = _clamp_number(
-            raw.get("width", default["width"]), MIN_WIDGET_WIDTH, available_width, default["width"]
+            raw_widget.get("width", default["width"]), MIN_WIDGET_WIDTH, available_width, default["width"]
         )
         height, height_changed = _clamp_number(
-            raw.get("height", default["height"]), MIN_WIDGET_HEIGHT, available_height, default["height"]
+            raw_widget.get("height", default["height"]), MIN_WIDGET_HEIGHT, available_height, default["height"]
         )
-        if width_changed and "width" in raw:
-            issues.append(LayoutIssue("DIMENSION", f"{label}: width was adjusted to fit.", widget_id, "warning"))
-        if height_changed and "height" in raw:
+        if width_changed and "width" in raw_widget:
             issues.append(
-                LayoutIssue("DIMENSION", f"{label}: height was adjusted to fit.", widget_id, "warning")
+                LayoutIssue("DIMENSION", f"{label}: width was adjusted to fit.", widget_id, "warning", screen_id)
+            )
+        if height_changed and "height" in raw_widget:
+            issues.append(
+                LayoutIssue("DIMENSION", f"{label}: height was adjusted to fit.", widget_id, "warning", screen_id)
             )
         widget["width"], widget["height"] = width, height
 
         max_x = max(safe_area["left"], 1.0 - safe_area["right"] - width)
         max_y = max(safe_area["top"], 1.0 - safe_area["bottom"] - height)
-        x, x_changed = _clamp_number(raw.get("x", default["x"]), safe_area["left"], max_x, default["x"])
-        y, y_changed = _clamp_number(raw.get("y", default["y"]), safe_area["top"], max_y, default["y"])
-        if x_changed and "x" in raw:
+        x, x_changed = _clamp_number(raw_widget.get("x", default["x"]), safe_area["left"], max_x, default["x"])
+        y, y_changed = _clamp_number(raw_widget.get("y", default["y"]), safe_area["top"], max_y, default["y"])
+        if x_changed and "x" in raw_widget:
             issues.append(
-                LayoutIssue("OUTSIDE_SAFE_AREA", f"{label}: x was moved inside the safe area.", widget_id, "warning")
+                LayoutIssue(
+                    "OUTSIDE_SAFE_AREA", f"{label}: x was moved inside the safe area.", widget_id, "warning", screen_id
+                )
             )
-        if y_changed and "y" in raw:
+        if y_changed and "y" in raw_widget:
             issues.append(
-                LayoutIssue("OUTSIDE_SAFE_AREA", f"{label}: y was moved inside the safe area.", widget_id, "warning")
+                LayoutIssue(
+                    "OUTSIDE_SAFE_AREA", f"{label}: y was moved inside the safe area.", widget_id, "warning", screen_id
+                )
             )
         widget["x"], widget["y"] = x, y
 
         font_scale, font_scale_changed = _clamp_number(
-            raw.get("font_scale", default["font_scale"]), MIN_FONT_SCALE, MAX_FONT_SCALE, default["font_scale"]
+            raw_widget.get("font_scale", default["font_scale"]), MIN_FONT_SCALE, MAX_FONT_SCALE, default["font_scale"]
         )
-        if font_scale_changed and "font_scale" in raw:
+        if font_scale_changed and "font_scale" in raw_widget:
             issues.append(
-                LayoutIssue("FONT_SCALE", f"{label}: font_scale was adjusted to fit.", widget_id, "warning")
+                LayoutIssue("FONT_SCALE", f"{label}: font_scale was adjusted to fit.", widget_id, "warning", screen_id)
             )
         widget["font_scale"] = font_scale
         widget["id"] = widget_id
         normalized_widgets[widget_id] = widget
 
-    raw_elements = payload.get("elements")
+    raw_elements = raw.get("elements") if isinstance(raw, dict) else None
     elements: list[dict[str, Any]] = []
     if isinstance(raw_elements, list):
         for raw_element in raw_elements[:MAX_ELEMENTS]:
@@ -1829,8 +2142,39 @@ def _clamp_layout(payload: Any) -> tuple[dict[str, Any], tuple[LayoutIssue, ...]
                 ("y", "OUTSIDE_SAFE_AREA", "y was moved inside its boundary"),
             ):
                 if prop in raw_element and raw_element[prop] != clamped_element[prop]:
-                    issues.append(LayoutIssue(code, f"{label}: {what}.", element_id, "warning"))
+                    issues.append(LayoutIssue(code, f"{label}: {what}.", element_id, "warning", screen_id))
             elements.append(clamped_element)
+
+    screen_doc = {
+        "safe_area": safe_area,
+        "background": _coerce_background(raw.get("background") if isinstance(raw, dict) else None),
+        "widgets": normalized_widgets,
+        "elements": elements,
+    }
+    return screen_doc, issues
+
+
+def _clamp_layout(payload: Any) -> tuple[dict[str, Any], tuple[LayoutIssue, ...]]:
+    if not isinstance(payload, dict):
+        return default_layout(), ()
+
+    issues: list[LayoutIssue] = []
+
+    game_defaults = {widget_id: default_widget(widget_id) for widget_id in WIDGET_IDS}
+    game_screen, game_issues = _clamp_screen(payload, WIDGET_REGISTRIES["game"], game_defaults, "game")
+    issues.extend(game_issues)
+
+    raw_screens = payload.get("screens")
+    if not isinstance(raw_screens, dict):
+        raw_screens = {}
+
+    screen_docs: dict[str, dict[str, Any]] = {}
+    for screen_id in EVENT_SCREEN_IDS:
+        registry = WIDGET_REGISTRIES[SCREEN_KINDS[screen_id]]
+        defaults = {widget_id: default_screen_widget(screen_id, widget_id) for widget_id in registry.ids}
+        screen_doc, screen_issues = _clamp_screen(raw_screens.get(screen_id), registry, defaults, screen_id)
+        screen_docs[screen_id] = screen_doc
+        issues.extend(screen_issues)
 
     name_value = payload.get("name", DEFAULT_LAYOUT_NAME)
     name = DEFAULT_LAYOUT_NAME if validate_layout_name(name_value) is not None else name_value.strip()
@@ -1838,47 +2182,352 @@ def _clamp_layout(payload: Any) -> tuple[dict[str, Any], tuple[LayoutIssue, ...]
     layout = {
         "schema_version": LAYOUT_SCHEMA_VERSION,
         "name": name,
-        "safe_area": safe_area,
-        "background": _coerce_background(payload.get("background")),
-        "widgets": normalized_widgets,
-        "elements": elements,
+        "safe_area": game_screen["safe_area"],
+        "background": game_screen["background"],
+        "widgets": game_screen["widgets"],
+        "elements": game_screen["elements"],
+        "screens": {
+            "pregame": screen_docs["pregame"],
+            "halftime": screen_docs["halftime"],
+        },
     }
     return layout, tuple(issues)
 
 
-def reset_widget(layout: Mapping[str, Any], widget_id: str) -> dict[str, Any]:
-    """Restore exactly one widget to its default; every other widget is
-    whatever ``layout`` already validates to. Never raises.
+def reset_widget(layout: Mapping[str, Any], widget_id: str, screen: str = "game") -> dict[str, Any]:
+    """Restore exactly one widget, on one screen, to its default; every other
+    widget -- on every screen -- is whatever ``layout`` already validates to.
+    An unknown screen or widget id returns the normalized layout unchanged
+    (spec v3 section 1.3). Never raises.
     """
 
     normalized, _warnings = load_layout(layout)
-    if widget_id not in WIDGET_IDS:
+    if screen not in SCREEN_IDS:
         return normalized
-    widgets = dict(normalized["widgets"])
-    widgets[widget_id] = default_widget(widget_id)
-    return {**normalized, "widgets": widgets}
+    registry = WIDGET_REGISTRIES[SCREEN_KINDS[screen]]
+    if widget_id not in registry.ids:
+        return normalized
+    default = default_screen_widget(screen, widget_id)
+
+    if screen == "game":
+        widgets = dict(normalized["widgets"])
+        widgets[widget_id] = default
+        return {**normalized, "widgets": widgets}
+
+    screens = dict(normalized["screens"])
+    screen_doc = dict(screens[screen])
+    widgets = dict(screen_doc["widgets"])
+    widgets[widget_id] = default
+    screens[screen] = {**screen_doc, "widgets": widgets}
+    return {**normalized, "screens": screens}
 
 
-def widget_descriptors() -> list[dict[str, Any]]:
-    """Static metadata for every widget, in :data:`WIDGET_IDS` order.
+def widget_descriptors(kind: str = "game") -> list[dict[str, Any]]:
+    """Static metadata for every widget of ``kind`` ("game" or "event"), in
+    the registry's id order.
 
     This drives the editor's widget list so it never hard-codes a widget id
     (spec section 8): the UI is generated entirely from this function's
-    output.
+    output. ``default`` comes from the built-in game defaults for
+    ``"game"``, and from the pre-game screen's defaults for ``"event"``
+    (spec v3 section 1.3) -- use :func:`screen_descriptors` for a
+    per-screen-accurate default.
     """
 
+    registry = WIDGET_REGISTRIES[kind]
+    default_screen_id = "game" if kind == "game" else "pregame"
     return [
         {
             "id": widget_id,
-            "label": WIDGET_LABELS[widget_id],
-            "field": WIDGET_FIELDS[widget_id],
-            "static_text": WIDGET_TEXTS.get(widget_id),
-            "optional": widget_id in OPTIONAL_WIDGET_IDS,
-            "group": WIDGET_GROUPS[widget_id],
-            "default": default_widget(widget_id),
+            "label": registry.labels[widget_id],
+            "field": registry.fields[widget_id],
+            "static_text": registry.texts.get(widget_id),
+            "optional": widget_id in registry.optional,
+            "group": registry.groups[widget_id],
+            "default": default_screen_widget(default_screen_id, widget_id),
         }
-        for widget_id in WIDGET_IDS
+        for widget_id in registry.ids
     ]
+
+
+def screen_descriptors() -> list[dict[str, Any]]:
+    """Static metadata for every screen, in :data:`SCREEN_IDS` order (spec
+    v3 section 1.3): drives the editor's Game / Pre-game / Halftime switcher
+    and its per-screen layers rail, without hard-coding a screen or widget
+    id anywhere in the UI. Each entry's ``widgets`` carries that *screen's
+    own* defaults -- unlike :func:`widget_descriptors`, halftime's entry
+    does not borrow pre-game's defaults.
+    """
+
+    descriptors = []
+    for screen_id in SCREEN_IDS:
+        kind = SCREEN_KINDS[screen_id]
+        registry = WIDGET_REGISTRIES[kind]
+        widgets = [
+            {
+                "id": widget_id,
+                "label": registry.labels[widget_id],
+                "field": registry.fields[widget_id],
+                "static_text": registry.texts.get(widget_id),
+                "optional": widget_id in registry.optional,
+                "group": registry.groups[widget_id],
+                "default": default_screen_widget(screen_id, widget_id),
+            }
+            for widget_id in registry.ids
+        ]
+        descriptors.append(
+            {
+                "id": screen_id,
+                "label": SCREEN_LABELS[screen_id],
+                "kind": kind,
+                "widgets": widgets,
+                "widget_groups": list(registry.group_order),
+            }
+        )
+    return descriptors
+
+
+# --- Event screen presets (spec v3 section 1.4) -----------------------------
+
+
+def _pregame_matchup_screen() -> dict[str, Any]:
+    """"Matchup": big team names face off, a "VS" mark between them, a slim
+    countdown title, a big countdown in the lower half, and a small score
+    row at the very bottom. Phase and warmup stay hidden (pre-game default).
+    """
+
+    screen = default_screen("pregame")
+    overrides: dict[str, dict[str, Any]] = {
+        "home_name": {"x": 0.04, "y": 0.06, "width": 0.40, "height": 0.14, "font_scale": 0.075,
+                      "font_weight": 900, "text_transform": "uppercase", "text_align": "right"},
+        "away_name": {"x": 0.56, "y": 0.06, "width": 0.40, "height": 0.14, "font_scale": 0.075,
+                      "font_weight": 900, "text_transform": "uppercase", "text_align": "left"},
+        "event_title": {"x": 0.10, "y": 0.22, "width": 0.80, "height": 0.06, "font_scale": 0.030},
+        "event_clock": {"x": 0.10, "y": 0.30, "width": 0.80, "height": 0.30, "font_scale": 0.120},
+        "home_score": {"x": 0.35, "y": 0.85, "width": 0.12, "height": 0.09, "font_scale": 0.050},
+        "away_score": {"x": 0.53, "y": 0.85, "width": 0.12, "height": 0.09, "font_scale": 0.050},
+    }
+    for widget_id, changes in overrides.items():
+        screen["widgets"][widget_id].update(changes)
+    screen["elements"] = [
+        {
+            "id": "vs_label", "type": "text", "text": "VS",
+            "x": 0.44, "y": 0.08, "width": 0.12, "height": 0.12,
+            "font_scale": 0.05, "color": "#FFB703", "font_weight": 900,
+            "text_align": "center", "vertical_align": "middle",
+        },
+    ]
+    return screen
+
+
+def _halftime_score_first_screen() -> dict[str, Any]:
+    """"Score first": big scores lead beside each name, the phase label
+    centred below them, then the countdown and the warmup line at the
+    bottom. Title hidden.
+    """
+
+    screen = default_screen("halftime")
+    overrides: dict[str, dict[str, Any]] = {
+        "event_title": {"visible": False},
+        # font_scale is a fraction of the canvas WIDTH, so a 0.14 score glyph
+        # is about 0.25 of the canvas height: the score boxes are sized to
+        # hold that, not just to avoid overlapping their neighbours.
+        "home_name": {"x": 0.04, "y": 0.12, "width": 0.22, "height": 0.18, "font_scale": 0.045,
+                      "text_align": "right"},
+        "home_score": {"x": 0.27, "y": 0.06, "width": 0.20, "height": 0.30, "font_scale": 0.140},
+        "away_score": {"x": 0.53, "y": 0.06, "width": 0.20, "height": 0.30, "font_scale": 0.140},
+        "away_name": {"x": 0.74, "y": 0.12, "width": 0.22, "height": 0.18, "font_scale": 0.045,
+                      "text_align": "left"},
+        "event_phase": {"x": 0.30, "y": 0.40, "width": 0.40, "height": 0.08, "font_scale": 0.040},
+        "event_clock": {"x": 0.20, "y": 0.50, "width": 0.60, "height": 0.22, "font_scale": 0.100},
+        "warmup": {"x": 0.25, "y": 0.78, "width": 0.50, "height": 0.08, "font_scale": 0.035},
+    }
+    for widget_id, changes in overrides.items():
+        screen["widgets"][widget_id].update(changes)
+    screen["elements"] = []
+    return screen
+
+
+def _broadcast_bar_screen(screen_id: str) -> dict[str, Any]:
+    """"Broadcast bar": a dark rounded bar across the bottom holds name +
+    score, the countdown, and score + name; a slim row just above the bar
+    carries the countdown title (halftime also fits the phase label at its
+    left end and the warmup line at its right end). The upper ~70% stays
+    empty black, free for future media.
+    """
+
+    screen = default_screen(screen_id)
+    overrides: dict[str, dict[str, Any]] = {
+        "home_name": {"x": 0.04, "y": 0.80, "width": 0.18, "height": 0.12, "font_scale": 0.035,
+                      "text_align": "right"},
+        "home_score": {"x": 0.23, "y": 0.80, "width": 0.10, "height": 0.12, "font_scale": 0.060},
+        "event_clock": {"x": 0.35, "y": 0.79, "width": 0.30, "height": 0.14, "font_scale": 0.090},
+        "away_score": {"x": 0.67, "y": 0.80, "width": 0.10, "height": 0.12, "font_scale": 0.060},
+        "away_name": {"x": 0.78, "y": 0.80, "width": 0.18, "height": 0.12, "font_scale": 0.035,
+                      "text_align": "left"},
+        "event_title": {"x": 0.04, "y": 0.71, "width": 0.92, "height": 0.06, "font_scale": 0.030},
+    }
+    for widget_id, changes in overrides.items():
+        screen["widgets"][widget_id].update(changes)
+    if screen_id == "halftime":
+        screen["widgets"]["event_phase"].update(
+            {"x": 0.04, "y": 0.71, "width": 0.19, "height": 0.06, "font_scale": 0.028, "text_align": "left"}
+        )
+        # "Warmup follows: 3:00" is about eleven ems wide; at this size it
+        # needs roughly 0.25 of the canvas width or it wraps onto two lines.
+        screen["widgets"]["warmup"].update(
+            {"x": 0.66, "y": 0.71, "width": 0.30, "height": 0.06, "font_scale": 0.022, "text_align": "right"}
+        )
+        # Shrink the title to make room for the phase label and warmup line
+        # sharing the same slim row.
+        screen["widgets"]["event_title"].update(
+            {"x": 0.24, "y": 0.71, "width": 0.40, "height": 0.06, "font_scale": 0.024}
+        )
+    screen["elements"] = [
+        {
+            "id": "broadcast_bar", "type": "box",
+            "x": 0.0, "y": 0.78, "width": 1.0, "height": 0.18,
+            "background": "#101820", "corner_radius": 0.012,
+        },
+    ]
+    return screen
+
+
+def _tigers_event_screen(screen_id: str) -> dict[str, Any]:
+    """"Tigers navy": the same brand baseline as the game preset (spec
+    section 1.7) applied to an event screen -- navy background, red
+    top/bottom bars, a navy panel behind the countdown, bahnschrift
+    uppercase team names, and the tinted secondary text.
+    """
+
+    screen = default_screen(screen_id)
+    screen["widgets"]["home_name"].update({"font_family": "bahnschrift", "text_transform": "uppercase"})
+    screen["widgets"]["away_name"].update({"font_family": "bahnschrift", "text_transform": "uppercase"})
+    screen["widgets"]["event_title"].update({"color": "#DDE7F4"})
+    screen["widgets"]["home_score"].update({"color": "#FFB703"})
+    screen["widgets"]["away_score"].update({"color": "#FFB703"})
+    if screen_id == "halftime":
+        screen["widgets"]["event_phase"].update({"color": "#FFB703"})
+        screen["widgets"]["warmup"].update({"color": "#DDE7F4"})
+    screen["background"] = {"color": "#071B3A"}
+    clock = screen["widgets"]["event_clock"]
+    screen["elements"] = [
+        {
+            "id": "top_bar", "type": "box",
+            "x": 0.0, "y": 0.0, "width": 1.0, "height": 0.025,
+            "background": "#C8242B", "z_index": 5,
+        },
+        {
+            "id": "bottom_bar", "type": "box",
+            "x": 0.0, "y": 0.975, "width": 1.0, "height": 0.025,
+            "background": "#C8242B", "z_index": 5,
+        },
+        {
+            "id": "countdown_panel", "type": "box",
+            "x": clock["x"], "y": clock["y"], "width": clock["width"], "height": clock["height"],
+            "background": "#0D2B5A", "corner_radius": 0.02,
+        },
+    ]
+    return screen
+
+
+def _normalized_screen_preset(screen_id: str, screen: dict[str, Any]) -> dict[str, Any]:
+    """A screen preset exactly as :func:`validate_layout` would hand it back
+    -- validate it wrapped in a full document, then pull the screen back out
+    (spec v3 section 1.4), mirroring :func:`_normalized_preset`.
+    """
+
+    document = default_layout()
+    document["screens"][screen_id] = screen
+    result = validate_layout(document)
+    if not result.ok or result.layout is None:
+        # Unreachable for a preset the unit test has checked.
+        return screen
+    return result.layout["screens"][screen_id]
+
+
+def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "pregame_classic",
+            "name": "Classic",
+            "description": "The built-in default pre-game arrangement.",
+            "screen": default_screen("pregame"),
+        },
+        {
+            "id": "pregame_matchup",
+            "name": "Matchup",
+            "description": "Big team names face off with a VS mark; the countdown "
+            "fills the lower half.",
+            "screen": _pregame_matchup_screen(),
+        },
+        {
+            "id": "pregame_broadcast",
+            "name": "Broadcast bar",
+            "description": "A dark bar across the bottom holds the score and "
+            "countdown; the top of the board stays free for future media.",
+            "screen": _broadcast_bar_screen("pregame"),
+        },
+        {
+            "id": "pregame_tigers",
+            "name": "Tigers navy",
+            "description": "Navy background with red accents and bahnschrift team "
+            "names, from the Tigers brand baseline.",
+            "screen": _tigers_event_screen("pregame"),
+        },
+    ]
+
+
+def _raw_halftime_screen_presets() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "halftime_classic",
+            "name": "Classic",
+            "description": "The built-in default halftime arrangement.",
+            "screen": default_screen("halftime"),
+        },
+        {
+            "id": "halftime_score_first",
+            "name": "Score first",
+            "description": "Big scores lead, with the phase, countdown, and warmup "
+            "line below.",
+            "screen": _halftime_score_first_screen(),
+        },
+        {
+            "id": "halftime_broadcast",
+            "name": "Broadcast bar",
+            "description": "A dark bar across the bottom holds the score and "
+            "countdown, with the phase and warmup line in the slim row above.",
+            "screen": _broadcast_bar_screen("halftime"),
+        },
+        {
+            "id": "halftime_tigers",
+            "name": "Tigers navy",
+            "description": "Navy background with red accents and bahnschrift team "
+            "names, from the Tigers brand baseline.",
+            "screen": _tigers_event_screen("halftime"),
+        },
+    ]
+
+
+def screen_preset_descriptors() -> dict[str, list[dict[str, Any]]]:
+    """The built-in per-screen presets (spec v3 section 1.4), keyed by event
+    screen id: four pre-game, four halftime, each a complete normalized
+    screen mini-document. Every preset here (and every game preset from
+    :func:`preset_descriptors`) validates ``ok`` with zero warnings, and
+    every id -- across both functions -- is globally unique.
+    """
+
+    return {
+        "pregame": [
+            {**entry, "screen": _normalized_screen_preset("pregame", entry["screen"])}
+            for entry in _raw_pregame_screen_presets()
+        ],
+        "halftime": [
+            {**entry, "screen": _normalized_screen_preset("halftime", entry["screen"])}
+            for entry in _raw_halftime_screen_presets()
+        ],
+    }
 
 
 def _classic_preset_layout() -> dict[str, Any]:
@@ -1918,6 +2567,10 @@ def _broadcast_preset_layout() -> dict[str, Any]:
             "background": "#101820", "corner_radius": 0.012, "z_index": 0,
         },
     ]
+    layout["screens"] = {
+        "pregame": _broadcast_bar_screen("pregame"),
+        "halftime": _broadcast_bar_screen("halftime"),
+    }
     return layout
 
 
@@ -1941,6 +2594,10 @@ def _big_score_preset_layout() -> dict[str, Any]:
         layout["widgets"][widget_id].update(changes)
     layout["background"] = {"color": "#000000"}
     layout["elements"] = []
+    layout["screens"] = {
+        "pregame": _pregame_matchup_screen(),
+        "halftime": _halftime_score_first_screen(),
+    }
     return layout
 
 
@@ -1988,6 +2645,10 @@ def _tigers_preset_layout() -> dict[str, Any]:
             "background": "#0D2B5A", "corner_radius": 0.02, "z_index": 0,
         },
     ]
+    layout["screens"] = {
+        "pregame": _tigers_event_screen("pregame"),
+        "halftime": _tigers_event_screen("halftime"),
+    }
     return layout
 
 
@@ -2090,6 +2751,11 @@ def limits() -> dict[str, Any]:
         "image_fits": list(IMAGE_FITS),
         "element_types": list(ELEMENT_TYPES),
         "widget_groups": list(WIDGET_GROUP_ORDER),
+        "screens": [
+            {"id": screen_id, "label": SCREEN_LABELS[screen_id], "kind": SCREEN_KINDS[screen_id]}
+            for screen_id in SCREEN_IDS
+        ],
+        "event_widget_groups": list(EVENT_WIDGET_GROUP_ORDER),
     }
 
 
@@ -2102,8 +2768,9 @@ def _resolve_path(view_model: Mapping[str, Any], path: str) -> Any:
     return node
 
 
-def supported_widget_ids(view_model: Mapping[str, Any]) -> tuple[str, ...]:
-    """Ids whose field resolves to real data, plus every static-label id.
+def supported_widget_ids(view_model: Mapping[str, Any], kind: str = "game") -> tuple[str, ...]:
+    """Ids of ``kind`` ("game" or "event") whose field resolves to real
+    data, plus every static-label id.
 
     Tolerates a completely empty view model: every static-label widget is
     still "supported" (it draws application-owned text regardless of game
@@ -2112,9 +2779,10 @@ def supported_widget_ids(view_model: Mapping[str, Any]) -> tuple[str, ...]:
 
     if not isinstance(view_model, dict):
         view_model = {}
+    registry = WIDGET_REGISTRIES[kind]
     supported = []
-    for widget_id in WIDGET_IDS:
-        field = WIDGET_FIELDS[widget_id]
+    for widget_id in registry.ids:
+        field = registry.fields[widget_id]
         if field is None:
             supported.append(widget_id)
             continue
@@ -2130,6 +2798,14 @@ __all__ = [
     "DEFAULT_LAYOUT_NAME",
     "DEFAULT_SAFE_INSET",
     "ELEMENT_TYPES",
+    "EVENT_OPTIONAL_WIDGET_IDS",
+    "EVENT_SCREEN_IDS",
+    "EVENT_WIDGET_FIELDS",
+    "EVENT_WIDGET_GROUPS",
+    "EVENT_WIDGET_GROUP_ORDER",
+    "EVENT_WIDGET_IDS",
+    "EVENT_WIDGET_LABELS",
+    "EVENT_WIDGET_TEXTS",
     "FONT_FAMILIES",
     "FONT_FAMILY_LABELS",
     "FONT_WEIGHTS",
@@ -2156,6 +2832,9 @@ __all__ = [
     "MIN_WIDGET_WIDTH",
     "MIN_Z_INDEX",
     "OPTIONAL_WIDGET_IDS",
+    "SCREEN_IDS",
+    "SCREEN_KINDS",
+    "SCREEN_LABELS",
     "SERIOUS_OVERLAP_RATIO",
     "TEXT_ALIGNMENTS",
     "TEXT_EFFECTS",
@@ -2165,18 +2844,26 @@ __all__ = [
     "WIDGET_GROUPS",
     "WIDGET_GROUP_ORDER",
     "WIDGET_IDS",
+    "WIDGET_KINDS",
     "WIDGET_LABELS",
+    "WIDGET_REGISTRIES",
     "WIDGET_TEXTS",
     "LayoutIssue",
     "LayoutValidation",
+    "WidgetRegistry",
     "clamp_layout",
     "default_layout",
+    "default_screen",
+    "default_screen_widget",
     "default_widget",
     "element_label",
     "limits",
     "load_layout",
     "preset_descriptors",
+    "registry_for",
     "reset_widget",
+    "screen_descriptors",
+    "screen_preset_descriptors",
     "supported_widget_ids",
     "validate_layout",
     "validate_layout_name",

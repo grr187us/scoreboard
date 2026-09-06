@@ -19,6 +19,7 @@ import re
 import unittest
 from pathlib import Path
 
+import scoreboard.presentation.layout as layout_module
 from scoreboard.domain.commands import CommandType
 from scoreboard.host.layout_bridge import LayoutEditorBridge
 from scoreboard.presentation.layout import WIDGET_IDS, WIDGET_LABELS
@@ -137,6 +138,18 @@ class NoGameCommandTests(unittest.TestCase):
         self.assertTrue(called.issubset(available),
                         f"unknown bridge methods: {sorted(called - available)}")
 
+    def test_no_event_countdown_prefix_appears_anywhere(self) -> None:
+        """The event screens' widgets (event_phase, event_title, event_clock)
+        sit one prefix away from the real command family
+        (event_countdown_select/_start/_stop/_reset/_correct). The per-value
+        scan above already covers each full command name; this checks the
+        shared prefix itself, so a typo that drops a suffix cannot slip a
+        command-shaped identifier past the per-value check."""
+
+        self.assertNotIn("event_countdown", self.html)
+        for name in SCRIPT_FILES:
+            self.assertNotIn("event_countdown", self.scripts[name], name)
+
     def test_it_says_plainly_what_it_cannot_change(self) -> None:
         self.assertIn("never changes", self.html.lower())
         for word in ("scores", "clocks"):
@@ -164,6 +177,58 @@ class ControlCoverageTests(unittest.TestCase):
         for label in WIDGET_LABELS.values():
             self.assertNotIn(label, self.html, label)
         self.assertIn("data-select-widget", self.script)
+
+    def test_it_offers_a_screen_switcher(self) -> None:
+        """The Game/Pre-game/Halftime tablist (spec section 3): an empty
+        container in the HTML, populated with `data-screen="<id>"` buttons
+        generated from `state.screens` at runtime -- so no screen id ever
+        needs to be a literal in the page itself."""
+
+        self.assertIn('id="screen-switch"', self.html)
+        self.assertIn('role="tablist"', self.html)
+        self.assertIn("data-screen", self.script)
+
+    def test_screen_presets_are_available(self) -> None:
+        """Pre-game and Halftime each apply from `state.screen_presets`,
+        the per-screen counterpart to the Game screen's `state.presets`."""
+
+        self.assertIn("screen_presets", self.script)
+
+    def test_reset_widget_passes_the_current_screen(self) -> None:
+        """`reset_widget` now resets one widget on one screen: the bridge
+        call must carry the widget id, the whole draft, and which screen,
+        exactly `api.reset_widget(id, draft, screen)`."""
+
+        code = code_only(self.script)
+        match = re.search(r"api\.reset_widget\(([^)]*)\)", code)
+        self.assertIsNotNone(match, "the editor must call api.reset_widget(...)")
+        args = [part.strip() for part in match.group(1).split(",")]
+        self.assertEqual(len(args), 3,
+                          f"reset_widget must be called with (id, draft, screen); got {args}")
+
+    def test_no_event_widget_or_screen_label_literal_in_html(self) -> None:
+        """Generalizes `test_the_widget_list_is_generated_rather_than_hard_coded`
+        to the event registry and the screen labels added for pre-game/
+        halftime: none of them may be hard-coded in the page either.
+
+        Depends on Agent A's schema v3 registries; skips until they land.
+        """
+
+        event_widget_ids = getattr(layout_module, "EVENT_WIDGET_IDS", None)
+        event_widget_labels = getattr(layout_module, "EVENT_WIDGET_LABELS", None)
+        screen_labels = getattr(layout_module, "SCREEN_LABELS", None)
+        if event_widget_ids is None or event_widget_labels is None or screen_labels is None:
+            self.skipTest(
+                "depends on Agent A's schema v3 registries (EVENT_WIDGET_IDS/"
+                "EVENT_WIDGET_LABELS/SCREEN_LABELS), not yet landed"
+            )
+        for widget_id in event_widget_ids:
+            self.assertNotIn(f'"{widget_id}"', self.html, widget_id)
+            self.assertNotIn(f"'{widget_id}'", self.html, widget_id)
+        for label in event_widget_labels.values():
+            self.assertNotIn(label, self.html, label)
+        for label in screen_labels.values():
+            self.assertNotIn(label, self.html, label)
 
     def test_the_limits_come_from_python_rather_than_from_literals(self) -> None:
         for key in ("min_font_scale", "max_font_scale", "min_widget_width",

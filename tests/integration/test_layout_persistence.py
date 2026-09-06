@@ -89,6 +89,37 @@ class RoundTripTests(LayoutLibraryTestCase):
         self.assertFalse(write_library(self.paths, default_library()))
 
 
+class SchemaUpgradeTests(LayoutLibraryTestCase):
+    """A v2 layout on disk (no ``screens``) upgrades transparently on read.
+
+    ``read_library`` delegates every stored layout to
+    :func:`~scoreboard.presentation.layout.validate_layout`, which is where
+    the v1/v2 -> v3 upgrade actually happens (presentation-screens spec
+    section 1). This module makes no v3-specific decision of its own; this
+    test exists to prove that delegation still produces a servable, current
+    library rather than silently keeping the old shape.
+    """
+
+    def test_a_stored_v2_layout_upgrades_to_v3_with_screens_on_read(self) -> None:
+        v2_document = json.loads(json.dumps(default_layout()))
+        v2_document.pop("screens", None)
+        v2_document["schema_version"] = 2
+        self.paths.layouts.write_text(json.dumps({
+            "schema_version": LAYOUT_LIBRARY_SCHEMA_VERSION,
+            "active": DEFAULT_LAYOUT_NAME,
+            "layouts": {DEFAULT_LAYOUT_NAME: v2_document},
+        }), encoding="utf-8")
+
+        library = read_library(self.paths)
+
+        self.assertFalse(library.fell_back, library.issues)
+        served = library.active_layout()
+        self.assertEqual(served["schema_version"], LAYOUT_SCHEMA_VERSION)
+        self.assertIn("screens", served)
+        self.assertEqual(set(served["screens"]), {"pregame", "halftime"})
+        self.assertEqual(served, default_layout())
+
+
 class MalformedFileTests(LayoutLibraryTestCase):
     def test_every_damaged_shape_reads_as_nothing_stored(self) -> None:
         cases = {

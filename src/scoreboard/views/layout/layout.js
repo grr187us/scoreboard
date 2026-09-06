@@ -57,7 +57,66 @@
     boardSelected: true,
     collapsedGroups: {},
     selection: S.createSelection(),
-    history: null
+    history: null,
+    screen: 'game'
+  };
+
+  /* --- Screens -------------------------------------------------------------
+   *
+   * `app.draft` is always the full v3 document: the Game screen at its top
+   * level, plus `screens.pregame` / `screens.halftime`. Everything that
+   * edits or reads widgets/elements/safe_area/background for the screen
+   * currently on screen goes through `app.screenDoc()` instead of touching
+   * `app.draft` directly; history, preview, save, and clamp still see the
+   * whole document.
+   */
+
+  app.screenDescriptor = function () {
+    var found = null;
+    ((app.state && app.state.screens) || []).forEach(function (descriptor) {
+      if (descriptor.id === app.screen) {
+        found = descriptor;
+      }
+    });
+    return found;
+  };
+
+  app.screenDoc = function () {
+    if (app.screen === 'game') {
+      return app.draft;
+    }
+    app.draft.screens = app.draft.screens || {};
+    if (!app.draft.screens[app.screen]) {
+      app.draft.screens[app.screen] = { safe_area: {}, background: {}, widgets: {}, elements: [] };
+    }
+    return app.draft.screens[app.screen];
+  };
+
+  app.widgetIds = function () {
+    return Object.keys((app.screenDoc() && app.screenDoc().widgets) || {});
+  };
+
+  /* Clears the selection, rebuilds the board root for the new screen's kind
+   * (game or event), and re-renders every panel against the new screen. */
+  app.switchScreen = function (screenId) {
+    if (screenId === app.screen) {
+      return;
+    }
+    var descriptor = null;
+    ((app.state && app.state.screens) || []).forEach(function (candidate) {
+      if (candidate.id === screenId) {
+        descriptor = candidate;
+      }
+    });
+    if (!descriptor) {
+      return;
+    }
+    app.screen = screenId;
+    S.clearSelection(app.selection);
+    app.boardSelected = true;
+    Board.build(boardRoot, descriptor.kind);
+    app.renderAll();
+    Panels.renderPresets(app);
   };
 
   function showAlert(message) {
@@ -82,10 +141,6 @@
     return scale;
   }
 
-  function widgetIdList() {
-    return Object.keys((app.draft && app.draft.widgets) || {});
-  }
-
   function markSelectionDot() {
     el('dirty-dot').hidden = !app.dirty;
     // The library menu's "Discard changes" entry follows the same flag, and
@@ -108,7 +163,7 @@
 
   app.refreshPreview = function () {
     try {
-      Board.applyLayout(canvas, app.draft);
+      Board.applyLayout(canvas, app.screenDoc());
       if (app.snapshot) {
         Board.applyModel(boardRoot, app.snapshot);
       }
@@ -127,6 +182,7 @@
     app.refreshPreview();
     Panels.renderLayers(app);
     Panels.renderInspector(app);
+    Panels.renderScreenSwitch(app);
     updateHistoryButtons();
     markSelectionDot();
   };
@@ -190,13 +246,14 @@
 
   app.selectAllVisible = function () {
     var ids = [];
-    var widgets = app.draft.widgets || {};
+    var doc = app.screenDoc();
+    var widgets = doc.widgets || {};
     Object.keys(widgets).forEach(function (id) {
       if (widgets[id] && widgets[id].visible !== false) {
         ids.push(id);
       }
     });
-    (app.draft.elements || []).forEach(function (element) {
+    (doc.elements || []).forEach(function (element) {
       if (element.visible !== false) {
         ids.push(element.id);
       }
@@ -207,16 +264,18 @@
   /* --- Elements ----------------------------------------------------------- */
 
   app.addElement = function (element) {
-    app.draft.elements = app.draft.elements || [];
-    app.draft.elements.push(element);
+    var doc = app.screenDoc();
+    doc.elements = doc.elements || [];
+    doc.elements.push(element);
     app.select([element.id]);
     app.commit();
   };
 
   app.deleteSelectedElements = function () {
     var ids = app.selection.ids;
+    var doc = app.screenDoc();
     var removedAny = false;
-    app.draft.elements = (app.draft.elements || []).filter(function (element) {
+    doc.elements = (doc.elements || []).filter(function (element) {
       if (ids.indexOf(element.id) !== -1) {
         removedAny = true;
         return false;
@@ -232,19 +291,20 @@
 
   app.duplicateSelected = function () {
     var ids = app.selection.ids;
-    var widgetIds = widgetIdList();
+    var doc = app.screenDoc();
+    var widgetIds = app.widgetIds();
     var scale = precisionScale();
     var newIds = [];
     for (var i = 0; i < ids.length; i += 1) {
-      var element = S.getElement(app.draft, ids[i]);
+      var element = S.getElement(doc, ids[i]);
       if (!element) {
         continue; // widgets are never duplicated
       }
       var copy = clone(element);
-      copy.id = S.nextElementId(app.draft, widgetIds, element.type);
+      copy.id = S.nextElementId(doc, widgetIds, element.type);
       S.setGeometry(copy, 'x', S.clampRange(copy.x + 0.02, 0, 1 - copy.width), scale);
       S.setGeometry(copy, 'y', S.clampRange(copy.y + 0.02, 0, 1 - copy.height), scale);
-      app.draft.elements.push(copy);
+      doc.elements.push(copy);
       newIds.push(copy.id);
     }
     if (!newIds.length) {
@@ -255,7 +315,7 @@
   };
 
   function toggleVisibleFor(id) {
-    var item = S.getItem(app.draft, id);
+    var item = S.getItem(app.screenDoc(), id);
     if (!item) {
       return;
     }
@@ -291,7 +351,7 @@
       var dataUrl = reader.result;
       var probe = new Image();
       probe.onload = function () {
-        var element = S.makeImageElement(app.draft, widgetIdList(), dataUrl,
+        var element = S.makeImageElement(app.screenDoc(), app.widgetIds(), dataUrl,
           probe.naturalWidth, probe.naturalHeight);
         app.addElement(element);
       };
@@ -307,7 +367,7 @@
   };
 
   app.replaceImageForSelected = function (id, file) {
-    var element = S.getElement(app.draft, id);
+    var element = S.getElement(app.screenDoc(), id);
     if (!element || element.type !== 'image' || !file) {
       return;
     }
@@ -334,10 +394,10 @@
 
   app.resetWidgetAction = function () {
     var id = app.selection.ids.length === 1 ? app.selection.ids[0] : null;
-    if (!app.api || !app.api.reset_widget || !id || S.kindOf(app.draft, id) !== 'widget') {
+    if (!app.api || !app.api.reset_widget || !id || S.kindOf(app.screenDoc(), id) !== 'widget') {
       return;
     }
-    Promise.resolve(app.api.reset_widget(id, app.draft)).then(function (payload) {
+    Promise.resolve(app.api.reset_widget(id, app.draft, app.screen)).then(function (payload) {
       if (payload && payload.layout) {
         app.draft = clone(payload.layout);
         S.pushHistory(app.history, app.draft);
@@ -375,7 +435,8 @@
       return;
     }
     app.draft = next;
-    var stillThere = app.selection.ids.filter(function (id) { return Boolean(S.getItem(app.draft, id)); });
+    var doc = app.screenDoc();
+    var stillThere = app.selection.ids.filter(function (id) { return Boolean(S.getItem(doc, id)); });
     S.selectMany(app.selection, stillThere);
     app.renderAll();
     app.validateDraft();
@@ -518,33 +579,69 @@
     });
   }
 
-  function applyPresetAction(id) {
-    var preset = null;
-    ((app.state && app.state.presets) || []).forEach(function (candidate) {
-      if (candidate.id === id) {
-        preset = candidate;
-      }
-    });
-    if (!preset) {
-      return;
-    }
-    var apply = function () {
-      var activeName = app.state.active;
-      app.draft = clone(preset.layout);
-      app.draft.name = activeName;
-      S.pushHistory(app.history, app.draft);
-      app.markDirty(true);
-      app.boardSelected = true;
-      S.clearSelection(app.selection);
-      app.renderAll();
-      app.validateDraft();
-    };
+  /* A dirty draft never loses work silently: both branches below stage their
+   * apply function and ask first, exactly as v2 did for the single Game
+   * preset list. */
+  function confirmedApply(apply) {
     if (app.dirty) {
       pendingPresetApply = apply;
       Panels.togglePopover('replace-draft-popover');
     } else {
       apply();
     }
+  }
+
+  /* On the Game screen a preset is a full layout, but only its board pieces
+   * are copied in -- the document's name and its event screens are kept. On
+   * Pre-game/Halftime a preset is one screen mini-document, dropped wholesale
+   * into draft.screens[app.screen]. */
+  function applyPresetAction(id) {
+    if (app.screen === 'game') {
+      var preset = null;
+      ((app.state && app.state.presets) || []).forEach(function (candidate) {
+        if (candidate.id === id) {
+          preset = candidate;
+        }
+      });
+      if (!preset) {
+        return;
+      }
+      confirmedApply(function () {
+        var source = preset.layout;
+        app.draft.safe_area = clone(source.safe_area);
+        app.draft.background = clone(source.background);
+        app.draft.widgets = clone(source.widgets);
+        app.draft.elements = clone(source.elements);
+        S.pushHistory(app.history, app.draft);
+        app.markDirty(true);
+        app.boardSelected = true;
+        S.clearSelection(app.selection);
+        app.renderAll();
+        app.validateDraft();
+      });
+      return;
+    }
+
+    var screenPresets = (app.state && app.state.screen_presets && app.state.screen_presets[app.screen]) || [];
+    var screenPreset = null;
+    screenPresets.forEach(function (candidate) {
+      if (candidate.id === id) {
+        screenPreset = candidate;
+      }
+    });
+    if (!screenPreset) {
+      return;
+    }
+    confirmedApply(function () {
+      app.draft.screens = app.draft.screens || {};
+      app.draft.screens[app.screen] = clone(screenPreset.screen);
+      S.pushHistory(app.history, app.draft);
+      app.markDirty(true);
+      app.boardSelected = true;
+      S.clearSelection(app.selection);
+      app.renderAll();
+      app.validateDraft();
+    });
   }
 
   /* --- Property edits ---------------------------------------------------------
@@ -570,7 +667,7 @@
     if (app.selection.ids.length !== 1) {
       return null;
     }
-    return S.getItem(app.draft, app.selection.ids[0]);
+    return S.getItem(app.screenDoc(), app.selection.ids[0]);
   }
 
   function valueForProp(prop, target) {
@@ -628,13 +725,14 @@
   }
 
   function liveChangeBoardProperty(prop, value) {
-    app.draft.background = app.draft.background || { color: '#000000' };
-    app.draft.safe_area = app.draft.safe_area || {};
+    var doc = app.screenDoc();
+    doc.background = doc.background || { color: '#000000' };
+    doc.safe_area = doc.safe_area || {};
     if (prop === 'background_color') {
-      app.draft.background.color = value;
+      doc.background.color = value;
     } else if (S.isFiniteNumber(value)) {
       var key = prop.replace('safe_', '');
-      app.draft.safe_area[key] = S.roundTo(value, precisionScale());
+      doc.safe_area[key] = S.roundTo(value, precisionScale());
     }
     app.dirty = true;
     markSelectionDot();
@@ -731,8 +829,8 @@
     if (action === 'history_back') { goHistory(-1); return; }
     if (action === 'history_forward') { goHistory(1); return; }
 
-    if (action === 'add_text') { app.addElement(S.makeTextElement(app.draft, widgetIdList())); return; }
-    if (action === 'add_box') { app.addElement(S.makeBoxElement(app.draft, widgetIdList())); return; }
+    if (action === 'add_text') { app.addElement(S.makeTextElement(app.screenDoc(), app.widgetIds())); return; }
+    if (action === 'add_box') { app.addElement(S.makeBoxElement(app.screenDoc(), app.widgetIds())); return; }
     if (action === 'add_image') { pendingReplaceId = null; el('image-file-input').click(); return; }
     if (action === 'replace_image') {
       pendingReplaceId = app.selection.ids.length === 1 ? app.selection.ids[0] : null;
@@ -799,9 +897,21 @@
       return;
     }
 
+    var screenButton = target.closest('[data-screen]');
+    if (screenButton) {
+      app.switchScreen(screenButton.getAttribute('data-screen'));
+      return;
+    }
+
     var selectWidgetButton = target.closest('[data-select-widget]');
     if (selectWidgetButton) {
       var widgetId = selectWidgetButton.getAttribute('data-select-widget');
+      // An issue named in the drawer may belong to a screen that is not on
+      // screen; switch there first so the widget it names can be selected.
+      var issueScreen = selectWidgetButton.getAttribute('data-issue-screen');
+      if (issueScreen && issueScreen !== app.screen) {
+        app.switchScreen(issueScreen);
+      }
       if (event.shiftKey) { app.toggleSelect(widgetId); } else { app.select([widgetId]); }
       return;
     }
@@ -975,6 +1085,15 @@
       app.selectAllVisible();
       return;
     }
+    if (ctrlLike && (event.key === '1' || event.key === '2' || event.key === '3')) {
+      event.preventDefault();
+      var screens = (app.state && app.state.screens) || [];
+      var screenTarget = screens[Number(event.key) - 1];
+      if (screenTarget) {
+        app.switchScreen(screenTarget.id);
+      }
+      return;
+    }
     if (event.key === '+' || event.key === '=') { Canvas.zoomIn(); return; }
     if (event.key === '-') { Canvas.zoomOut(); return; }
   });
@@ -1000,7 +1119,7 @@
     app.refreshPreview();
   };
 
-  Board.build(boardRoot);
+  Board.build(boardRoot, 'game');
   Canvas.init(app);
 
   R.whenReady(function (bridge) {

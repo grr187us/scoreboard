@@ -62,6 +62,8 @@ from scoreboard.domain.commands import (
 )
 from scoreboard.domain.field_assistant import absolute_from_ball_spot, home_goal_side
 from scoreboard.domain.formatting import (
+    BLANK_DISPLAY,
+    FormattingError,
     format_ball_on,
     format_distance,
     format_down,
@@ -400,11 +402,75 @@ def _last_action_display(value: Any) -> Any:
     return value
 
 
+def _field_assistant_label(entry: UndoEntry) -> str:
+    """A one-line, human reading of a finalized Field Assistant action.
+
+    The composite entry's old/new values are whole state groups (ball spot,
+    possession, down, distance, both scores, the action payload, ...). Shown
+    raw, as ``f"{old} → {new}"`` would, the strip became two Python dicts --
+    unreadable at a glance during a game. This picks the parts an operator
+    actually wants after pressing Confirm: what the assistant recorded (its
+    own ``summary``), who scored and the resulting score when points changed,
+    and the resulting situation (possession, down and distance, and the spot)
+    when a live series follows. Every value is copied from the entry; nothing
+    is recomputed, so this can never disagree with what the assistant did.
+    """
+
+    new = entry.new_value if isinstance(entry.new_value, dict) else {}
+    summary = new.get("summary")
+    parts = [str(summary) if summary else "Field action"]
+
+    delta = new.get("score_delta") if isinstance(new.get("score_delta"), dict) else {}
+    scoring_teams = [
+        team.upper()
+        for team in ("home", "away")
+        if isinstance(delta.get(team), int) and not isinstance(delta.get(team), bool)
+        and delta.get(team) > 0
+    ]
+    if scoring_teams:
+        parts[0] = f"{parts[0]} for {' and '.join(scoring_teams)}"
+        parts.append(f"HOME {new.get('home_score')} – AWAY {new.get('away_score')}")
+
+    situation: list[str] = []
+    possession = new.get("possession")
+    if possession in ("home", "away"):
+        situation.append(f"{possession.upper()} ball")
+    try:
+        down_and_distance = format_down_and_distance(new.get("down"), new.get("distance"))
+    except FormattingError:
+        down_and_distance = BLANK_DISPLAY
+    if down_and_distance != BLANK_DISPLAY:
+        situation.append(down_and_distance)
+        # The spot only means something while a series is live: after a
+        # score it is merely where the ball was, which would read as if the
+        # next play starts there.
+        spot = new.get("ball_on")
+        if isinstance(spot, dict) and spot.get("team") in ("home", "away"):
+            try:
+                situation[-1] += " at " + format_ball_on(
+                    spot["team"], spot.get("yard_line"), str(spot["team"]).upper()
+                )
+            except (FormattingError, TypeError):
+                pass
+    if situation:
+        parts.append(", ".join(situation))
+    return "Field assistant: " + " · ".join(parts)
+
+
 def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
     """The previous reversible command and whether Undo can reverse it (U-008)."""
 
     if entry is None:
         return None
+    if entry.field == "field_assistant":
+        return {
+            "command": entry.command.value,
+            "team": entry.team,
+            "field": entry.field,
+            "old_value": entry.old_value,
+            "new_value": entry.new_value,
+            "label": _field_assistant_label(entry),
+        }
     if entry.field.endswith("_score"):
         subject = f"{(entry.team or '').upper()} score"
     elif entry.field == "quarter":
@@ -518,6 +584,14 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
                 "title": "KICKOFF IN" if countdown_phase == "PREGAME" else "UNTIL SECOND HALF",
                 # Shown only during HALFTIME, per the confirmed presentation.
                 "warmup_follows": "3:00" if countdown_phase == "HALFTIME" else None,
+                # The pre-game/halftime layout screens (presentation-screens
+                # spec section 1.2) bind a single warmup-line widget to this
+                # field rather than composing "Warmup follows: " with
+                # warmup_follows in JavaScript -- every game value is produced
+                # in Python and merely copied by the renderer.
+                "warmup_display": (
+                    "Warmup follows: 3:00" if countdown_phase == "HALFTIME" else None
+                ),
             },
         },
         # Meaningful only once a game is live; the spectator page hides this

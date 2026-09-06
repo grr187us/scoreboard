@@ -310,7 +310,7 @@ object briefly reaching the JSON/history boundary through Undo) found and
 fixed during testing. No additional essential field beyond the five listed
 was identified during the requirements review.
 
-## Presentation layout editor — ✅ v1 delivered, ✅ v2 delivered, both September 5, 2026
+## Presentation layout editor — ✅ v1 delivered, ✅ v2 delivered, both September 5, 2026; ✅ v3 (pre-game and halftime screens) delivered September 6, 2026
 
 Implements item 3 of "Owner-requested next scoreboard work" in
 `PROJECT_ROADMAP.md`, delivered after the local-time presentation and expanded
@@ -382,6 +382,51 @@ text). Full discovery run after v2 (September 5, 2026, `SCOREBOARD_DATA_DIR` iso
 `tests/ui/` Playwright browser suites (no Node.js on this machine), any
 hardware/LED/two-display evidence, and WebView2 file-picker behavior for the
 Image button on the operator laptop.
+
+### Presentation layout editor v3 — pre-game and halftime screens — ✅ delivered September 6, 2026
+
+Implements the owner's request that the pregame and halftime presentation
+(the `KICKOFF IN…` / `UNTIL SECOND HALF…` countdown board, previously fixed
+markup untouched by the editor) become customizable "just like the
+scoreboard," against the design spec at
+`.scratch/presentation-screens/spec.md`. Five Sonnet agents built this in
+parallel against disjoint file ownership (schema, renderer, editor, bridge,
+docs); the orchestrator then integrated and verified it the same day (focused
+suites, the full discovery run against the known baseline, and a real
+pywebview run) — evidence under "Phase 2 owner request 4 — pre-game and
+halftime screens" in `PROJECT_ROADMAP.md`.
+
+**What changed.** `LAYOUT_SCHEMA_VERSION` moves from 2 to 3. One stored
+layout document now describes three screens: the in-game screen keeps its
+v2 shape at the document's top level (unchanged, so every v1/v2 layout and
+test keeps working), and two new screens, `screens.pregame` and
+`screens.halftime`, are each a complete mini-document with their own safe
+area, background, widgets, and elements — but built from a different,
+smaller widget registry of eight **event widgets** (home/away team name and
+score, phase label, countdown title, countdown, warmup line) rather than the
+fifteen game widgets. A v1 or v2 file upgrades on read with the existing
+`SCHEMA_UPGRADED` warning; a v3 file missing `screens` fills both from
+default with `MISSING_SCREENS`. The editor gains a Game / Pre-game /
+Halftime toolbar switcher (`Ctrl+1/2/3`), a per-screen presets gallery (four
+each for pre-game and halftime, alongside the four existing game-screen
+presets, which no longer touch the other two screens), and issue messages
+that name the screen they belong to. Every v1/v2 safety property is
+unchanged: still no path to a game command, still no state-revision advance,
+still nothing written to `scoreboard.db`, still gated on Python validation
+before `Save`. See `docs/UX_AND_LAYOUT.md` §10.9 and `docs/ARCHITECTURE.md`
+§9 for the full behavior and schema description.
+
+**What this does not touch.** Task 12, the Phase 0 HDMI gate, and every
+piece of hardware/stadium evidence remain unaffected. A fourth screen beyond
+Game/Pre-game/Halftime, binding free text to a game field, SVG images, a
+per-resolution layout, and editing the operator panel's own layout all
+remain out of scope, exactly as they were for v1/v2.
+
+**Verification.** Not run by this docs pass. The verification plan
+(focused per-agent suites, the full discovery run compared against the
+15-failure/3-error baseline recorded in `PROJECT_ROADMAP.md`, the
+preview-browser stub run, and the real pywebview run) is the orchestrator's
+responsibility; nothing here should be read as a passing test result.
 
 ## Field Assistant — delivered for rehearsal, September 5, 2026
 

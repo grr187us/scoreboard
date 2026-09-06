@@ -49,7 +49,7 @@ class LayoutEditorBrowserTests(unittest.TestCase):
                 "validPreview": valid,
                 "invalidPreview": invalid,
                 "clamped": layouts.clamp(invalid_draft),
-                "resetWidget": layouts.reset_widget("ball_on", invalid_draft),
+                "resetWidget": layouts.reset_widget("ball_on", invalid_draft, "game"),
                 "saved": layouts.save("Default", layouts.current_layout()),
             }
 
@@ -58,11 +58,15 @@ class LayoutEditorBrowserTests(unittest.TestCase):
         self.assertEqual(result["checks"], [
             "widget list", "property panel", "numeric move", "visibility toggle",
             "preview selection", "validation blocks save", "validation clears",
-            "issue selects widget", "reset widget", "save as",
+            "issue selects widget", "reset widget", "reset widget names the screen",
+            "save as",
             "drag to move", "safe area is a hard boundary", "resize by handle",
             "nudge by key and button", "arrows leave fields alone",
             "history back and forward", "add text element", "add box", "align",
             "multi-select drag", "delete element",
+            "switch to pre-game", "apply a pre-game preset",
+            "add text on the pre-game screen", "switch back to the game screen",
+            "save after editing another screen",
             "no page scroll", "no game command",
         ])
 

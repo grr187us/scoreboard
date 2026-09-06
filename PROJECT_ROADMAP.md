@@ -414,6 +414,83 @@ gated on Python's validation of the whole draft.
   Task 12, the Phase 0 HDMI gate, and the two-display checklist are untouched
   and unadvanced by this request, exactly as the v1 delivery above recorded.
 
+### Phase 2 owner request 4 — pre-game and halftime screens (September 6, 2026)
+
+**Status: ✅ delivered and verified September 6, 2026.** Five parallel
+Sonnet agents built it against `.scratch/presentation-screens/spec.md`
+(schema, renderer, editor, bridge, docs) and the orchestrator then
+integrated and verified it: focused suites green (schema 114, editor contract
+30, spectator renderer contract 18, layout bridge and persistence), a full
+discovery run of **750 tests with 15 failures and 3 errors** — exactly the
+pre-existing inventory in "Automated suite failure inventory", no
+regression — and a real pywebview/WebView2 run through `WindowHost` in which
+the editor was switched to Pre-game, the Matchup preset applied, a text
+element added, `Save` wrote a schema-3 `layouts.json`, the practice spectator
+drew that pregame screen during `PRE_GAME`, and a confirmed move to `HALF`
+switched it to the halftime screen with the warmup line. Not verified:
+`tests/ui/` Playwright suites (no Node.js here) and any LED/hardware
+rendering.
+
+**What was asked.** Today the pregame and halftime "event board" (countdown
+title, countdown, phase, warmup line, score line) is drawn from fixed HTML
+in `views/spectator/index.html`; only the in-game board is a layout. The
+owner asked for the pregame and halftime screens to be customizable "just
+like the scoreboard," with a few presets for each — the same request that
+`docs/UX_AND_LAYOUT.md` §10.8 had, until this entry, recorded as explicitly
+excluded from the v1/v2 editor.
+
+**What was built.** One stored layout document now
+describes three screens instead of one. The in-game screen keeps its v2
+shape at the top level of the document, so every existing test, file, and
+push keeps working unmodified. Two new screens live under `screens.pregame`
+and `screens.halftime`, each a complete mini-document with its own safe
+area, background, widgets (a different, eight-item **event widget**
+registry: home/away name and score, phase label, countdown title, countdown,
+warmup line), and free elements. `LAYOUT_SCHEMA_VERSION` moves from 2 to 3;
+a v1 or v2 file upgrades on read with the existing `SCHEMA_UPGRADED`
+warning. The renderer gains a `build(container, kind)` / `applyLayout` split
+between the `"game"` and `"event"` widget kinds and drops the old
+hand-written pregame/halftime markup in favor of drawing the event screen
+the same way the game board is drawn. The editor gains a Game / Pre-game /
+Halftime toolbar switcher (`Ctrl+1/2/3`), per-screen presets (pre-game:
+Classic, Matchup, Broadcast bar, Tigers navy; halftime: Classic, Score
+first, Broadcast bar, Tigers navy — the four existing game-screen presets no
+longer touch the other two screens), and validation issues that name their
+screen. Every v1/v2 safety property is unchanged by design: the editor still
+has no path to a game command, still advances no state revision, still
+writes nothing to `scoreboard.db`, and `Save` is still gated on Python's
+validation of the whole three-screen draft. `clocks.event.warmup_display` is
+a new view-model field (`bridge.py`) carrying the same `"Warmup follows:
+3:00"` string the old HTML computed inline, now produced once in Python and
+only copied by the event screen's `warmup` widget.
+
+**File map (per spec section 8; each agent owned a disjoint set).**
+
+| Agent | Files |
+|---|---|
+| A — schema | `src/scoreboard/presentation/layout.py`, `tests/unit/test_layout_schema.py` |
+| B — renderer | `src/scoreboard/views/shared/board.js`, `board.css`, `src/scoreboard/views/spectator/*`, `tests/integration/test_spectator_layout_render.py`, `tests/integration/test_spectator.py`, `tests/ui/spectator.cjs`, `tests/ui/test_spectator_browser.py` |
+| C — editor | `src/scoreboard/views/layout/*`, `tests/integration/test_layout_editor_contract.py`, `tests/ui/layout_editor.cjs`, `tests/ui/test_layout_editor_browser.py` |
+| D — bridge | `src/scoreboard/infrastructure/layouts.py`, `src/scoreboard/host/layout_bridge.py`, `src/scoreboard/host/bridge.py` (warmup_display only), `src/scoreboard/host/app.py` (only if needed), `tests/integration/test_layout_bridge.py`, `test_layout_persistence.py`, `test_bridge.py` (new warmup test only), `test_host_application.py` |
+| E — docs (this entry) | `docs/UX_AND_LAYOUT.md` §6.1a and §10 (new §10.9), `docs/ARCHITECTURE.md` §9, `docs/PHASE_2_BACKLOG.md`, `docs/MVP_REQUIREMENTS.md`, `PROJECT_ROADMAP.md`, `README.md` |
+
+**Verification status: verified by the orchestrator, September 6, 2026.**
+Focused suites per agent pass (schema 114, editor contract 30, spectator
+renderer contract 18, layout bridge, persistence, and the bridge's warmup
+tests). The full discovery run reports **750 tests, 15 failures, 3 errors**
+— the same inventory as the `308ddd6` baseline above, so no regression. In
+the preview browser against a stub bridge, every pre-game and halftime
+preset was applied and inspected by screenshot (two geometry defects found
+that way — overflowing scores in "Score first", a wrapping warmup line in
+"Broadcast bar" — were fixed before this was recorded). In the real
+pywebview/WebView2 runtime via `WindowHost`: the editor opened, switched to
+Pre-game, applied "Matchup", added a text element, `Save` wrote a schema-3
+`layouts.json` whose `screens.pregame` carried both elements, the practice
+spectator drew that pregame screen during `PRE_GAME`, and a confirmed move
+to `HALF` switched it to the halftime screen showing `HALFTIME` and
+"Warmup follows: 3:00". Not verified: the `tests/ui/` Playwright suites
+(no Node.js on this host) and LED/hardware rendering.
+
 ### Phase 2 Task 3 evidence
 
 - Added a monotonic-deadline game-clock engine in [`src/scoreboard/domain/clocks.py`](src/scoreboard/domain/clocks.py) and kept the clock state immutable and revision-safe using the existing `GameState`/`ClockValue` contract.
@@ -749,7 +826,7 @@ The MVP can be installed and launched on the target Windows laptop, operated wit
 | Media playback | Fullscreen videos, images, music-linked content if appropriate, and emergency stop | ➖ Deferred |
 | Sponsor content | Static sponsors, scheduled rotation, and proof-of-play logging if needed | ➖ Deferred |
 | Visual system | Team themes, logos, typography, safe zones, and reusable templates | ➖ Deferred |
-| Presentation layout editor | Safe offline editing of spectator-board placement and colors through validated visual-only layouts | ✅ v1 delivered early, inside Phase 2, on September 5, 2026 at the owner's direct request — see "Phase 2 owner request 3" above. Delivering it does not advance any other Phase 3 workstream in this table |
+| Presentation layout editor | Safe offline editing of spectator-board placement and colors through validated visual-only layouts | ✅ v1 delivered early, inside Phase 2, on September 5, 2026 at the owner's direct request, rebuilt as v2 the same day, and extended to the pre-game and halftime screens (v3) on September 6, 2026 — see "Phase 2 owner request 3" and "owner request 4" above. Delivering it does not advance any other Phase 3 workstream in this table |
 | Source switching workflow | Scoreboard versus media/secondary HDMI source procedures | ➖ Deferred |
 
 ### Phase 3 Definition of Done
@@ -885,6 +962,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | `game_clock_label`, `home_timeouts`, and `away_timeouts` ship as positionable widgets that default to **hidden**. | The current spectator board draws none of them, so hiding them by default makes the widgetized board's default layout reproduce today's board exactly; requirement D-001's default field inventory is answered the same way as before, and turning them on becomes a deliberate operator presentation choice rather than an automatic answer to open owner decision B-4. | If the owner decides timeouts should be visible by default rather than opt-in. |
 | September 5, 2026 | The presentation layout editor uses numeric fields with documented min/max for every geometry property; there is no drag-and-drop or drag-resize in v1. | Matches discovery issue 05's chosen level (constrained named-slot editing) while keeping the implementation to validated number entry rather than pointer-based hit-testing and drag math, which is a materially larger and riskier UI surface for a first version. | If rehearsal or the owner asks for direct manipulation and the added complexity is judged worthwhile. |
 | September 5, 2026 | **Superseded the same day.** The layout editor is rebuilt as a v2 canvas editor: pointer drag/resize with snapping and guides, multi-select and group-drag, undo/redo, and free text/image/box elements are now in v1's place, and "no free text or images" is no longer a v1/v2 exclusion — schema v2 adds validated `text`/`image`/`box` elements (up to 24, images capped at 2 MB/6 MB decoded) alongside the fifteen widgets. Every v1 safety property (no path to a game command, no state-revision advance, strict Python validation gating `Save`) is unchanged. | The owner's verdict on the numeric-only v1 editor was "stuck 20 years in the past." Direct manipulation and free decorative content were judged worth the added UI surface once the safety invariants above were confirmed intact by an independent review pass. | If a future editor generation needs a different interaction model; the underlying schema/bridge/renderer safety contract is expected to outlive any particular UI. |
+| September 6, 2026 | The pre-game and halftime screens live **inside one layout document** (`screens.pregame` / `screens.halftime`, schema v3), not as a separate library or file alongside `layouts.json`'s existing layouts. | An operator thinks of "the layout" as one design choice for the whole spectator experience, not three unrelated files that could drift out of sync (a Tigers-navy game board paired with a Classic pregame screen by accident); one document also means Save/duplicate/rename/delete already act on the right unit with no new bridge surface, and a v1/v2 file upgrades to v3 by gaining two default screens rather than needing a migration into a second store. | If an operator workflow emerges needing to reuse one pregame screen across several otherwise-different game-screen layouts, which would argue for screens as independently addressable objects. |
 | September 5, 2026 | The Field Assistant is a one-panel-at-a-time screen for a volunteer with five minutes of training: direction is asked once in plain words ("Which end zone does HOME score in during the 1st quarter?"), "who has the ball" starts every series including kickoff returns, and each play is "click where the ball ended, press what happened" (**PLAY OVER**, **INCOMPLETE PASS**, **OTHER TEAM'S BALL HERE**, with **PENALTY…**, **SCORE…**, **FIX MANUALLY…** as sub-panels). The Confirm button's label is the previewed result. A punt, interception, fumble, turnover on downs, and kickoff return are all the same explicit `turnover`/`start_series` change of possession to Python. A new `manual` action lets the operator state team, down, distance (or Goal) and the clicked spot; Python validates and derives only the line to gain, in one atomic command. | The owner's second operator attempt (September 5, 2026) still could not finalize anything. The real cause was a defect — the helper attached its bridge on a `document`-level `pywebviewready` listener that pywebview never fires (it dispatches on `window`), so Confirm could never enable — but the owner's verdict on the screen itself was that a workflow dropdown, hidden control groups, a "HOME attacks toward" dropdown, and a separate Preview press were too hard for a normal person, and that kickoffs/punts and an intuitive manual override were missing. Both were fixed together; the rules, envelope, and atomic boundary did not change. | If a live operator rehearsal shows a step volunteers still miss, or if the owner wants the Field drawer's manual controls removed from the main window (they are unchanged today). |
 | September 5, 2026 | The Field Assistant's rules direction is fixed per team in the label-based absolute coordinate (HOME always `+1` toward the AWAY goal line, AWAY always `-1`); the operator's one-time first-quarter choice only records which side of the on-screen drawing HOME attacks toward, and the drawing mirrors at every quarter boundary (`home_goal_side`). Stored ball spots and line-to-gain never move at a quarter change; OT stays manual-only. | The originally drafted rule flipped the label-based direction itself every quarter, which is internally inconsistent with a coordinate where `0` is always the HOME goal line: a literal flip would have moved a 2nd-quarter HOME gain toward HOME's own goal line. Found and corrected during implementation, before any rehearsal used the incorrect version. | If local overtime rules are approved and OT direction stops being manual-only. |
 | September 4, 2026 | Task 8 gap 1: lifecycle follows accepted quarter commands (including quarter Undo): PRE → PRE_GAME, HALF → HALFTIME, FINAL → FINAL, all playing labels → IN_PROGRESS. A successful game-clock Start leaving pregame/halftime enters IN_PROGRESS; End Game sets FINAL and New Game restores PRE_GAME. PRE/HALF entry selects its stopped event preset only when switching countdown kind; an already selected countdown retains its time. | No overlapping lifecycle control; team-name validation now leaves pregame. Expiry never advances lifecycle. | Operator rehearsal. |
@@ -962,6 +1040,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | Deep-dive audit: five lightest findings implemented | Guarded the startup spectator open so the refresh loop always starts (C1); moved the folder picker outside the command lock (C2); put both names and scores on the pregame/halftime countdown board (C3); added the `open_logs_folder` host action and its Advanced-drawer button (I3); isolated `DataLocationTests` from the operator's remembered folder (I1 slice). Nine new tests; full suite 712 / 15 failures / 3 errors — identical baseline, nothing new failing. The two lock/guard tests were run with the source change stashed and **fail without the fix**. The halftime board was rendered in a browser against a `HALFTIME` snapshot with both names and scores visible. Not done: the Playwright matrix (no Node here) and a real WebView2 window. | `src/scoreboard/host/app.py`; `src/scoreboard/host/bridge.py`; `src/scoreboard/views/spectator/index.html`, `spectator.css`; `src/scoreboard/views/operator/index.html`, `operator.js`; `tests/integration/test_display_selection.py`, `test_data_folder.py`, `test_logs_folder.py`, `test_persistence.py`, `test_spectator_layout_render.py` | See "Deep-dive audit" for the ten open findings and their owners. |
 | September 5, 2026 | Presentation layout editor (v1) | Added the layout schema and validation (`presentation/layout.py`), `layouts.json` persistence, a non-mutating host bridge, the widgetized spectator renderer (`views/shared/board.js`/`board.css`), and a separate editor window. **100 focused Python tests pass**: schema 42, persistence 18, bridge/no-mutation 18, renderer contract 8, editor contract 14. The three browser checks (spectator matrix 2, editor drive 1) passed when written but error on this host, which has no Node.js or Playwright. The browser matrix covers 1280x720, 1366x768, 1920x1080 and 390x844 and **fixed a pre-existing safe-area overflow** in the play-clock block. `compileall`, `pip check`, and `git diff --check` passed. | `src/scoreboard/presentation/layout.py`; `src/scoreboard/infrastructure/layouts.py`; `src/scoreboard/host/layout_bridge.py`; `src/scoreboard/views/layout/`; `src/scoreboard/views/shared/board.js`; `tests/unit/test_layout_schema.py`; `tests/integration/test_layout_persistence.py`; `tests/integration/test_layout_bridge.py`; `tests/integration/test_spectator_layout_render.py`; `tests/integration/test_layout_editor_contract.py`; `tests/ui/` | Closes discovery issue 05 and owner-requested item 3. No hardware, two-display, or WebView2 rendering evidence is claimed; Task 12 and the hardware/stadium evidence gap are unaffected. |
 | September 5, 2026 | Presentation layout editor v2 | Rebuilt the same day as a canvas editor against `.scratch/layout-editor-v2/spec.md`: schema v2 (background, up to 24 text/image/box elements, fonts, presets, v1→v2 upgrade path) in `presentation/layout.py`; `rename_layout`/`duplicate_layout` in `infrastructure/layouts.py` and `host/layout_bridge.py`; element reconciliation, background-on-container, and the `handle`/`guide`/`drag`/`resize`-forbidden renderer contract in `views/shared/board.js`/`board.css`; and the split editor (`layout.js`, `editor-state.js`, `editor-canvas.js`, `editor-panels.js`) with undo, multi-select, and library management. **Verified so far:** focused suites pass — schema 95, persistence+bridge 58, renderer contract, editor contract 25. Driven in the preview browser against a stub bridge (add elements, drag/snap, history, presets, library menu, context menu, multi-select, zoom) and in the real pywebview/WebView2 runtime via `WindowHost` (editor opened, elements added, history stepped, background set, `Save` wrote a schema-2 `layouts.json`, practice spectator received the push). A cumulative-delta bug in multi-selection group-drag (`moveGroupBy`) was found and fixed during implementation. Full discovery run after v2 (September 5, 2026, `SCOREBOARD_DATA_DIR` isolated): **703 tests, 16 failures, 3 errors** — the same inventory as the pre-v2 baseline; the one new failure the run surfaced (`test_the_build_script_requires_every_view_file`, because the editor gained three script files) was fixed by adding them to `tools/build_package.py` before this was recorded. | `src/scoreboard/presentation/layout.py`; `src/scoreboard/infrastructure/layouts.py`; `src/scoreboard/host/layout_bridge.py`; `src/scoreboard/views/layout/`; `src/scoreboard/views/shared/board.js`; `src/scoreboard/views/shared/board.css`; `tests/unit/test_layout_schema.py`; `tests/integration/test_layout_persistence.py`; `tests/integration/test_layout_bridge.py`; `tests/integration/test_spectator_layout_render.py`; `tests/integration/test_layout_editor_contract.py`; `.scratch/layout-editor-v2/spec.md` | Not verified: `tests/ui/` Playwright suites (no Node.js on this host), hardware/LED/two-display evidence, WebView2 file-picker behavior for the Image button. Task 12 and the hardware/stadium evidence gap remain unaffected. |
+| September 6, 2026 | Presentation layout editor v3 — pre-game and halftime screens | Schema v3 (`screens.pregame`/`screens.halftime`, the eight-widget event registry, per-screen validation and clamp, eight screen presets), the renderer's `build(container, kind)` path with the spectator page drawing the screen chosen by `lifecycle`, the editor's Game / Pre-game / Halftime switcher with per-screen presets and issues, the bridge's `screens`/`screen_presets` state, screen-aware `reset_widget`, and `clocks.event.warmup_display`. **Verified:** focused suites pass (schema 114, editor contract 30, spectator renderer contract 18, layout bridge + persistence + bridge warmup tests); full discovery run **750 tests, 15 failures, 3 errors** — the pre-existing inventory exactly, no regression; real pywebview run via `WindowHost` (editor → Pre-game → Matchup preset → add text → Save wrote schema 3 → practice spectator showed the pregame screen, then the halftime screen with "Warmup follows: 3:00" after a confirmed move to `HALF`). Also fixed the same day: the operator strip's `LAST:` line for a Field Assistant action now reads as plain language (`tests/integration/test_last_action_label.py`, 3 tests) and `clamp_layout` no longer reports a spurious adjustment for a widget that exactly touches the safe-area edge. | `src/scoreboard/presentation/layout.py`; `src/scoreboard/views/shared/board.js`; `src/scoreboard/views/spectator/`; `src/scoreboard/views/layout/`; `src/scoreboard/host/layout_bridge.py`; `src/scoreboard/host/bridge.py`; `tests/unit/test_layout_schema.py`; `tests/integration/test_layout_*`; `tests/integration/test_spectator_layout_render.py`; `tests/integration/test_last_action_label.py`; `.scratch/presentation-screens/spec.md` | Not verified: `tests/ui/` Playwright suites (no Node.js on this host), LED/hardware rendering. |
 | Planned September 8, 2026 | Personal Windows laptop → HDMI processor input → full LED wall | Pending | Add photographs, screenshots, and notes | Determines whether Phase 0 can close and confirms the preferred system boundary. |
 
 ### Practice-only spectator test window — September 5, 2026
@@ -1149,7 +1228,9 @@ the editor advances no state revision, submits no command, and writes no
 action-history row. Full evidence is under "Phase 2 owner request 3 —
 presentation layout editor" above; the operator-facing description is
 `docs/UX_AND_LAYOUT.md` section 10, and the schema is
-`src/scoreboard/presentation/layout.py`.
+`src/scoreboard/presentation/layout.py`. Rebuilt as the v2 canvas editor the
+same day, and extended on September 6, 2026 so the pre-game and halftime
+screens are editable too (schema v3; "Phase 2 owner request 4" above).
 
 Delivering it early does **not** advance Phase 3 as a whole. Every other
 Phase 3 workstream — OBS, cutscenes, media playback, sponsors, the visual

@@ -116,7 +116,7 @@
 
   function renderSelection(app) {
     var ids = app.selection.ids;
-    var single = ids.length === 1 ? S.getItem(app.draft, ids[0]) : null;
+    var single = ids.length === 1 ? S.getItem(app.screenDoc(), ids[0]) : null;
     handleLayer.hidden = !single || single.visible === false;
     if (single) {
       handleLayer.style.setProperty('--hx', single.x);
@@ -135,13 +135,14 @@
   /* --- Move / resize ------------------------------------------------------ */
 
   function moveItemTo(app, id, wantX, wantY) {
-    var item = S.getItem(app.draft, id);
+    var doc = app.screenDoc();
+    var item = S.getItem(doc, id);
     if (!item) {
       return;
     }
-    var kind = S.kindOf(app.draft, id);
-    var bounds = S.boundsFor(app.draft, kind);
-    var targets = S.snapTargets(app.draft, id);
+    var kind = S.kindOf(doc, id);
+    var bounds = S.boundsFor(doc, kind);
+    var targets = S.snapTargets(doc, id);
     var scale = precisionScale(app);
     var lines = [];
 
@@ -171,13 +172,14 @@
    * Callers with no gesture (a nudge) pass no origins and the current
    * positions are used. */
   function moveGroupBy(app, ids, dx, dy, origins) {
+    var doc = app.screenDoc();
     var scale = precisionScale(app);
     var i;
     var item;
     if (!origins) {
       origins = {};
       for (i = 0; i < ids.length; i += 1) {
-        item = S.getItem(app.draft, ids[i]);
+        item = S.getItem(doc, ids[i]);
         if (item) {
           origins[ids[i]] = { x: item.x, y: item.y };
         }
@@ -186,15 +188,15 @@
     // Put every member back where the gesture started so the clamp below
     // measures the delta against the same positions the delta was.
     for (i = 0; i < ids.length; i += 1) {
-      item = S.getItem(app.draft, ids[i]);
+      item = S.getItem(doc, ids[i]);
       if (item && origins[ids[i]]) {
         S.setGeometry(item, 'x', origins[ids[i]].x, scale);
         S.setGeometry(item, 'y', origins[ids[i]].y, scale);
       }
     }
-    var clamped = S.clampGroupDelta(app.draft, ids, dx, dy);
+    var clamped = S.clampGroupDelta(doc, ids, dx, dy);
     for (i = 0; i < ids.length; i += 1) {
-      item = S.getItem(app.draft, ids[i]);
+      item = S.getItem(doc, ids[i]);
       if (!item || !origins[ids[i]]) {
         continue;
       }
@@ -204,13 +206,14 @@
   }
 
   function resizeTo(app, id, edge, point) {
-    var item = S.getItem(app.draft, id);
+    var doc = app.screenDoc();
+    var item = S.getItem(doc, id);
     if (!item) {
       return;
     }
-    var kind = S.kindOf(app.draft, id);
-    var bounds = S.boundsFor(app.draft, kind);
-    var targets = S.snapTargets(app.draft, id);
+    var kind = S.kindOf(doc, id);
+    var bounds = S.boundsFor(doc, kind);
+    var targets = S.snapTargets(doc, id);
     var scale = precisionScale(app);
     var minimum = minSize(app);
     var right = item.x + item.width;
@@ -293,9 +296,10 @@
     marqueeEl.style.setProperty('--mh', y1 - y0);
     var box = { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
     var hit = [];
-    var candidates = visibleItemIds(app.draft);
+    var doc = app.screenDoc();
+    var candidates = visibleItemIds(doc);
     for (var i = 0; i < candidates.length; i += 1) {
-      var item = S.getItem(app.draft, candidates[i]);
+      var item = S.getItem(doc, candidates[i]);
       if (item && intersects(box, item)) {
         hit.push(candidates[i]);
       }
@@ -346,12 +350,12 @@
       var ids = app.selection.ids.slice();
       var origins = {};
       for (var i = 0; i < ids.length; i += 1) {
-        var member = S.getItem(app.draft, ids[i]);
+        var member = S.getItem(app.screenDoc(), ids[i]);
         if (member) {
           origins[ids[i]] = { x: member.x, y: member.y };
         }
       }
-      var grabbed = S.getItem(app.draft, itemId);
+      var grabbed = S.getItem(app.screenDoc(), itemId);
       drag = {
         kind: ids.length > 1 ? 'group' : 'move',
         id: itemId,
@@ -399,18 +403,18 @@
     drag.moved = true;
     if (drag.kind === 'resize') {
       resizeTo(app, drag.id, drag.edge, point);
-      var resized = S.getItem(app.draft, drag.id);
+      var resized = S.getItem(app.screenDoc(), drag.id);
       showReadout('W ' + percentText(resized.width) + '%  H ' + percentText(resized.height) + '%', event);
     } else if (drag.kind === 'group') {
       var origin = drag.origins[drag.id];
       var dx = (point.x - drag.grabX) - origin.x;
       var dy = (point.y - drag.grabY) - origin.y;
       moveGroupBy(app, drag.ids, dx, dy, drag.origins);
-      var moved = S.getItem(app.draft, drag.id);
+      var moved = S.getItem(app.screenDoc(), drag.id);
       showReadout('X ' + percentText(moved.x) + '%  Y ' + percentText(moved.y) + '%', event);
     } else {
       moveItemTo(app, drag.id, point.x - drag.grabX, point.y - drag.grabY);
-      var placed = S.getItem(app.draft, drag.id);
+      var placed = S.getItem(app.screenDoc(), drag.id);
       showReadout('X ' + percentText(placed.x) + '%  Y ' + percentText(placed.y) + '%', event);
     }
     app.liveRefresh();
@@ -455,7 +459,7 @@
 
   function restack(app, direction) {
     var id = app.selection.primary;
-    var item = id ? S.getItem(app.draft, id) : null;
+    var item = id ? S.getItem(app.screenDoc(), id) : null;
     if (!item) {
       return;
     }
@@ -468,7 +472,7 @@
 
   function toExtreme(app, toTop) {
     var id = app.selection.primary;
-    var item = id ? S.getItem(app.draft, id) : null;
+    var item = id ? S.getItem(app.screenDoc(), id) : null;
     if (!item) {
       return;
     }
@@ -481,8 +485,9 @@
 
   function boundsOf(app, ids) {
     var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    var doc = app.screenDoc();
     for (var i = 0; i < ids.length; i += 1) {
-      var item = S.getItem(app.draft, ids[i]);
+      var item = S.getItem(doc, ids[i]);
       if (!item) {
         continue;
       }
@@ -501,14 +506,15 @@
     if (!ids.length) {
       return;
     }
+    var doc = app.screenDoc();
     var scale = precisionScale(app);
     var group = ids.length > 1 ? boundsOf(app, ids) : null;
     for (var i = 0; i < ids.length; i += 1) {
-      var item = S.getItem(app.draft, ids[i]);
+      var item = S.getItem(doc, ids[i]);
       if (!item) {
         continue;
       }
-      var ref = group || S.boundsFor(app.draft, S.kindOf(app.draft, ids[i]));
+      var ref = group || S.boundsFor(doc, S.kindOf(doc, ids[i]));
       if (edge === 'left') {
         S.setGeometry(item, 'x', ref.left, scale);
       } else if (edge === 'right') {
@@ -531,24 +537,25 @@
     if (ids.length < 3) {
       return;
     }
+    var doc = app.screenDoc();
     var scale = precisionScale(app);
     var prop = axis === 'h' ? 'x' : 'y';
     var size = axis === 'h' ? 'width' : 'height';
     ids.sort(function (a, b) {
-      var ia = S.getItem(app.draft, a), ib = S.getItem(app.draft, b);
+      var ia = S.getItem(doc, a), ib = S.getItem(doc, b);
       return ia[prop] - ib[prop];
     });
-    var first = S.getItem(app.draft, ids[0]);
-    var last = S.getItem(app.draft, ids[ids.length - 1]);
+    var first = S.getItem(doc, ids[0]);
+    var last = S.getItem(doc, ids[ids.length - 1]);
     var span = (last[prop] + last[size]) - first[prop];
     var totalSize = 0;
     for (var i = 0; i < ids.length; i += 1) {
-      totalSize += S.getItem(app.draft, ids[i])[size];
+      totalSize += S.getItem(doc, ids[i])[size];
     }
     var gap = (span - totalSize) / (ids.length - 1);
     var cursor = first[prop] + first[size];
     for (var j = 1; j < ids.length - 1; j += 1) {
-      var item = S.getItem(app.draft, ids[j]);
+      var item = S.getItem(doc, ids[j]);
       cursor += gap;
       S.setGeometry(item, prop, cursor, scale);
       cursor += item[size];
@@ -610,8 +617,8 @@
     if (id && !S.isSelected(app.selection, id)) {
       app.select([id]);
     }
-    var kind = id ? S.kindOf(app.draft, id) : null;
-    var isElement = S.isElementId(app.draft, id || '');
+    var kind = id ? S.kindOf(app.screenDoc(), id) : null;
+    var isElement = S.isElementId(app.screenDoc(), id || '');
     var isWidget = kind === 'widget';
     Array.prototype.forEach.call(contextMenu.querySelectorAll('[data-context-for]'), function (node) {
       var scope = node.getAttribute('data-context-for');

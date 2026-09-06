@@ -777,6 +777,38 @@ class SpectatorBridgeTests(BridgeTestCase):
         self.assertIn("catch (error)", script)
         self.assertIn("Spectator rendering failed", script)
 
+    def test_warmup_display_is_none_during_pre_game(self) -> None:
+        # A fresh game starts in PRE_GAME (presentation-screens spec section
+        # 4): the warmup line has nothing to say before halftime exists.
+        snapshot = self.bridge.spectator_snapshot()
+
+        self.assertEqual(snapshot["lifecycle"], "PRE_GAME")
+        self.assertEqual(snapshot["clocks"]["event"]["phase"], "PREGAME")
+        self.assertIsNone(snapshot["clocks"]["event"]["warmup_display"])
+
+    def test_warmup_display_matches_warmup_follows_above_the_threshold(self) -> None:
+        # A quarter move now requires confirmation (follow-up 02, PROJECT_
+        # ROADMAP.md's failure inventory); confirm it explicitly rather than
+        # relying on the bare command the way the pre-existing (currently
+        # failing) test_spectator.py lifecycle test does.
+        self.send("set_quarter", {"label": "HALF", "confirmed": True})
+
+        snapshot = self.bridge.spectator_snapshot()
+        event = snapshot["clocks"]["event"]
+
+        self.assertEqual(snapshot["lifecycle"], "HALFTIME")
+        self.assertEqual(event["phase"], "HALFTIME")
+        self.assertEqual(event["warmup_follows"], "3:00")
+        self.assertEqual(event["warmup_display"], "Warmup follows: 3:00")
+
+        # Once the countdown drops to the warmup threshold, the phase flips
+        # to WARMUP and both fields go quiet together.
+        self.send("event_countdown_correct", {"seconds": 180})
+        event = self.bridge.spectator_snapshot()["clocks"]["event"]
+        self.assertEqual(event["phase"], "WARMUP")
+        self.assertIsNone(event["warmup_follows"])
+        self.assertIsNone(event["warmup_display"])
+
 
 class TickTests(BridgeTestCase):
     """The refresh loop displays and checkpoints; it never commands."""

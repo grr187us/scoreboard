@@ -1,7 +1,7 @@
 # Operator Workflow and Initial Layouts
 
 **Status:** Phase 1 wireframe baseline; visual design is not implemented
-**Last updated:** September 5, 2026 (added the field-status readout, the Field status drawer, the recovery screen's local-time display, and the presentation layout editor; rebuilt the editor as the v2 canvas editor described in section 10)
+**Last updated:** September 6, 2026 (added the field-status readout, the Field status drawer, the recovery screen's local-time display, and the presentation layout editor; rebuilt the editor as the v2 canvas editor described in section 10; added pre-game and halftime screens to the editor, section 10.9)
 
 ## 1. Design intent
 
@@ -56,7 +56,7 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Test at 1280×720, 1366×768, 1920×1080, and one portrait/narrow mode before stadium dimensions are known.
 - After the HDMI test, add the confirmed resolution/refresh/overscan mode to the test matrix rather than hard-coding a new layout.
 
-**Widget-rendered board (added September 5, 2026).** The board above is now drawn from fifteen individually positioned, sized, and colored widgets (`views/shared/board.js`) rather than a fixed CSS grid, so the arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) keeps its own separate markup and CSS — since the September 5 deep-dive audit it also carries both team names and the score beneath the countdown, so the wall is never scoreless during an intermission — and is **not** covered by the editor in v1 (section 10.8).
+**Widget-rendered board (added September 5, 2026).** The board above is now drawn from fifteen individually positioned, sized, and colored widgets (`views/shared/board.js`) rather than a fixed CSS grid, so the arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) was a separate fixed markup until September 6, 2026; it is now drawn from the active layout's **Pre-game** and **Halftime** screens (eight event widgets: both names and scores, phase label, countdown title, countdown, warmup line), whose built-in defaults reproduce the earlier centred arrangement — including the score beneath the countdown, so the wall is never scoreless during an intermission — and which the editor can rearrange like the game board (section 10.9).
 
 ## 4. Operator-screen wireframe
 
@@ -171,6 +171,7 @@ goal-to-go situation; the board displays it as `4th & Goal` either way
 - At halftime, the spectator display shows one `UNTIL SECOND HALF` 15:00 countdown. While more than 3:00 remains it labels the current phase `HALFTIME` and visibly states `Warmup follows: 3:00`.
 - At 3:00, the same countdown continues without a reset and its current-phase label changes to `WARMUP`.
 - The halftime countdown uses the same reliable timing model but remains a separate control. Pregame has no second countdown control.
+- **Added September 6, 2026 (verified in the real pywebview runtime the same day).** The on-screen arrangement of this presentation is now the operator's choice: the pregame and halftime screens described above are drawn from the active layout's Pre-game and Halftime screens — the same stored layout document that draws the game board — using a dedicated set of *event widgets* (home/away team name and score, phase label, countdown title, countdown, and warmup line). Every value named above (`KICKOFF IN 30:00`, `UNTIL SECOND HALF`, the `HALFTIME`/`WARMUP` phase label, `Warmup follows: 3:00`) is still produced in Python exactly as this section describes; only where each value is drawn, and how it looks, is now an editable presentation choice. See section 10.9 for the switcher, the event widget inventory, and the per-screen presets.
 
 ### 6.2 Start and stop the game clock
 
@@ -316,9 +317,9 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 - Verify fullscreen placement and recovery when the processor input is reselected.
 - Decide whether the logical 16:9 canvas is correct or whether a custom aspect-ratio profile is required.
 
-## 10. Presentation layout editor (added September 5, 2026; rebuilt as v2 the same day)
+## 10. Presentation layout editor (added September 5, 2026; rebuilt as v2 the same day; pre-game and halftime screens added September 6, 2026)
 
-Implements item 3 of "Owner-requested next scoreboard work," delivered after items 1 and 2 (local time, expanded football fields). See "Phase 2 owner request 3 — presentation layout editor" and "Phase 2 owner request 3 — presentation layout editor v2" in `PROJECT_ROADMAP.md` for full evidence, and `.scratch/layout-editor-v2/spec.md` for the design spec four agents built against.
+Implements item 3 of "Owner-requested next scoreboard work," delivered after items 1 and 2 (local time, expanded football fields). See "Phase 2 owner request 3 — presentation layout editor" and "Phase 2 owner request 3 — presentation layout editor v2" in `PROJECT_ROADMAP.md` for full evidence, and `.scratch/layout-editor-v2/spec.md` for the design spec four agents built against. Section 10.9 describes the pre-game and halftime screens added September 6, 2026 against `.scratch/presentation-screens/spec.md`; that work was integrated and verified the same day (focused suites, full discovery run, real pywebview run) — see "Phase 2 owner request 4 — pre-game and halftime screens" in `PROJECT_ROADMAP.md`.
 
 The v1 editor was functionally safe but was numeric-fields-only: no undo, no multi-select, no free text or images, no board background, no fonts, no presets, and no way to rename, duplicate, or delete a stored layout from the UI. v2 turns it into a dense, dark, Figma/Canva-style canvas editor — a real design surface — while keeping every v1 safety property exactly intact.
 
@@ -438,7 +439,46 @@ Validation is strict: a value out of range, an unrecognized color format, a widg
 - A font that is not already installed on Windows; nothing is downloaded (10.4a).
 - A different hand-tuned layout per screen resolution.
 - Editing the operator panel's own layout.
-- The pregame/halftime **event countdown board** (the `KICKOFF IN…` / `UNTIL SECOND HALF…` presentation) is **not editable in v2**. It keeps its existing markup and CSS untouched; only the in-game widgetized board is covered by the editor.
+- A fourth screen — end of game, timeouts, or any other lifecycle moment beyond Game, Pre-game, and Halftime — is not added; the schema leaves room for one (`SCREEN_IDS`) but nothing beyond the three current screens is built.
+
+### 10.9 Pre-game and halftime screens (added September 6, 2026)
+
+**The pregame/halftime event countdown board described in 10.8 of earlier revisions of this document is no longer a fixed, uneditable presentation.** As of schema v3, one stored layout describes three screens — Game, Pre-game, and Halftime — and the editor covers all three. The pregame and halftime screens keep their own widget set (10.9a) because they show different information than the game screen, but they are otherwise edited the same way: drag, resize, restyle, restack, add free elements, and apply a preset, all validated by Python before `Save`.
+
+**Screen switcher.** A segmented control in the toolbar, immediately after the layout-name menu and the dirty dot, reads `Game` / `Pre-game` / `Halftime` (one button per screen, the current one shown selected). `Ctrl+1`, `Ctrl+2`, and `Ctrl+3` switch to Game, Pre-game, and Halftime respectively, the same way the numbered zoom shortcuts already work elsewhere in the toolbar. Switching screens clears the current selection, swaps the canvas and layers rail to that screen's widgets and elements, and re-validates against Python; nothing about the draft on the screen being left is discarded — a pending edit on Game is exactly as it was when Pre-game or Halftime is reopened.
+
+#### 10.9a Event widget inventory
+
+The pregame and halftime screens are built from a different widget set than the fifteen game widgets in 10.4 — eight **event widgets**, grouped **Teams** and **Countdown**:
+
+| id | Label | What it shows |
+|---|---|---|
+| `home_name` | Home team name | The home team's name |
+| `home_score` | Home score | The home team's score |
+| `away_name` | Away team name | The away team's name |
+| `away_score` | Away score | The away team's score |
+| `event_phase` | Phase label | The current countdown phase (for example `HALFTIME` / `WARMUP`) |
+| `event_title` | Countdown title | The countdown's title (for example `KICKOFF IN`, `UNTIL SECOND HALF`) |
+| `event_clock` | Countdown | The countdown's formatted remaining time |
+| `warmup` | Warmup line | `Warmup follows: 3:00`, shown only while the halftime countdown is above the warmup threshold; blank (and hidden by the renderer, not drawn as an empty box) once warmup begins or during pregame |
+
+Every value is still produced in Python and only copied by JavaScript, on exactly the rule stated in 10.1 and 10.5. `event_phase` and `warmup` default to hidden on the pregame screen (there is no phase label or warmup line before kickoff) and visible on halftime; `home_name`, `home_score`, `away_name`, `away_score`, and `event_title`/`event_clock` default to visible on both. Turning a widget on or off, or restyling it, is a per-screen choice — hiding `event_phase` on Halftime does not touch Pre-game, and vice versa.
+
+#### 10.9b Per-screen presets
+
+The `Presets` menu and the Board inspector's presets gallery show a different gallery depending on which screen is selected:
+
+- **Game screen presets** are the same four described in 10.4a (Classic, Broadcast bar, Big score, Tigers navy) and, as of this change, apply **only** to the game screen — choosing one replaces the current draft's top-level `safe_area`, `background`, `widgets`, and `elements` exactly as before, and no longer touches the Pre-game or Halftime screens of the same layout.
+- **Pre-game screen presets:** Classic (today's default arrangement), Matchup (both team names enlarged facing each other with a `VS` mark between them, the countdown centered below), Broadcast bar (a dark bar across the bottom holding names, scores, and the countdown, leaving the upper board empty for future media), and Tigers navy (the project's navy/red branded look).
+- **Halftime screen presets:** Classic (today's default arrangement), Score first (both scores enlarged beside each name with the phase label and countdown below), Broadcast bar (the same bottom-bar treatment as pre-game, with the phase label and warmup line at its ends), and Tigers navy.
+
+Applying a screen preset replaces only that screen's mini-document (`safe_area`, `background`, `widgets`, `elements`) inside the draft; the layout's name, its other two screens, are kept. The same dirty-draft inline confirmation, history entry, and re-render that already govern the game-screen presets (10.4a) apply here.
+
+#### 10.9c Validation and storage
+
+A validation issue now names the screen it belongs to: a game-screen issue reads exactly as it did before this change (for example "Countdown must sit inside the safe area."), while a pre-game or halftime issue is prefixed with its screen's label (for example "Halftime: Countdown must sit inside the safe area."). The status-bar issue count and the issues drawer cover all three screens at once; selecting an issue from a screen other than the one showing switches to it first. Everything in 10.6 and 10.7 — the safe-area boundary, strict rejection of an out-of-bounds widget or element, and the "never silently clamped" rule — applies independently to each screen.
+
+**One stored layout, three screens.** `layouts.json` still holds one library of named layouts; each layout is one document that now carries the game screen at its top level (unchanged shape, so every existing layout keeps opening) plus a `screens.pregame` and `screens.halftime` mini-document. Saving, duplicating, renaming, or deleting a layout always acts on the whole three-screen document — there is no way to save or share a single screen independently of the layout it belongs to. See `docs/ARCHITECTURE.md` §9 for the on-disk schema.
 
 ## 11. Field Assistant window (added September 5, 2026)
 

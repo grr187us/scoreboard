@@ -455,6 +455,106 @@ class IndependentPositioningTests(LayoutTestCase):
         self.assertEqual(result["layout"]["widgets"]["ball_on"]["color"], "#010203")
 
 
+class ScreensStateTests(LayoutTestCase):
+    """``state()`` carries the per-screen descriptors and presets the editor's
+    Game / Pre-game / Halftime switcher needs (presentation-screens spec
+    section 4)."""
+
+    def test_state_exposes_screen_descriptors_for_every_screen(self) -> None:
+        layouts = self.make_layouts()
+
+        state = layouts.state()
+
+        self.assertIn("screens", state)
+        screen_ids = [descriptor["id"] for descriptor in state["screens"]]
+        self.assertEqual(screen_ids, list(layout_module.SCREEN_IDS))
+        for descriptor in state["screens"]:
+            self.assertEqual(descriptor["label"], layout_module.SCREEN_LABELS[descriptor["id"]])
+            self.assertEqual(descriptor["kind"], layout_module.SCREEN_KINDS[descriptor["id"]])
+
+        event_descriptors = {
+            descriptor["id"]: descriptor for descriptor in state["screens"]
+            if descriptor["id"] in layout_module.EVENT_SCREEN_IDS
+        }
+        self.assertEqual(set(event_descriptors), set(layout_module.EVENT_SCREEN_IDS))
+        for descriptor in event_descriptors.values():
+            widget_ids = {widget["id"] for widget in descriptor["widgets"]}
+            self.assertEqual(widget_ids, set(layout_module.EVENT_WIDGET_IDS))
+            self.assertEqual(descriptor["widget_groups"], list(layout_module.EVENT_WIDGET_GROUP_ORDER))
+
+    def test_state_exposes_screen_presets_keyed_by_event_screen(self) -> None:
+        layouts = self.make_layouts()
+
+        state = layouts.state()
+
+        self.assertIn("screen_presets", state)
+        self.assertEqual(set(state["screen_presets"]), set(layout_module.EVENT_SCREEN_IDS))
+        for screen_id, presets in state["screen_presets"].items():
+            self.assertTrue(presets)
+            ids = [preset["id"] for preset in presets]
+            self.assertEqual(len(ids), len(set(ids)), "screen preset ids must be unique")
+            for preset in presets:
+                self.assertEqual(set(preset), {"id", "name", "description", "screen"})
+                self.assertTrue(preset["id"].startswith(f"{screen_id}_"))
+                self.assertIsInstance(preset["screen"], dict)
+
+    def test_screens_and_screen_presets_survive_the_json_boundary(self) -> None:
+        layouts = self.make_layouts()
+        self.assert_json_only(layouts.state()["screens"])
+        self.assert_json_only(layouts.state()["screen_presets"])
+
+
+class ResetWidgetScreenTests(LayoutTestCase):
+    """``reset_widget`` takes an optional ``screen`` and forwards it through
+    both the host object and the editor's ``js_api`` (presentation-screens
+    spec section 4)."""
+
+    def test_reset_widget_defaults_to_the_game_screen(self) -> None:
+        layouts = self.make_layouts()
+        document = moved(layouts.current_layout(), "quarter", x=0.06)
+
+        result = layouts.reset_widget("quarter", document)
+
+        default = layout_module.default_layout()
+        self.assertEqual(result["layout"]["widgets"]["quarter"], default["widgets"]["quarter"])
+
+    def test_reset_widget_can_target_an_event_screen(self) -> None:
+        layouts = self.make_layouts()
+        document = json.loads(json.dumps(layouts.current_layout()))
+        document["screens"]["halftime"]["widgets"]["event_title"]["x"] = 0.01
+
+        result = layouts.reset_widget("event_title", document, "halftime")
+
+        expected = layout_module.default_screen_widget("halftime", "event_title")
+        self.assertEqual(
+            result["layout"]["screens"]["halftime"]["widgets"]["event_title"], expected
+        )
+        # The other event screen is untouched by a reset scoped to halftime.
+        self.assertAlmostEqual(
+            result["layout"]["screens"]["pregame"]["widgets"]["event_title"]["x"],
+            layout_module.default_screen_widget("pregame", "event_title")["x"],
+        )
+
+    def test_the_editor_bridge_forwards_the_screen_argument(self) -> None:
+        layouts = self.make_layouts()
+        editor = LayoutEditorBridge(layouts, lambda: {})
+        document = json.loads(json.dumps(layouts.current_layout()))
+        document["screens"]["pregame"]["widgets"]["warmup"]["x"] = 0.02
+
+        result = editor.reset_widget("warmup", document, "pregame")
+
+        expected = layout_module.default_screen_widget("pregame", "warmup")
+        self.assertEqual(result["layout"]["screens"]["pregame"]["widgets"]["warmup"], expected)
+
+    def test_an_unknown_screen_leaves_the_layout_unchanged(self) -> None:
+        layouts = self.make_layouts()
+        document = layouts.current_layout()
+
+        result = layouts.reset_widget("quarter", document, "nonexistent")
+
+        self.assertEqual(result["layout"], layout_module.validate_layout(document).layout)
+
+
 class OperatorSurfaceTests(unittest.TestCase):
     """The editor is reachable, and only from the drawer (U-001)."""
 

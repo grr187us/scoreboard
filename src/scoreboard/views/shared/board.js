@@ -4,33 +4,45 @@
  * element" (text/image/box) is an operator-added extra placed the same way.
  * Both come from a layout document (produced and validated in Python,
  * `scoreboard.presentation.layout`); a widget's and a text element's text
- * comes from the view model / `WIDGET_TEXTS` / the layout itself. This file
- * only ever *places* and *writes* values it is handed -- JavaScript copies
- * text from exactly three places -- the view model, `WIDGET_TEXTS`, and a
- * validated layout's `elements[].text` -- and computes none of it, matching
- * the house rule in `render.js`.
+ * comes from the view model / a widget-texts map / the layout itself. This
+ * file only ever *places* and *writes* values it is handed -- JavaScript
+ * copies text from exactly three places -- the view model, a widget-texts
+ * map, and a validated layout's `elements[].text` -- and computes none of
+ * it, matching the house rule in `render.js`.
  *
- * The six data constants below (WIDGET_IDS, WIDGET_FIELDS, WIDGET_TEXTS,
- * OPTIONAL_WIDGET_IDS, DEFAULT_LAYOUT, FONT_FAMILIES) are written as strict
- * JSON literals -- double-quoted keys/strings, no trailing commas, no
- * comments inside the braces -- so a Python test can lift the text between
- * `=` and the closing `;` and `json.loads` it directly against the matching
- * Python constants in `scoreboard.presentation.layout`. Do not introduce
- * single quotes, trailing commas, or computed values inside those literals.
+ * Schema v3 (presentation-screens spec) adds a second widget "kind": the
+ * in-game board (registry "game", unchanged from v2) and the pre-game/
+ * halftime countdown board (registry "event"). `build(container, kind)`
+ * records which kind a board root is; `applyLayout`/`applyModel` read that
+ * kind back off the root to pick the matching registry.
+ *
+ * The data constants below (WIDGET_IDS, WIDGET_FIELDS, WIDGET_TEXTS,
+ * OPTIONAL_WIDGET_IDS, EVENT_WIDGET_IDS, EVENT_WIDGET_FIELDS,
+ * EVENT_WIDGET_TEXTS, EVENT_OPTIONAL_WIDGET_IDS, FONT_FAMILIES,
+ * DEFAULT_SCREENS, DEFAULT_LAYOUT) are written as strict JSON literals --
+ * double-quoted keys/strings, no trailing commas, no comments inside the
+ * braces -- so a Python test can lift the text between `=` and the closing
+ * `;` and `json.loads` it directly against the matching Python constants in
+ * `scoreboard.presentation.layout`. Do not introduce single quotes, trailing
+ * commas, or computed values inside those literals. `DEFAULT_LAYOUT`'s
+ * `screens` key is assigned right after its own literal, from the already
+ * separately declared `DEFAULT_SCREENS` literal, so both stay pure JSON on
+ * their own.
  *
  * Both the spectator page and the layout editor's live preview share this
  * file: `build`/`applyLayout`/`applyModel` only ever look inside the
- * `container` element passed to them, so two independent boards (the real
- * spectator canvas and the editor's preview canvas) can exist in the same
- * document without colliding.
+ * `container` element passed to them, so independent boards (the spectator's
+ * game and event sections, and the editor's preview canvas) can exist in the
+ * same document without colliding.
  *
  * Every placed node -- widget or free element -- carries `data-item="<id>"`.
- * `build()` marks the container it fills with `data-board-root="1"`;
- * `applyLayout()` looks for that marker (falling back to the container it
- * was given) and reconciles the free-element nodes underneath it: creates
- * ones newly present in `layout.elements`, removes ones no longer present,
- * updates the rest, and inserts any new node just before the first widget
- * node so a widget always draws above an element at equal `z_index`.
+ * `build()` marks the container it fills with `data-board-root="1"` and
+ * `data-board-kind="<kind>"`; `applyLayout()` looks for that marker (falling
+ * back to the container it was given) and reconciles the free-element nodes
+ * underneath it: creates ones newly present in the screen document's
+ * `elements`, removes ones no longer present, updates the rest, and inserts
+ * any new node just before the first widget node so a widget always draws
+ * above an element at equal `z_index`.
  */
 
 (function (global) {
@@ -79,6 +91,33 @@
     "home_timeouts", "away_timeouts"
   ];
 
+  /* The "event" registry: the pre-game/halftime countdown board (schema v3).
+   * Mirrors scoreboard.presentation.layout.EVENT_WIDGET_IDS. */
+  var EVENT_WIDGET_IDS = [
+    "home_name", "home_score", "away_name", "away_score",
+    "event_phase", "event_title", "event_clock", "warmup"
+  ];
+
+  /* Mirrors scoreboard.presentation.layout.EVENT_WIDGET_FIELDS. */
+  var EVENT_WIDGET_FIELDS = {
+    "home_name": "teams.home.name",
+    "home_score": "teams.home.score",
+    "away_name": "teams.away.name",
+    "away_score": "teams.away.score",
+    "event_phase": "clocks.event.phase",
+    "event_title": "clocks.event.title",
+    "event_clock": "clocks.event.display",
+    "warmup": "clocks.event.warmup_display"
+  };
+
+  /* No static labels on the event screens: every event widget's text comes
+   * from the view model. Mirrors scoreboard.presentation.layout.EVENT_WIDGET_TEXTS. */
+  var EVENT_WIDGET_TEXTS = {};
+
+  /* Hidden when the value is empty/None. Mirrors
+   * scoreboard.presentation.layout.EVENT_OPTIONAL_WIDGET_IDS. */
+  var EVENT_OPTIONAL_WIDGET_IDS = ["warmup"];
+
   /* Mirrors scoreboard.presentation.layout.FONT_FAMILIES: the CSS font stack
    * for each font id. Every family here is already installed on Windows --
    * nothing is ever loaded from a network. */
@@ -95,15 +134,437 @@
     "trebuchet": "'Trebuchet MS', Arial, sans-serif"
   };
 
+  /* Mirrors scoreboard.presentation.layout.default_layout()["screens"]: the
+   * pre-game and halftime mini-documents. Geometry is identical between the
+   * two screens; only `visible` differs (event_phase and warmup only show at
+   * halftime). Every widget carries the same neutral v2 style defaults as
+   * the game widgets above. */
+  var DEFAULT_SCREENS = {
+  "pregame": {
+    "safe_area": {
+      "top": 0.04,
+      "right": 0.04,
+      "bottom": 0.04,
+      "left": 0.04
+    },
+    "background": {
+      "color": "#000000"
+    },
+    "widgets": {
+      "home_name": {
+        "id": "home_name",
+        "visible": true,
+        "x": 0.04,
+        "y": 0.72,
+        "width": 0.30,
+        "height": 0.12,
+        "font_scale": 0.040,
+        "color": "#FFFFFF",
+        "text_align": "right",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "home_score": {
+        "id": "home_score",
+        "visible": true,
+        "x": 0.35,
+        "y": 0.70,
+        "width": 0.12,
+        "height": 0.16,
+        "font_scale": 0.070,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "away_name": {
+        "id": "away_name",
+        "visible": true,
+        "x": 0.66,
+        "y": 0.72,
+        "width": 0.30,
+        "height": 0.12,
+        "font_scale": 0.040,
+        "color": "#FFFFFF",
+        "text_align": "left",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "away_score": {
+        "id": "away_score",
+        "visible": true,
+        "x": 0.53,
+        "y": 0.70,
+        "width": 0.12,
+        "height": 0.16,
+        "font_scale": 0.070,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "event_phase": {
+        "id": "event_phase",
+        "visible": false,
+        "x": 0.30,
+        "y": 0.05,
+        "width": 0.40,
+        "height": 0.09,
+        "font_scale": 0.045,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "event_title": {
+        "id": "event_title",
+        "visible": true,
+        "x": 0.10,
+        "y": 0.15,
+        "width": 0.80,
+        "height": 0.10,
+        "font_scale": 0.050,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "event_clock": {
+        "id": "event_clock",
+        "visible": true,
+        "x": 0.10,
+        "y": 0.26,
+        "width": 0.80,
+        "height": 0.32,
+        "font_scale": 0.140,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "warmup": {
+        "id": "warmup",
+        "visible": false,
+        "x": 0.25,
+        "y": 0.59,
+        "width": 0.50,
+        "height": 0.07,
+        "font_scale": 0.035,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      }
+    },
+    "elements": []
+  },
+  "halftime": {
+    "safe_area": {
+      "top": 0.04,
+      "right": 0.04,
+      "bottom": 0.04,
+      "left": 0.04
+    },
+    "background": {
+      "color": "#000000"
+    },
+    "widgets": {
+      "home_name": {
+        "id": "home_name",
+        "visible": true,
+        "x": 0.04,
+        "y": 0.72,
+        "width": 0.30,
+        "height": 0.12,
+        "font_scale": 0.040,
+        "color": "#FFFFFF",
+        "text_align": "right",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "home_score": {
+        "id": "home_score",
+        "visible": true,
+        "x": 0.35,
+        "y": 0.70,
+        "width": 0.12,
+        "height": 0.16,
+        "font_scale": 0.070,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "away_name": {
+        "id": "away_name",
+        "visible": true,
+        "x": 0.66,
+        "y": 0.72,
+        "width": 0.30,
+        "height": 0.12,
+        "font_scale": 0.040,
+        "color": "#FFFFFF",
+        "text_align": "left",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "away_score": {
+        "id": "away_score",
+        "visible": true,
+        "x": 0.53,
+        "y": 0.70,
+        "width": 0.12,
+        "height": 0.16,
+        "font_scale": 0.070,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "event_phase": {
+        "id": "event_phase",
+        "visible": true,
+        "x": 0.30,
+        "y": 0.05,
+        "width": 0.40,
+        "height": 0.09,
+        "font_scale": 0.045,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "event_title": {
+        "id": "event_title",
+        "visible": true,
+        "x": 0.10,
+        "y": 0.15,
+        "width": 0.80,
+        "height": 0.10,
+        "font_scale": 0.050,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "event_clock": {
+        "id": "event_clock",
+        "visible": true,
+        "x": 0.10,
+        "y": 0.26,
+        "width": 0.80,
+        "height": 0.32,
+        "font_scale": 0.140,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      },
+      "warmup": {
+        "id": "warmup",
+        "visible": true,
+        "x": 0.25,
+        "y": 0.59,
+        "width": 0.50,
+        "height": 0.07,
+        "font_scale": 0.035,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "padding": 0.0
+      }
+    },
+    "elements": []
+  }
+};
+
   /* Mirrors scoreboard.presentation.layout.default_layout(). Preserves the
    * pre-widget spectator arrangement: the clock label and both timeout
    * widgets start hidden because today's board never drew them, and
    * possession moves from an inline mark beside the team name to its own
    * widget centred between the two names. Every widget's v2 style
    * properties are set to their neutral defaults so this document renders
-   * pixel-identical to the v1 board. */
+   * pixel-identical to the v1 board. Schema v3 adds the `screens` key,
+   * assigned separately below from DEFAULT_SCREENS so both literals stay
+   * pure JSON on their own. */
   var DEFAULT_LAYOUT = {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "Default",
   "safe_area": {
     "top": 0.04,
@@ -479,6 +940,10 @@
   "elements": []
 };
 
+  /* Assigned outside the DEFAULT_LAYOUT literal so both stay pure JSON on
+   * their own (see the header comment and spec section 2). */
+  DEFAULT_LAYOUT.screens = DEFAULT_SCREENS;
+
   /* Neutral defaults for a free element, keyed by `type`, used whenever a
    * property is missing from the layout document. These are not part of the
    * strict-JSON Python contract (elements are optional and heterogeneous),
@@ -503,13 +968,48 @@
     }
   };
 
-  var OPTIONAL_LOOKUP = {};
-  for (var optionalIndex = 0; optionalIndex < OPTIONAL_WIDGET_IDS.length; optionalIndex += 1) {
-    OPTIONAL_LOOKUP[OPTIONAL_WIDGET_IDS[optionalIndex]] = true;
+  function buildOptionalLookup(ids) {
+    var lookup = {};
+    for (var index = 0; index < ids.length; index += 1) {
+      lookup[ids[index]] = true;
+    }
+    return lookup;
   }
 
-  function isOptional(id) {
-    return OPTIONAL_LOOKUP[id] === true;
+  var OPTIONAL_LOOKUP = buildOptionalLookup(OPTIONAL_WIDGET_IDS);
+  var EVENT_OPTIONAL_LOOKUP = buildOptionalLookup(EVENT_OPTIONAL_WIDGET_IDS);
+
+  /* One registry per widget kind (spec section 2): which widget ids exist,
+   * where their text comes from, which are optional, and which document
+   * supplies a fallback for anything a real layout omits. Keyed by the
+   * `data-board-kind` a board root carries (set by build()). */
+  var REGISTRIES = {
+    game: {
+      ids: WIDGET_IDS,
+      fields: WIDGET_FIELDS,
+      texts: WIDGET_TEXTS,
+      optionalLookup: OPTIONAL_LOOKUP,
+      fallback: DEFAULT_LAYOUT
+    },
+    event: {
+      ids: EVENT_WIDGET_IDS,
+      fields: EVENT_WIDGET_FIELDS,
+      texts: EVENT_WIDGET_TEXTS,
+      optionalLookup: EVENT_OPTIONAL_LOOKUP,
+      fallback: DEFAULT_SCREENS.pregame
+    }
+  };
+
+  function registryForKind(kind) {
+    return kind === 'event' ? REGISTRIES.event : REGISTRIES.game;
+  }
+
+  function registryForRoot(boardRoot) {
+    return registryForKind(boardRoot && boardRoot.dataset ? boardRoot.dataset.boardKind : 'game');
+  }
+
+  function isOptionalIn(registry, id) {
+    return registry.optionalLookup[id] === true;
   }
 
   function isPlainObject(value) {
@@ -620,18 +1120,23 @@
     node.classList.toggle('effect-outline', textEffect === 'outline');
   }
 
-  /** Empty the container and append one widget element per WIDGET_IDS, in
-   * order. Re-buildable at any time; nothing here reads a layout or model.
-   * Marks the container as the board root so `applyLayout` can find it even
-   * when called with an outer wrapper (the spectator page's `#canvas`). */
-  function build(container) {
+  /** Empty the container and append one widget element per the chosen
+   * registry's ids, in order. Re-buildable at any time; nothing here reads a
+   * layout or model. Marks the container as the board root -- with the kind
+   * it was built as -- so `applyLayout`/`applyModel` can find it and pick
+   * the matching registry, even when called with an outer wrapper (the
+   * spectator page's `#canvas`). `kind` is `"game"` (default) or `"event"`. */
+  function build(container, kind) {
     if (!container) {
       return;
     }
+    var resolvedKind = kind === 'event' ? 'event' : 'game';
+    var registry = registryForKind(resolvedKind);
     container.innerHTML = '';
     container.dataset.boardRoot = '1';
-    for (var index = 0; index < WIDGET_IDS.length; index += 1) {
-      var id = WIDGET_IDS[index];
+    container.dataset.boardKind = resolvedKind;
+    for (var index = 0; index < registry.ids.length; index += 1) {
+      var id = registry.ids[index];
       var widget = document.createElement('div');
       widget.className = 'widget';
       widget.setAttribute('data-widget', id);
@@ -784,36 +1289,40 @@
     }
   }
 
-  /** Place and style every widget found under `container` from `layout`,
+  /** Place and style every widget found under `container` from `screenDoc`,
    * paint the board background on `container` itself, and reconcile the
-   * free-element nodes under the board root. Tolerant of a missing/partial
-   * layout: any absent piece -- the whole document, the widgets map, a
-   * single widget's individual properties, or the elements list -- falls
-   * back to something safe rather than throwing or leaving a widget
-   * unstyled. */
-  function applyLayout(container, layout) {
+   * free-element nodes under the board root. `screenDoc` is a screen
+   * document: the top level of a layout for the game board, or
+   * `layout.screens.pregame` / `.halftime` for an event board (see
+   * `screenDocument()` below). The widget id list and per-widget fallbacks
+   * come from the board root's `data-board-kind` (set by `build()`).
+   * Tolerant of a missing/partial document: any absent piece -- the whole
+   * document, the widgets map, a single widget's individual properties, or
+   * the elements list -- falls back to something safe rather than throwing
+   * or leaving a widget unstyled. */
+  function applyLayout(container, screenDoc) {
     if (!container) {
       return;
     }
-    var safeLayout = isPlainObject(layout) ? layout : DEFAULT_LAYOUT;
+    var boardRoot = container.querySelector('[data-board-root]') || container;
+    var registry = registryForRoot(boardRoot);
+    var safeDoc = isPlainObject(screenDoc) ? screenDoc : registry.fallback;
 
     try {
-      var background = isPlainObject(safeLayout.background) ? safeLayout.background : DEFAULT_LAYOUT.background;
-      container.style.background = stringOr(background.color, DEFAULT_LAYOUT.background.color);
+      var background = isPlainObject(safeDoc.background) ? safeDoc.background : registry.fallback.background;
+      container.style.background = stringOr(background.color, registry.fallback.background.color);
     } catch (error) {
       // Leave whatever background the container already had.
     }
 
-    var boardRoot = container.querySelector('[data-board-root]') || container;
-
-    var widgets = isPlainObject(safeLayout.widgets) ? safeLayout.widgets : DEFAULT_LAYOUT.widgets;
-    for (var index = 0; index < WIDGET_IDS.length; index += 1) {
-      var id = WIDGET_IDS[index];
-      var element = container.querySelector('[data-widget="' + id + '"]');
+    var widgets = isPlainObject(safeDoc.widgets) ? safeDoc.widgets : registry.fallback.widgets;
+    for (var index = 0; index < registry.ids.length; index += 1) {
+      var id = registry.ids[index];
+      var element = boardRoot.querySelector('[data-widget="' + id + '"]');
       if (!element) {
         continue;
       }
-      var fallback = DEFAULT_LAYOUT.widgets[id];
+      var fallback = registry.fallback.widgets[id];
       var widget = isPlainObject(widgets[id]) ? widgets[id] : fallback;
       try {
         var x = numberOr(widget.x, fallback.x);
@@ -847,10 +1356,10 @@
         // A malformed single widget entry must not break the rest of the board.
       }
     }
-    var safeAreaElement = container.querySelector('#safe-area');
+    var safeAreaElement = container.querySelector('#safe-area, [data-safe-area]');
     if (safeAreaElement) {
-      var safeArea = isPlainObject(safeLayout.safe_area) ? safeLayout.safe_area : DEFAULT_LAYOUT.safe_area;
-      var defaultSafeArea = DEFAULT_LAYOUT.safe_area;
+      var safeArea = isPlainObject(safeDoc.safe_area) ? safeDoc.safe_area : registry.fallback.safe_area;
+      var defaultSafeArea = registry.fallback.safe_area;
       try {
         var top = numberOr(safeArea.top, defaultSafeArea.top) * 100;
         var right = numberOr(safeArea.right, defaultSafeArea.right) * 100;
@@ -863,37 +1372,40 @@
     }
 
     try {
-      var elements = Array.isArray(safeLayout.elements) ? safeLayout.elements : [];
+      var elements = Array.isArray(safeDoc.elements) ? safeDoc.elements : [];
       reconcileElements(boardRoot, elements);
     } catch (error) {
       // Leave whatever free elements were already on the board.
     }
   }
 
-  /** Write every widget's text found under `container` from `model`. A
-   * static label (WIDGET_FIELDS[id] === null) always shows WIDGET_TEXTS[id].
+  /** Write every widget's text found under `container` from `model`, using
+   * the registry that matches the board root's `data-board-kind`. A static
+   * label (registry.fields[id] === null) always shows registry.texts[id].
    * Everything else reads ScoreboardRender.read(model, field); a missing or
    * empty value on an optional widget hides it, on any other widget it
    * simply renders an empty box. Never derives a value: text is only ever
-   * copied from the model or from WIDGET_TEXTS, never computed or rounded.
+   * copied from the model or from the texts map, never computed or rounded.
    * Free elements are untouched here -- a text element's text is copied once
    * from the layout in applyLayout() and never from the model. */
   function applyModel(container, model) {
     if (!container || !window.ScoreboardRender) {
       return;
     }
+    var boardRoot = container.querySelector('[data-board-root]') || container;
+    var registry = registryForRoot(boardRoot);
     var read = window.ScoreboardRender.read;
-    for (var index = 0; index < WIDGET_IDS.length; index += 1) {
-      var id = WIDGET_IDS[index];
-      var element = container.querySelector('[data-widget="' + id + '"]');
+    for (var index = 0; index < registry.ids.length; index += 1) {
+      var id = registry.ids[index];
+      var element = boardRoot.querySelector('[data-widget="' + id + '"]');
       if (!element) {
         continue;
       }
       try {
-        var field = WIDGET_FIELDS[id];
+        var field = registry.fields[id];
         var value;
         if (field === null || field === undefined) {
-          value = WIDGET_TEXTS[id] || '';
+          value = registry.texts[id] || '';
         } else {
           value = read(model, field);
         }
@@ -902,7 +1414,7 @@
         if (textElement && textElement.textContent !== text) {
           textElement.textContent = text;
         }
-        element.dataset.hasValue = (!isOptional(id) || text !== '') ? '1' : '0';
+        element.dataset.hasValue = (!isOptionalIn(registry, id) || text !== '') ? '1' : '0';
         refreshHidden(element);
       } catch (error) {
         // Never let one bad widget stop the rest of the board from updating.
@@ -910,15 +1422,47 @@
     }
   }
 
+  /** Which screen a spectator lifecycle shows: `"pregame"` during PRE_GAME,
+   * `"halftime"` during HALFTIME, otherwise the in-game screen. */
+  function screenForLifecycle(lifecycle) {
+    if (lifecycle === 'PRE_GAME') {
+      return 'pregame';
+    }
+    if (lifecycle === 'HALFTIME') {
+      return 'halftime';
+    }
+    return 'game';
+  }
+
+  /** The screen document for `screenId` inside `layout`: `layout` itself for
+   * `"game"` (or any id that is not a known event screen); `layout.screens
+   * [screenId]` when that is a plain object; otherwise `DEFAULT_SCREENS
+   * [screenId]`. */
+  function screenDocument(layout, screenId) {
+    if (screenId !== 'pregame' && screenId !== 'halftime') {
+      return layout;
+    }
+    var screens = isPlainObject(layout) && isPlainObject(layout.screens) ? layout.screens : null;
+    var screen = screens && isPlainObject(screens[screenId]) ? screens[screenId] : null;
+    return screen || DEFAULT_SCREENS[screenId];
+  }
+
   global.ScoreboardBoard = {
     WIDGET_IDS: WIDGET_IDS,
     WIDGET_FIELDS: WIDGET_FIELDS,
     WIDGET_TEXTS: WIDGET_TEXTS,
     OPTIONAL_WIDGET_IDS: OPTIONAL_WIDGET_IDS,
+    EVENT_WIDGET_IDS: EVENT_WIDGET_IDS,
+    EVENT_WIDGET_FIELDS: EVENT_WIDGET_FIELDS,
+    EVENT_WIDGET_TEXTS: EVENT_WIDGET_TEXTS,
+    EVENT_OPTIONAL_WIDGET_IDS: EVENT_OPTIONAL_WIDGET_IDS,
     DEFAULT_LAYOUT: DEFAULT_LAYOUT,
+    DEFAULT_SCREENS: DEFAULT_SCREENS,
     FONT_FAMILIES: FONT_FAMILIES,
     build: build,
     applyLayout: applyLayout,
-    applyModel: applyModel
+    applyModel: applyModel,
+    screenForLifecycle: screenForLifecycle,
+    screenDocument: screenDocument
   };
 })(window);

@@ -33,6 +33,9 @@ from scoreboard.domain.formatting import (
 from scoreboard.presentation.layout import (
     DEFAULT_LAYOUT_NAME,
     ELEMENT_TYPES,
+    EVENT_SCREEN_IDS,
+    EVENT_WIDGET_GROUP_ORDER,
+    EVENT_WIDGET_IDS,
     FONT_FAMILIES,
     FONT_FAMILY_LABELS,
     IMAGE_FITS,
@@ -48,6 +51,9 @@ from scoreboard.presentation.layout import (
     MIN_WIDGET_HEIGHT,
     MIN_WIDGET_WIDTH,
     OPTIONAL_WIDGET_IDS,
+    SCREEN_IDS,
+    SCREEN_KINDS,
+    SCREEN_LABELS,
     TEXT_EFFECTS,
     TEXT_TRANSFORMS,
     WIDGET_FIELDS,
@@ -58,12 +64,16 @@ from scoreboard.presentation.layout import (
     WIDGET_TEXTS,
     clamp_layout,
     default_layout,
+    default_screen,
+    default_screen_widget,
     default_widget,
     element_label,
     limits,
     load_layout,
     preset_descriptors,
     reset_widget,
+    screen_descriptors,
+    screen_preset_descriptors,
     supported_widget_ids,
     validate_layout,
     validate_layout_name,
@@ -319,7 +329,7 @@ class WidgetMetadataTests(unittest.TestCase):
 
 class SchemaVersionTests(unittest.TestCase):
     def test_a_missing_or_wrong_version_is_refused(self) -> None:
-        for version in (None, 0, "1", True, 1.0, 3, "2", 2.0):
+        for version in (None, 0, "1", True, 1.0, 4, "2", 2.0):
             document = default_layout()
             if version is None:
                 document.pop("schema_version")
@@ -348,6 +358,24 @@ class SchemaVersionTests(unittest.TestCase):
         self.assertEqual(validation.warnings[0].code, "SCHEMA_UPGRADED")
         self.assertEqual(validation.layout["schema_version"], LAYOUT_SCHEMA_VERSION)
 
+    def test_a_version_2_document_upgrades_with_exactly_one_warning(self) -> None:
+        """v3 section 1: a v1 *or* v2 document is accepted, upgraded, and gets
+        exactly the one SCHEMA_UPGRADED warning -- never also MISSING_SCREENS,
+        because the upgrade warning already told the operator everything new
+        (including the two event screens) was filled in.
+        """
+
+        document = default_layout()
+        document["schema_version"] = 2
+
+        validation = validate_layout(document)
+
+        self.assertTrue(validation.ok, [issue.message for issue in validation.errors])
+        self.assertEqual(len(validation.warnings), 1)
+        self.assertEqual(validation.warnings[0].code, "SCHEMA_UPGRADED")
+        self.assertEqual(validation.layout["schema_version"], LAYOUT_SCHEMA_VERSION)
+        self.assertEqual(set(validation.layout["screens"]), {"pregame", "halftime"})
+
     def test_a_version_1_document_gets_every_new_property_filled_from_default(self) -> None:
         # A genuine v1 shape: no background, no elements, v1-only widget keys.
         # A real v1 file never had a background section either, so this also
@@ -374,6 +402,208 @@ class SchemaVersionTests(unittest.TestCase):
         self.assertEqual(validation.layout["elements"], [])
         for widget_id, widget in validation.layout["widgets"].items():
             self.assertEqual(set(widget), WIDGET_PROPERTIES, widget_id)
+
+
+class ScreenTests(unittest.TestCase):
+    """Schema v3 (spec section 1): the pre-game and halftime screens."""
+
+    def test_a_v3_document_without_screens_is_filled_with_a_warning(self) -> None:
+        document = default_layout()
+        del document["screens"]
+
+        validation = validate_layout(document)
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertIn("MISSING_SCREENS", warning_codes(validation))
+        self.assertEqual(validation.layout["screens"]["pregame"], default_screen("pregame"))
+        self.assertEqual(validation.layout["screens"]["halftime"], default_screen("halftime"))
+
+    def test_a_bad_screen_is_an_error_with_the_screen_label_prefix(self) -> None:
+        document = default_layout()
+        document["screens"]["halftime"] = "not a screen"
+
+        validation = validate_layout(document)
+
+        self.assertFalse(validation.ok)
+        self.assertIn("SCREEN", codes(validation))
+        bad_issue = next(i for i in validation.errors if i.code == "SCREEN")
+        self.assertEqual(bad_issue.screen, "halftime")
+        self.assertTrue(bad_issue.message.startswith("Halftime: "), bad_issue.message)
+
+    def test_an_unknown_screen_key_is_a_warning(self) -> None:
+        document = default_layout()
+        document["screens"]["overtime"] = default_screen("pregame")
+
+        validation = validate_layout(document)
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertIn("UNKNOWN_SCREEN", warning_codes(validation))
+        self.assertNotIn("overtime", validation.layout["screens"])
+
+    def test_a_single_missing_screen_is_filled_with_a_warning(self) -> None:
+        document = default_layout()
+        del document["screens"]["pregame"]
+
+        validation = validate_layout(document)
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertIn("MISSING_SCREEN", warning_codes(validation))
+        self.assertEqual(validation.layout["screens"]["pregame"], default_screen("pregame"))
+
+    def test_game_screen_issues_are_unprefixed_and_tagged_game(self) -> None:
+        document = with_widget(widget_id="quarter", color="not-a-color")
+
+        validation = validate_layout(document)
+
+        self.assertFalse(validation.ok)
+        color_issue = next(i for i in validation.errors if i.code == "COLOR")
+        self.assertEqual(color_issue.screen, "game")
+        self.assertFalse(color_issue.message.startswith("Pre-game:"))
+        self.assertFalse(color_issue.message.startswith("Halftime:"))
+
+    def test_element_ids_are_unique_per_screen_but_may_repeat_across_screens(self) -> None:
+        document = default_layout()
+        document["screens"]["pregame"]["elements"] = [
+            {"id": "box_1", "type": "box", "x": 0.1, "y": 0.1, "width": 0.1, "height": 0.1},
+            {"id": "box_1", "type": "box", "x": 0.3, "y": 0.3, "width": 0.1, "height": 0.1},
+        ]
+
+        validation = validate_layout(document)
+
+        self.assertFalse(validation.ok)
+        bad_issue = next(i for i in validation.errors if i.code == "ELEMENT_ID")
+        self.assertEqual(bad_issue.screen, "pregame")
+
+        # The same id on two *different* screens is fine.
+        ok_document = default_layout()
+        ok_document["screens"]["pregame"]["elements"] = [
+            {"id": "box_1", "type": "box", "x": 0.1, "y": 0.1, "width": 0.1, "height": 0.1},
+        ]
+        ok_document["screens"]["halftime"]["elements"] = [
+            {"id": "box_1", "type": "box", "x": 0.1, "y": 0.1, "width": 0.1, "height": 0.1},
+        ]
+        ok_validation = validate_layout(ok_document)
+        self.assertTrue(ok_validation.ok, [i.message for i in ok_validation.errors])
+
+    def test_max_elements_is_enforced_per_screen(self) -> None:
+        document = default_layout()
+        document["screens"]["halftime"]["elements"] = [
+            {"id": f"box_{i}", "type": "box", "x": 0.01, "y": 0.01, "width": 0.02, "height": 0.02}
+            for i in range(MAX_ELEMENTS + 1)
+        ]
+
+        validation = validate_layout(document)
+
+        self.assertFalse(validation.ok)
+        bad_issue = next(i for i in validation.errors if i.code == "MAX_ELEMENTS")
+        self.assertEqual(bad_issue.screen, "halftime")
+
+        # The game screen and the other event screen are unaffected: exactly
+        # the cap on one screen is still fine everywhere else.
+        at_cap = default_layout()
+        at_cap["screens"]["pregame"]["elements"] = [
+            {"id": f"box_{i}", "type": "box", "x": 0.01, "y": 0.01, "width": 0.02, "height": 0.02}
+            for i in range(MAX_ELEMENTS)
+        ]
+        self.assertTrue(validate_layout(at_cap).ok)
+
+    def test_clamp_layout_repairs_a_pregame_widget(self) -> None:
+        document = default_layout()
+        document["screens"]["pregame"]["widgets"]["event_clock"]["x"] = 1.9
+
+        repaired, issues = clamp_layout(document)
+
+        widget = repaired["screens"]["pregame"]["widgets"]["event_clock"]
+        safe = repaired["screens"]["pregame"]["safe_area"]
+        self.assertLessEqual(widget["x"] + widget["width"], 1 - safe["right"] + 1e-9)
+        self.assertTrue(
+            any(i.screen == "pregame" and i.widget_id == "event_clock" for i in issues), issues
+        )
+        self.assertTrue(all(i.severity == "warning" for i in issues))
+
+    def test_reset_widget_on_the_halftime_screen(self) -> None:
+        document = default_layout()
+        document["screens"]["halftime"]["widgets"]["event_clock"]["color"] = "#123456"
+        document["screens"]["pregame"]["widgets"]["event_clock"]["color"] = "#654321"
+
+        restored = reset_widget(document, "event_clock", screen="halftime")
+
+        self.assertEqual(
+            restored["screens"]["halftime"]["widgets"]["event_clock"],
+            default_screen_widget("halftime", "event_clock"),
+        )
+        # The other screen, and the game screen, are untouched.
+        self.assertEqual(restored["screens"]["pregame"]["widgets"]["event_clock"]["color"], "#654321")
+
+    def test_reset_widget_with_an_unknown_screen_or_widget_is_a_no_op(self) -> None:
+        document = default_layout()
+
+        self.assertEqual(reset_widget(document, "event_clock", screen="overtime"), load_layout(document)[0])
+        self.assertEqual(reset_widget(document, "nope", screen="halftime"), load_layout(document)[0])
+
+    def test_screen_descriptors_shape(self) -> None:
+        descriptors = screen_descriptors()
+
+        self.assertEqual([d["id"] for d in descriptors], list(SCREEN_IDS))
+        for descriptor in descriptors:
+            self.assertEqual(descriptor["label"], SCREEN_LABELS[descriptor["id"]])
+            self.assertEqual(descriptor["kind"], SCREEN_KINDS[descriptor["id"]])
+            self.assertTrue(descriptor["widgets"])
+            for widget in descriptor["widgets"]:
+                self.assertIn("id", widget)
+                self.assertIn("label", widget)
+                self.assertIn("default", widget)
+
+        pregame = next(d for d in descriptors if d["id"] == "pregame")
+        halftime = next(d for d in descriptors if d["id"] == "halftime")
+        self.assertEqual([w["id"] for w in pregame["widgets"]], list(EVENT_WIDGET_IDS))
+        self.assertEqual(pregame["widget_groups"], list(EVENT_WIDGET_GROUP_ORDER))
+        pregame_defaults = {w["id"]: w["default"] for w in pregame["widgets"]}
+        halftime_defaults = {w["id"]: w["default"] for w in halftime["widgets"]}
+        # Phase and warmup differ in visibility between the two screens, so
+        # each screen's descriptor must carry its *own* default, not borrow
+        # the other screen's.
+        self.assertFalse(pregame_defaults["event_phase"]["visible"])
+        self.assertTrue(halftime_defaults["event_phase"]["visible"])
+
+    def test_screen_preset_descriptors_are_valid_with_zero_warnings_and_unique_ids(self) -> None:
+        by_screen = screen_preset_descriptors()
+
+        self.assertEqual(set(by_screen), set(EVENT_SCREEN_IDS))
+        self.assertEqual(len(by_screen["pregame"]), 4)
+        self.assertEqual(len(by_screen["halftime"]), 4)
+        self.assertEqual(
+            [p["id"] for p in by_screen["pregame"]],
+            ["pregame_classic", "pregame_matchup", "pregame_broadcast", "pregame_tigers"],
+        )
+        self.assertEqual(
+            [p["id"] for p in by_screen["halftime"]],
+            ["halftime_classic", "halftime_score_first", "halftime_broadcast", "halftime_tigers"],
+        )
+
+        game_preset_ids = {p["id"] for p in preset_descriptors()}
+        all_ids = set(game_preset_ids)
+        for screen_id, presets in by_screen.items():
+            for preset in presets:
+                with self.subTest(preset=preset["id"]):
+                    self.assertNotIn(preset["id"], all_ids, "preset ids must be globally unique")
+                    all_ids.add(preset["id"])
+
+                    document = default_layout()
+                    document["screens"][screen_id] = preset["screen"]
+                    validation = validate_layout(document)
+                    self.assertTrue(validation.ok, [i.message for i in validation.errors])
+                    self.assertEqual(validation.warnings, (), preset["id"])
+
+    def test_limits_reports_the_screens_and_event_widget_groups(self) -> None:
+        reported = limits()
+
+        self.assertEqual(
+            reported["screens"],
+            [{"id": s, "label": SCREEN_LABELS[s], "kind": SCREEN_KINDS[s]} for s in SCREEN_IDS],
+        )
+        self.assertEqual(reported["event_widget_groups"], list(EVENT_WIDGET_GROUP_ORDER))
+        self.assertEqual(json.loads(json.dumps(reported, allow_nan=False)), reported)
 
 
 class CoordinateAndDimensionTests(unittest.TestCase):
@@ -1236,6 +1466,27 @@ class PresetTests(unittest.TestCase):
             with self.subTest(preset=preset["id"]):
                 ids = [e["id"] for e in preset["layout"]["elements"]]
                 self.assertEqual(len(ids), len(set(ids)))
+
+    def test_each_preset_carries_its_matching_screens(self) -> None:
+        """spec v3 section 1.4: classic keeps the default screens; broadcast,
+        big_score, and tigers each carry the corresponding screen presets.
+        """
+
+        by_screen = screen_preset_descriptors()
+        presets = {p["id"]: p["layout"] for p in preset_descriptors()}
+
+        self.assertEqual(presets["classic"]["screens"]["pregame"], default_screen("pregame"))
+        self.assertEqual(presets["classic"]["screens"]["halftime"], default_screen("halftime"))
+
+        pregame_by_id = {p["id"]: p["screen"] for p in by_screen["pregame"]}
+        halftime_by_id = {p["id"]: p["screen"] for p in by_screen["halftime"]}
+
+        self.assertEqual(presets["broadcast"]["screens"]["pregame"], pregame_by_id["pregame_broadcast"])
+        self.assertEqual(presets["broadcast"]["screens"]["halftime"], halftime_by_id["halftime_broadcast"])
+        self.assertEqual(presets["big_score"]["screens"]["pregame"], pregame_by_id["pregame_matchup"])
+        self.assertEqual(presets["big_score"]["screens"]["halftime"], halftime_by_id["halftime_score_first"])
+        self.assertEqual(presets["tigers"]["screens"]["pregame"], pregame_by_id["pregame_tigers"])
+        self.assertEqual(presets["tigers"]["screens"]["halftime"], halftime_by_id["halftime_tigers"])
 
     def test_the_tigers_preset_uses_the_brand_baseline_colours(self) -> None:
         tigers = next(p for p in preset_descriptors() if p["id"] == "tigers")

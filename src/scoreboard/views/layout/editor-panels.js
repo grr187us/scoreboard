@@ -2,9 +2,13 @@
  *
  * Everything that is not the canvas: the layers rail, the inspector, the
  * library menu and its inline popovers, the presets gallery, and the status
- * bar's issues drawer. This file only ever reads `app.draft` / `app.state`
+ * bar's issues drawer. This file only ever reads `app.screenDoc()` / `app.state`
  * and writes DOM; property edits it makes are handed back to `app` (in
- * layout.js), which owns history and the bridge.
+ * layout.js), which owns history and the bridge. `app.screenDoc()` is the
+ * current screen's mini-document -- `app.draft` itself for the Game screen,
+ * `app.draft.screens[app.screen]` for Pre-game/Halftime -- so every panel
+ * below reads and edits whichever screen is on screen without knowing which
+ * one that is.
  */
 
 (function (global) {
@@ -90,9 +94,12 @@
     var boardRow = el('rail-board-row');
     boardRow.classList.toggle('is-current', app.selection.ids.length === 0 && app.boardSelected);
 
+    var descriptor = app.screenDescriptor() || {};
+    var doc = app.screenDoc();
+
     var groupsHost = el('rail-groups');
     groupsHost.replaceChildren();
-    var groups = (app.state && app.state.limits && app.state.limits.widget_groups) || [];
+    var groups = descriptor.widget_groups || [];
     groups.forEach(function (groupName) {
       var group = document.createElement('div');
       group.className = 'rail-group';
@@ -109,13 +116,13 @@
       var body = document.createElement('div');
       body.className = 'rail-group-body';
       body.hidden = Boolean(app.collapsedGroups[groupName]);
-      var widgets = (app.state && app.state.widgets) || [];
-      widgets.forEach(function (descriptor) {
-        if (descriptor.group !== groupName) {
+      var widgets = descriptor.widgets || [];
+      widgets.forEach(function (widgetDescriptor) {
+        if (widgetDescriptor.group !== groupName) {
           return;
         }
-        var widget = app.draft.widgets[descriptor.id] || {};
-        body.appendChild(buildRailRow(app, descriptor.id, descriptor.label, 'widget',
+        var widget = (doc.widgets || {})[widgetDescriptor.id] || {};
+        body.appendChild(buildRailRow(app, widgetDescriptor.id, widgetDescriptor.label, 'widget',
           Boolean(widget.visible), false));
       });
       group.appendChild(body);
@@ -124,11 +131,11 @@
 
     var elementsBody = el('rail-elements-body');
     elementsBody.replaceChildren();
-    S.elementsForLayers(app.draft).forEach(function (element) {
+    S.elementsForLayers(doc).forEach(function (element) {
       elementsBody.appendChild(buildRailRow(app, element.id, elementLabel(element), element.type,
         element.visible !== false, true));
     });
-    el('rail-elements-count').textContent = String((app.draft.elements || []).length);
+    el('rail-elements-count').textContent = String((doc.elements || []).length);
   }
 
   /* --- Inspector ------------------------------------------------------------ */
@@ -140,7 +147,7 @@
     if (app.selection.ids.length > 1) {
       return 'multi';
     }
-    return S.kindOf(app.draft, app.selection.ids[0]) || 'none';
+    return S.kindOf(app.screenDoc(), app.selection.ids[0]) || 'none';
   }
 
   function setHidden(id, hidden) {
@@ -270,13 +277,15 @@
     }
 
     var id = app.selection.ids[0];
-    var item = S.getItem(app.draft, id);
+    var doc = app.screenDoc();
+    var item = S.getItem(doc, id);
     if (!item) {
       title.textContent = 'Nothing selected';
       return;
     }
     var descriptor = null;
-    (app.state.widgets || []).forEach(function (d) { if (d.id === id) descriptor = d; });
+    var screenDescriptor = app.screenDescriptor() || {};
+    (screenDescriptor.widgets || []).forEach(function (d) { if (d.id === id) descriptor = d; });
     title.textContent = descriptor ? descriptor.label : elementLabel(item);
 
     applyLimitsToInspector(app.state.limits || {});
@@ -339,7 +348,7 @@
   }
 
   function renderBoardSection(app) {
-    var draft = app.draft;
+    var draft = app.screenDoc();
     app.suppress = true;
     try {
       var background = (draft.background && draft.background.color) || '#000000';
@@ -372,8 +381,20 @@
     return card;
   }
 
+  /** The Game screen offers the four full-layout presets; Pre-game and
+   * Halftime each offer their own screen_presets list from Python. Both
+   * galleries (the toolbar menu and the inspector's Board section) always
+   * show the current screen's set. */
+  function currentPresets(app) {
+    if (app.screen === 'game') {
+      return (app.state && app.state.presets) || [];
+    }
+    var byScreen = (app.state && app.state.screen_presets) || {};
+    return byScreen[app.screen] || [];
+  }
+
   function renderPresets(app) {
-    var presets = (app.state && app.state.presets) || [];
+    var presets = currentPresets(app);
     ['presets-gallery', 'presets-gallery-menu'].forEach(function (hostId) {
       var host = el(hostId);
       if (!host) {
@@ -413,6 +434,39 @@
     el('menu-discard').disabled = !app.dirty;
   }
 
+  /* --- Screen switcher --------------------------------------------------------
+   *
+   * Built once from state.screens (Game / Pre-game / Halftime, in that
+   * order) and re-marked on every render so its current tab always matches
+   * app.screen. No screen id or label is ever written in the HTML: both
+   * come from Python through state.screens.
+   */
+
+  function renderScreenSwitch(app) {
+    var host = el('screen-switch');
+    if (!host) {
+      return;
+    }
+    var screens = (app.state && app.state.screens) || [];
+    if (host.childElementCount !== screens.length) {
+      host.replaceChildren();
+      screens.forEach(function (descriptor, index) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('role', 'tab');
+        button.setAttribute('data-screen', descriptor.id);
+        button.title = descriptor.label + ' (Ctrl+' + (index + 1) + ')';
+        button.textContent = descriptor.label;
+        host.appendChild(button);
+      });
+    }
+    Array.prototype.forEach.call(host.children, function (button) {
+      var isCurrent = button.getAttribute('data-screen') === app.screen;
+      button.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+      button.classList.toggle('is-current', isCurrent);
+    });
+  }
+
   /* --- Issues / status bar ---------------------------------------------------- */
 
   function applyIssues(app, payload) {
@@ -438,6 +492,12 @@
       button.className = issue.severity;
       if (issue.widget_id) {
         button.setAttribute('data-select-widget', issue.widget_id);
+      }
+      if (issue.screen) {
+        // Names which screen this issue belongs to, so the click handler in
+        // layout.js can switch there before selecting the item -- an issue
+        // raised on Pre-game is otherwise unreachable while Game is showing.
+        button.setAttribute('data-issue-screen', issue.screen);
       }
       var severity = document.createElement('span');
       severity.className = 'severity';
@@ -492,6 +552,7 @@
     renderInspector: renderInspector,
     renderLibraryMenu: renderLibraryMenu,
     renderPresets: renderPresets,
+    renderScreenSwitch: renderScreenSwitch,
     applyIssues: applyIssues,
     closeAllPopovers: closeAllPopovers,
     togglePopover: togglePopover,

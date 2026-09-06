@@ -87,6 +87,11 @@
       </div>
     </div>
 
+    <!-- One button per entry in state.screens; its label, order, and count
+         all come from Python, so no screen name is ever hard-coded here.
+         Ctrl+1/2/3 are the keyboard route to the same three tabs. -->
+    <div class="screen-switch" id="screen-switch" role="tablist" aria-label="Screen"></div>
+
     <div class="history-group" role="group" aria-label="History">
       <button type="button" data-action="history_back" title="Undo (Ctrl+Z)" aria-label="Undo">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">

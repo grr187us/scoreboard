@@ -132,6 +132,8 @@ svg { display: block; }
 
 .layout-menu, .presets-menu { position: relative; display: flex; align-items: center; gap: 6px; }
 
+.screen-switch { display: flex; align-items: center; gap: 4px; }
+
 .menu-trigger { gap: 8px; }
 .dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); display: inline-block; }
 

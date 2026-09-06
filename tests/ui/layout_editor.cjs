@@ -45,7 +45,7 @@ async function main(data) {
             return Promise.resolve(invalid(draft) ? payload.invalidPreview : payload.validPreview);
           },
           clamp_layout: draft => { record('clamp_layout', draft); return Promise.resolve(payload.clamped); },
-          reset_widget: (id, draft) => { record('reset_widget', id); return Promise.resolve(payload.resetWidget); },
+          reset_widget: (id, draft, screen) => { record('reset_widget', { id, screen }); return Promise.resolve(payload.resetWidget); },
           save_layout: (name, draft) => { record('save_layout', name); return Promise.resolve(payload.saved); },
           select_layout: name => { record('select_layout', name); return Promise.resolve(payload.state); },
           delete_layout: name => { record('delete_layout', name); return Promise.resolve(payload.state); },
@@ -162,6 +162,12 @@ async function main(data) {
       expectedY => Number(document.getElementById('prop-y').value) === expectedY,
       pct(data.state.layout.widgets.ball_on.y));
     checks.push('reset widget');
+
+    // reset_widget must carry which screen the widget lives on -- the Game
+    // screen while the switcher has not been touched yet.
+    assert.ok(await page.evaluate(() =>
+      window.__calls.some(c => c.name === 'reset_widget' && c.args && c.args.screen === 'game')));
+    checks.push('reset widget names the screen');
 
     // --- Save as sends the typed name, with no blocking dialog -------------
     await page.click('[data-action="save_as_open"]');
@@ -325,6 +331,54 @@ async function main(data) {
     assert.equal(await page.locator('[data-item="quarter"]').count(), 1,
       'deleting an element must never remove a widget');
     checks.push('delete element');
+
+    // --- The screen switcher: Pre-game has its own widgets, presets, and
+    // elements, entirely separate from the Game screen's ---------------------
+    await page.click('[data-screen="pregame"]');
+    await page.waitForFunction(() =>
+      document.querySelector('[data-screen="pregame"]').getAttribute('aria-selected') === 'true');
+    assert.equal(await page.locator('#rail-groups [data-select-widget="event_clock"]').count(), 1,
+      'the pre-game screen must show its own event widgets, not the game ones');
+    assert.equal(await page.locator('#rail-groups [data-select-widget="quarter"]').count(), 0,
+      'a game-only widget must not appear on the pre-game screen');
+    checks.push('switch to pre-game');
+
+    // Applying one of its screen presets (anything but the plain default)
+    // replaces this screen's widgets/elements and re-validates the draft.
+    // The draft is already dirty from every edit made above, so this opens
+    // the "replace the draft" confirmation inline rather than applying at
+    // once -- the same guard the Game screen's own presets use.
+    // Picked by name rather than by array position, so this keeps working
+    // however the preset list is ordered: "Matchup" (spec section 1.4) is
+    // the pre-game preset with exactly one free element -- a "VS" mark --
+    // which makes its effect on the elements rail unambiguous to assert.
+    const pregamePreset = data.state.screen_presets.pregame.find(preset => preset.name === 'Matchup');
+    await page.click('[data-action="presets_menu"]');
+    await page.click(`#presets-gallery-menu [data-apply-preset="${pregamePreset.id}"]`);
+    await page.click('[data-action="replace_draft_confirm"]');
+    await page.waitForFunction(() => document.querySelectorAll('#rail-elements-body .rail-row').length === 1);
+    checks.push('apply a pre-game preset');
+
+    // A text element added here must land on the pre-game screen's own
+    // element list, on top of the "VS" mark the preset just added.
+    await page.click('[data-action="add_text"]');
+    await page.waitForFunction(() => document.querySelectorAll('#rail-elements-body .rail-row').length === 2);
+    checks.push('add text on the pre-game screen');
+
+    // Switching back to Game must restore its own widget list -- the
+    // pre-game edit above must not have leaked into it.
+    await page.click('[data-screen="game"]');
+    await page.waitForFunction(() =>
+      document.querySelector('[data-screen="game"]').getAttribute('aria-selected') === 'true');
+    assert.equal(await page.locator('#rail-groups [data-select-widget="quarter"]').count(), 1,
+      'switching back to Game must restore its own widget list');
+    checks.push('switch back to the game screen');
+
+    // Saving still sends the whole document, screens and all.
+    await page.click('[data-action="save"]');
+    await page.waitForFunction(() =>
+      window.__calls[window.__calls.length - 1].name === 'save_layout');
+    checks.push('save after editing another screen');
 
     // --- The page itself never scrolls at 1220x780 --------------------------
     const scroll = await page.evaluate(() => {

@@ -7,7 +7,17 @@ const { pathToFileURL } = require('node:url');
 async function measureWidgets(page) {
   return page.evaluate(() => {
     const canvas = document.querySelector('#canvas').getBoundingClientRect();
-    const safe = document.querySelector('#safe-area').getBoundingClientRect();
+    // Schema v3 removes the #safe-area guide element from the spectator page
+    // entirely (it drew nothing); the default layout's and default screens'
+    // safe_area is 0.04 on every side, so the boundary is computed straight
+    // from the canvas rect instead of measuring a DOM node.
+    const inset = 0.04;
+    const safe = {
+      left: canvas.left + inset * canvas.width,
+      right: canvas.right - inset * canvas.width,
+      top: canvas.top + inset * canvas.height,
+      bottom: canvas.bottom - inset * canvas.height,
+    };
     const errors = [];
     const rects = [];
     for (const element of document.querySelectorAll('[data-widget]')) {
@@ -37,25 +47,30 @@ async function measureWidgets(page) {
   });
 }
 
-async function widgetBox(page, id) {
-  return page.evaluate((widgetId) => {
-    const element = document.querySelector('[data-widget="' + widgetId + '"]');
+// `root` scopes the lookup to one board section ('#game-board' or
+// '#event-board'); it defaults to the whole document, which is unambiguous
+// for every widget id except the four the "game" and "event" registries
+// share (home_name/home_score/away_name/away_score) -- callers checking
+// those on the event board must pass '#event-board' explicitly.
+async function widgetBox(page, id, root) {
+  return page.evaluate(([widgetId, rootSelector]) => {
+    const element = document.querySelector((rootSelector || '') + ' [data-widget="' + widgetId + '"]');
     return element ? element.getBoundingClientRect().toJSON() : null;
-  }, id);
+  }, [id, root || '']);
 }
 
-async function widgetText(page, id) {
-  return page.evaluate((widgetId) => {
-    const element = document.querySelector('[data-widget="' + widgetId + '"] .widget-text');
+async function widgetText(page, id, root) {
+  return page.evaluate(([widgetId, rootSelector]) => {
+    const element = document.querySelector((rootSelector || '') + ' [data-widget="' + widgetId + '"] .widget-text');
     return element ? element.textContent : null;
-  }, id);
+  }, [id, root || '']);
 }
 
-async function widgetHidden(page, id) {
-  return page.evaluate((widgetId) => {
-    const element = document.querySelector('[data-widget="' + widgetId + '"]');
+async function widgetHidden(page, id, root) {
+  return page.evaluate(([widgetId, rootSelector]) => {
+    const element = document.querySelector((rootSelector || '') + ' [data-widget="' + widgetId + '"]');
     return element ? Boolean(element.hidden) : null;
-  }, id);
+  }, [id, root || '']);
 }
 
 async function main(data) {
@@ -83,8 +98,15 @@ async function main(data) {
         assert.deepEqual(metrics.scroll, metrics.viewport);
         assert.ok(Math.abs(metrics.canvas.width / metrics.canvas.height - 16 / 9) < .001);
         if (index >= 5) {
-          assert.equal(await page.locator('#event-phase').textContent(), model.clocks.event.phase);
-          assert.equal(await page.locator('#warmup').isVisible(), Boolean(model.clocks.event.warmup_follows));
+          // Schema v3: the countdown board is a widget board (the "event"
+          // registry) like the game board, not hand-written <p> markup with
+          // fixed ids -- so these read the same [data-widget] nodes the
+          // helpers above use for the game board.
+          assert.equal(await widgetText(page, 'event_phase', '#event-board'), model.clocks.event.phase);
+          assert.equal(await widgetHidden(page, 'warmup', '#event-board'), !model.clocks.event.warmup_display);
+          if (model.clocks.event.warmup_display) {
+            assert.equal(await widgetText(page, 'warmup', '#event-board'), model.clocks.event.warmup_display);
+          }
           assert.equal(await page.locator('#game-board').isVisible(), false);
         }
         if (evidence && [3, 4, 5, 7].includes(index)) {

@@ -94,12 +94,41 @@ class BoardJsDataContractTests(unittest.TestCase):
         self.assertEqual(set(extracted), set(layout.OPTIONAL_WIDGET_IDS))
 
     def test_default_layout_matches_python_default_layout(self):
+        # DEFAULT_LAYOUT's own literal deliberately omits "screens" (schema
+        # v3, spec section 2): it is assigned from the separately declared
+        # DEFAULT_SCREENS literal right after DEFAULT_LAYOUT's closing `;` so
+        # both stay pure JSON on their own. Merge them back together the same
+        # way board.js does before comparing against the full Python document.
         extracted = _extract_js_literal(self.source, "DEFAULT_LAYOUT")
-        self.assertEqual(extracted, layout.default_layout())
+        screens = _extract_js_literal(self.source, "DEFAULT_SCREENS")
+        self.assertNotIn("screens", extracted, "DEFAULT_LAYOUT's own literal must not itself carry \"screens\"")
+        merged = dict(extracted)
+        merged["screens"] = screens
+        self.assertEqual(merged, layout.default_layout())
 
     def test_font_families_match_python_exactly(self):
         extracted = _extract_js_literal(self.source, "FONT_FAMILIES")
         self.assertEqual(extracted, dict(layout.FONT_FAMILIES))
+
+    def test_event_widget_ids_match_python_exactly_including_order(self):
+        extracted = _extract_js_literal(self.source, "EVENT_WIDGET_IDS")
+        self.assertEqual(extracted, list(layout.EVENT_WIDGET_IDS))
+
+    def test_event_widget_fields_match_python_exactly(self):
+        extracted = _extract_js_literal(self.source, "EVENT_WIDGET_FIELDS")
+        self.assertEqual(extracted, dict(layout.EVENT_WIDGET_FIELDS))
+
+    def test_event_widget_texts_match_python_exactly(self):
+        extracted = _extract_js_literal(self.source, "EVENT_WIDGET_TEXTS")
+        self.assertEqual(extracted, dict(layout.EVENT_WIDGET_TEXTS))
+
+    def test_event_optional_widget_ids_match_python_as_a_set(self):
+        extracted = _extract_js_literal(self.source, "EVENT_OPTIONAL_WIDGET_IDS")
+        self.assertEqual(sorted(extracted), sorted(layout.EVENT_OPTIONAL_WIDGET_IDS))
+
+    def test_default_screens_match_python_default_layout_screens(self):
+        extracted = _extract_js_literal(self.source, "DEFAULT_SCREENS")
+        self.assertEqual(extracted, layout.default_layout()["screens"])
 
 
 class SpectatorHouseRulesTests(unittest.TestCase):
@@ -197,26 +226,41 @@ if __name__ == "__main__":
 class EventBoardScoreTests(unittest.TestCase):
     """Pregame and halftime keep the score on the wall.
 
-    The countdown board replaces the widget board during those phases. Until
-    September 5, 2026 it carried only the phase, title, clock, and warmup note,
-    so for a whole halftime the stadium's one scoreboard showed no score. The
-    fix is four bound spans; this pins them, and pins that they are still plain
-    data-field bindings rather than anything computed on the spectator side.
+    Until September 5, 2026 the countdown board was hand-written HTML that
+    carried only the phase, title, clock, and warmup note, so for a whole
+    halftime the stadium's one scoreboard showed no score. Schema v3 (spec
+    `.scratch/presentation-screens/spec.md` section 1.1/2) turns the
+    countdown board into its own widget board -- the "event" registry --
+    with home_name/home_score/away_name/away_score widgets bound to the same
+    view-model paths the old markup bound. This pins that registry mapping,
+    and pins that the spectator HTML no longer hand-writes any of this
+    markup itself: board.js builds #event-board the same way it builds
+    #game-board.
     """
 
     @classmethod
     def setUpClass(cls) -> None:
+        cls.js_source = BOARD_JS.read_text(encoding="utf-8")
         html = (VIEWS_ROOT / "spectator" / "index.html").read_text(encoding="utf-8")
-        start = html.index('id="event-board"')
+        start = html.index('<section id="event-board"')
         end = html.index("</section>", start)
-        cls.event_board = html[start:end]
+        cls.event_board_markup = html[start:end]
 
-    def test_the_event_board_binds_both_names_and_both_scores(self) -> None:
-        for field in ("teams.home.name", "teams.home.score",
-                      "teams.away.name", "teams.away.score"):
-            self.assertIn(f'data-field="{field}"', self.event_board, field)
+    def test_the_event_registry_binds_both_names_and_both_scores(self) -> None:
+        event_widget_ids = _extract_js_literal(self.js_source, "EVENT_WIDGET_IDS")
+        event_widget_fields = _extract_js_literal(self.js_source, "EVENT_WIDGET_FIELDS")
+        for widget_id, field in (
+            ("home_name", "teams.home.name"), ("home_score", "teams.home.score"),
+            ("away_name", "teams.away.name"), ("away_score", "teams.away.score"),
+        ):
+            self.assertIn(widget_id, event_widget_ids)
+            self.assertEqual(event_widget_fields[widget_id], field)
 
-    def test_the_score_is_bound_not_computed(self) -> None:
-        # A bound span carries no text of its own; the model supplies it.
-        self.assertNotRegex(self.event_board, r'data-field="teams\.[a-z]+\.score">\s*\d')
-        self.assertNotIn("<script", self.event_board)
+    def test_the_spectator_html_no_longer_hand_writes_the_event_board(self) -> None:
+        # The section is empty markup filled in by board.js/spectator.js at
+        # runtime, exactly like #game-board -- no more hand-written <p>
+        # markup or data-field spans, and no inline script.
+        self.assertNotIn("data-field", self.event_board_markup)
+        self.assertNotIn("<p", self.event_board_markup)
+        self.assertNotIn("<span", self.event_board_markup)
+        self.assertNotIn("<script", self.event_board_markup)
