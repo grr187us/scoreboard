@@ -18,6 +18,15 @@ HOME: Final[str] = "home"
 AWAY: Final[str] = "away"
 TEAM_SIDES: Final[frozenset[str]] = frozenset((HOME, AWAY))
 REGULATION_QUARTERS: Final[frozenset[str]] = frozenset(("1st", "2nd", "3rd", "4th"))
+#: Quarters in which the assistant will calculate at all.  ``PRE`` is included
+#: so the opening series or kickoff can be staged before the operator advances
+#: the quarter -- at the start of a game the persisted quarter is still ``PRE``,
+#: and refusing it there left the assistant unusable exactly when the operator
+#: is setting the game up.  ``PRE`` is treated as "before the 1st quarter"
+#: everywhere below: identical rules direction, identical drawing side.
+ASSISTANT_QUARTERS: Final[frozenset[str]] = REGULATION_QUARTERS | frozenset(("PRE",))
+#: Quarters whose drawing shows HOME attacking its first-quarter side.
+FIRST_HALF_DRAWING_QUARTERS: Final[frozenset[str]] = frozenset(("PRE", "1st", "3rd"))
 PENALTY_RESOLUTIONS: Final[frozenset[str]] = frozenset(
     ("repeat_down", "count_down", "automatic_first", "no_play", "decline")
 )
@@ -45,10 +54,11 @@ def _require_direction(value: int) -> int:
     return value
 
 
-def _require_regulation_quarter(quarter: str) -> str:
-    if quarter not in REGULATION_QUARTERS:
+def _require_assistant_quarter(quarter: str) -> str:
+    if quarter not in ASSISTANT_QUARTERS:
         raise FieldAssistantValidationError(
-            "Field Assistant is manual-only outside regulation quarters (OT included)"
+            "Field Assistant is manual-only outside PRE and the four regulation "
+            "quarters (HALF, OT, and FINAL are manual)"
         )
     return quarter
 
@@ -85,12 +95,13 @@ def direction_for(first_quarter_home_direction: int, quarter: str, offense: str)
     presented on; it never changes this rules math. ``first_quarter_home_
     direction`` is accepted (and still validated) only because it is needed
     for presentation elsewhere (see ``home_goal_side``); it has no bearing on
-    the value returned here. ``quarter`` is still required to be a regulation
-    quarter so this stays manual-only in OT and other non-regulation periods.
+    the value returned here. ``quarter`` is still required to be one of the
+    assistant's quarters -- ``PRE`` or a regulation quarter -- so this stays
+    manual-only in HALF, OT, and FINAL.
     """
 
     _require_direction(first_quarter_home_direction)
-    _require_regulation_quarter(quarter)
+    _require_assistant_quarter(quarter)
     team = _require_team(offense, "offense")
     return 1 if team == HOME else -1
 
@@ -105,14 +116,16 @@ def home_goal_side(first_quarter_home_direction: int | None, quarter: str) -> st
     the mirror image. This purely decides which side of the screen each goal
     line is drawn on; it never changes the rules direction from
     ``direction_for``. Returns ``None`` when ``first_quarter_home_direction``
-    is ``None`` or ``quarter`` is not one of the four regulation quarters
-    (PRE, HALF, OT, FINAL, and so on are manual-only here too).
+    is ``None`` or ``quarter`` is not one of the assistant's quarters (HALF,
+    OT, FINAL, and so on are manual-only here too). ``PRE`` draws the field
+    the way the 1st quarter will, so the setup an operator stages before
+    kickoff is the setup they keep once the quarter advances.
     """
 
-    if first_quarter_home_direction is None or quarter not in REGULATION_QUARTERS:
+    if first_quarter_home_direction is None or quarter not in ASSISTANT_QUARTERS:
         return None
     direction = _require_direction(first_quarter_home_direction)
-    first_half = quarter in ("1st", "3rd")
+    first_half = quarter in FIRST_HALF_DRAWING_QUARTERS
     if direction == 1:
         return "left" if first_half else "right"
     return "right" if first_half else "left"
@@ -152,8 +165,8 @@ class FieldAssistantContext:
     series: SeriesState | None
 
     def __post_init__(self) -> None:
-        if self.quarter not in REGULATION_QUARTERS | {"OT"}:
-            raise FieldAssistantValidationError("quarter must be a regulation quarter or OT")
+        if self.quarter not in ASSISTANT_QUARTERS | {"OT"}:
+            raise FieldAssistantValidationError("quarter must be PRE, a regulation quarter, or OT")
         if self.possession is not None:
             _require_team(self.possession, "possession")
         if not isinstance(self.ball_on, BallSpot):
@@ -219,8 +232,10 @@ class FieldAction:
     ``resolution``; a decline also needs ``underlying_action``), ``turnover``
     (``new_offense``, ``final_absolute``), ``touchdown`` (``scoring_team``,
     optional ``add_score``), ``try`` (``scoring_team``, ``points``),
-    ``field_goal``/``safety`` (``scoring_team``, optional ``add_score``), and
-    ``kickoff`` (``receiving_team``, ``final_absolute``).  An
+    ``field_goal``/``safety`` (``scoring_team``, optional ``add_score``),
+    ``kickoff`` (``receiving_team``, ``final_absolute``), and ``manual``
+    (``possession``, ``down``, ``distance``, ``ball_absolute``) -- the
+    in-assistant manual escape hatch for stating field status directly.  An
     ``underlying_action`` is another mapping with ``kind`` and ``payload``.
     """
 
@@ -235,7 +250,7 @@ class FieldAction:
 
 
 def _require_active_series(context: FieldAssistantContext) -> tuple[str, int, int, SeriesState]:
-    _require_regulation_quarter(context.quarter)
+    _require_assistant_quarter(context.quarter)
     if (context.possession is None or context.down is None or context.distance is None
             or context.series is None or context.series.line_to_gain is None
             or context.series.first_quarter_home_direction is None):
@@ -274,7 +289,7 @@ def _result_for_series(
 def start_series(context: FieldAssistantContext, offense: str, ball_absolute: int) -> FieldResult:
     """Start a first-and-ten (or goal-to-go) series at the confirmed final spot."""
 
-    _require_regulation_quarter(context.quarter)
+    _require_assistant_quarter(context.quarter)
     team = _require_team(offense, "offense")
     spot = _require_absolute(ball_absolute)
     if spot in (0, 100):
@@ -448,6 +463,52 @@ def preview_kickoff(context: FieldAssistantContext, receiving_team: str, final_a
     )
 
 
+def preview_manual(
+    context: FieldAssistantContext, possession: str, down: int, distance: int, ball_absolute: int
+) -> FieldResult:
+    """Commit an operator-stated field status directly, as one atomic command.
+
+    This is the in-assistant manual escape hatch sections 2 and 7 reserve for
+    unusual special-teams outcomes the other transitions do not model: the
+    operator states the football facts -- offense, down, distance, and the
+    clicked spot -- and Python still validates and derives everything else.
+    Only the line to gain is calculated here; it is never accepted from the
+    payload.
+    """
+
+    _require_assistant_quarter(context.quarter)
+    team = _require_team(possession, "possession")
+    if isinstance(down, bool) or not isinstance(down, int) or down not in (1, 2, 3, 4):
+        raise FieldAssistantValidationError("down must be 1 through 4")
+    if isinstance(distance, bool) or not isinstance(distance, int) or not 0 <= distance <= 99:
+        raise FieldAssistantValidationError("distance must be a whole number from 0 through 99")
+    spot = _require_absolute(ball_absolute)
+    if spot in (0, 100):
+        raise FieldAssistantValidationError("a live series cannot sit on a goal line; use a transition")
+    if context.series is None or context.series.first_quarter_home_direction is None:
+        raise FieldAssistantValidationError("first-quarter direction must be established before starting a series")
+    direction = direction_for(context.series.first_quarter_home_direction, context.quarter, team)
+    goal_line = 100 if direction == 1 else 0
+    if distance == 0:
+        line_to_gain = goal_line
+        stored_distance = 0
+    else:
+        raw_line = spot + direction * distance
+        line_to_gain = min(100, max(0, raw_line))
+        # A requested distance that would overrun the goal line is clamped to
+        # it; the persisted distance then becomes the true yards remaining so
+        # down/distance/line-to-gain always agree with each other.
+        stored_distance = abs(goal_line - spot) if line_to_gain != raw_line else distance
+    series = SeriesState(context.series.first_quarter_home_direction, line_to_gain)
+    ordinal = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}[down]
+    label = "Goal" if stored_distance == 0 else str(stored_distance)
+    return FieldResult(
+        ball_on=ball_spot_from_absolute(spot), possession=team, down=down,
+        distance=stored_distance, series=series, classification="manual",
+        summary=f"Set {team.upper()} {ordinal} & {label}",
+    )
+
+
 def _payload_value(payload: Mapping[str, Any], name: str) -> Any:
     if name not in payload:
         raise FieldAssistantValidationError(f"field action payload requires {name!r}")
@@ -480,6 +541,11 @@ def calculate_field_action(context: FieldAssistantContext, action: FieldAction) 
         return preview_safety(_payload_value(payload, "scoring_team"), add_score=payload.get("add_score", True))
     if action.kind == "kickoff":
         return preview_kickoff(context, _payload_value(payload, "receiving_team"), _payload_value(payload, "final_absolute"))
+    if action.kind == "manual":
+        return preview_manual(
+            context, _payload_value(payload, "possession"), _payload_value(payload, "down"),
+            _payload_value(payload, "distance"), _payload_value(payload, "ball_absolute"),
+        )
     if action.kind == "penalty":
         resolution = _payload_value(payload, "resolution")
         underlying: FieldResult | None = None
@@ -497,10 +563,11 @@ def calculate_field_action(context: FieldAssistantContext, action: FieldAction) 
 
 
 __all__ = [
-    "AWAY", "HOME", "PENALTY_RESOLUTIONS", "REGULATION_QUARTERS", "FieldAction", "FieldAssistantContext",
+    "ASSISTANT_QUARTERS", "AWAY", "FIRST_HALF_DRAWING_QUARTERS", "HOME", "PENALTY_RESOLUTIONS",
+    "REGULATION_QUARTERS", "FieldAction", "FieldAssistantContext",
     "FieldAssistantValidationError", "FieldResult", "SeriesState", "absolute_from_ball_spot",
     "apply_penalty", "ball_spot_from_absolute", "calculate_field_action", "direction_for", "home_goal_side",
     "penalty_enforcement_spot",
-    "preview_field_goal", "preview_incomplete_pass", "preview_kickoff", "preview_normal_play",
+    "preview_field_goal", "preview_incomplete_pass", "preview_kickoff", "preview_manual", "preview_normal_play",
     "preview_safety", "preview_touchdown", "preview_try", "preview_turnover", "start_series",
 ]

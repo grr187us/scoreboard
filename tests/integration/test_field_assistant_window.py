@@ -7,6 +7,8 @@ fail without reaching clocks, persistence, the primary operator, or spectator.
 
 from __future__ import annotations
 
+import unittest
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -51,6 +53,86 @@ class _Window:
         if self.fail_push:
             raise RuntimeError("helper renderer stopped")
         self.scripts.append(script)
+
+
+class FieldAssistantDraftOwnershipTests(unittest.TestCase):
+    """The helper is pushed a complete snapshot ten times a second.
+
+    A source-level contract, in the style of the layout-editor contract test:
+    the draft ball must be re-seeded only when the window opens, when Re-sync
+    is pressed, and after a committed action. Re-seeding it on an ordinary
+    refresh push pulled the ball back to the persisted spot -- HOME 50 at the
+    start of a game -- between an operator's click and the next frame, so no
+    nudge, drag, or yard selection could ever be finalized.
+    """
+
+    def setUp(self) -> None:
+        path = (
+            Path(__file__).resolve().parents[2]
+            / "src" / "scoreboard" / "views" / "field_assistant" / "field_assistant.js"
+        )
+        self.source = path.read_text(encoding="utf-8")
+        self.html = (path.parent / "index.html").read_text(encoding="utf-8")
+
+    def test_a_refresh_push_never_reseeds_the_draft_ball(self) -> None:
+        # The old gate: any push with no accepted preview and no pointer held
+        # down re-seeded the ball. It must not come back.
+        self.assertNotIn("!dragging && !draft", self.source)
+        self.assertIn("pendingReseed", self.source)
+        # Exactly one place re-seeds, and it consumes the flag.
+        self.assertEqual(self.source.count("if (pendingReseed) {"), 1)
+        self.assertEqual(self.source.count("pendingReseed = false;"), 1)
+
+    def test_only_open_resync_and_a_commit_arm_a_reseed(self) -> None:
+        # Four arming sites, and no fifth: the declaration, the bridge-ready
+        # first snapshot, Re-sync, and an accepted commit.
+        self.assertEqual(self.source.count("pendingReseed = true"), 4)
+        self.assertIn("if (result.accepted) pendingReseed = true;", self.source)
+
+    def test_operator_changes_ask_python_for_a_fresh_preview(self) -> None:
+        # Auto-preview keeps the Proposed panel describing the ball on screen,
+        # and disables Confirm until Python has accepted the current draft.
+        self.assertIn("function scheduleAutoPreview()", self.source)
+        for control in ("kind", "team", "home-direction", "resolution"):
+            with self.subTest(control=control):
+                self.assertIn(control, self.source)
+        self.assertIn("draft = null;\n    confirmButton.disabled = true;", self.source)
+
+    def test_the_bridge_is_attached_on_the_window_ready_event(self) -> None:
+        # pywebview dispatches `pywebviewready` on window, never on document. A
+        # document listener never fired: `api` stayed null, every preview
+        # bailed out silently, and Confirm could never enable -- while the
+        # host's applyView pushes still made the page look alive.
+        self.assertIn("window.addEventListener('pywebviewready'", self.source)
+        self.assertNotIn("document.addEventListener('pywebviewready'", self.source)
+        # Whether the API is already present or arrives later, the first
+        # snapshot is read through the same path.
+        self.assertEqual(self.source.count("attachBridge()"), 2)
+
+    def test_the_draft_still_carries_no_calculated_football_values(self) -> None:
+        # The envelope may name the operator's raw choices only. Any of these
+        # would mean JavaScript had started deriving a rule Python owns.
+        for forbidden in ("payload.down", "payload.distance", "payload.line_to_gain",
+                          "payload.score_delta", "payload.possession"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, self.source)
+        # The manual escape hatch is the one place down/distance travel in a
+        # payload, and they must be the operator's pressed values verbatim.
+        self.assertIn("down: manualDown, distance: manualDistance", self.source)
+        build_action = self.source.split("function buildAction")[1].split("return { kind")[0]
+        self.assertNotIn("line_to_gain", build_action)
+
+    def test_the_volunteer_screen_shows_one_panel_at_a_time(self) -> None:
+        # No workflow dropdown: the page picks direction -> start -> play from
+        # the snapshot, and the sub-panels are reached from big buttons.
+        for panel in ("direction", "start", "play", "penalty", "score", "manual"):
+            with self.subTest(panel=panel):
+                self.assertIn(f'data-panel="{panel}"', self.html)
+        self.assertNotIn('id="kind"', self.html)
+        self.assertIn("function topPanel()", self.source)
+        # Confirm's label is the previewed result, so the operator reads what
+        # will happen before it happens.
+        self.assertIn("confirmButton.textContent = 'CONFIRM → ' + line;", self.source)
 
 
 class FieldAssistantWindowTests(TemporaryDataDirectoryTest):

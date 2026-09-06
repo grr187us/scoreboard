@@ -786,6 +786,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 5, 2026 | Overlap validation considers only **visible** widgets. | A hidden widget cannot visually collide with anything, so this is what lets `game_clock_label`, `home_timeouts`, and `away_timeouts` sit in otherwise-occupied default positions while hidden, without the validator rejecting the built-in default layout. | If a future workflow needs to warn about a hidden widget that would collide once shown. |
 | September 5, 2026 | `game_clock_label`, `home_timeouts`, and `away_timeouts` ship as positionable widgets that default to **hidden**. | The current spectator board draws none of them, so hiding them by default makes the widgetized board's default layout reproduce today's board exactly; requirement D-001's default field inventory is answered the same way as before, and turning them on becomes a deliberate operator presentation choice rather than an automatic answer to open owner decision B-4. | If the owner decides timeouts should be visible by default rather than opt-in. |
 | September 5, 2026 | The presentation layout editor uses numeric fields with documented min/max for every geometry property; there is no drag-and-drop or drag-resize in v1. | Matches discovery issue 05's chosen level (constrained named-slot editing) while keeping the implementation to validated number entry rather than pointer-based hit-testing and drag math, which is a materially larger and riskier UI surface for a first version. | If rehearsal or the owner asks for direct manipulation and the added complexity is judged worthwhile. |
+| September 5, 2026 | The Field Assistant is a one-panel-at-a-time screen for a volunteer with five minutes of training: direction is asked once in plain words ("Which end zone does HOME score in during the 1st quarter?"), "who has the ball" starts every series including kickoff returns, and each play is "click where the ball ended, press what happened" (**PLAY OVER**, **INCOMPLETE PASS**, **OTHER TEAM'S BALL HERE**, with **PENALTY…**, **SCORE…**, **FIX MANUALLY…** as sub-panels). The Confirm button's label is the previewed result. A punt, interception, fumble, turnover on downs, and kickoff return are all the same explicit `turnover`/`start_series` change of possession to Python. A new `manual` action lets the operator state team, down, distance (or Goal) and the clicked spot; Python validates and derives only the line to gain, in one atomic command. | The owner's second operator attempt (September 5, 2026) still could not finalize anything. The real cause was a defect — the helper attached its bridge on a `document`-level `pywebviewready` listener that pywebview never fires (it dispatches on `window`), so Confirm could never enable — but the owner's verdict on the screen itself was that a workflow dropdown, hidden control groups, a "HOME attacks toward" dropdown, and a separate Preview press were too hard for a normal person, and that kickoffs/punts and an intuitive manual override were missing. Both were fixed together; the rules, envelope, and atomic boundary did not change. | If a live operator rehearsal shows a step volunteers still miss, or if the owner wants the Field drawer's manual controls removed from the main window (they are unchanged today). |
 | September 5, 2026 | The Field Assistant's rules direction is fixed per team in the label-based absolute coordinate (HOME always `+1` toward the AWAY goal line, AWAY always `-1`); the operator's one-time first-quarter choice only records which side of the on-screen drawing HOME attacks toward, and the drawing mirrors at every quarter boundary (`home_goal_side`). Stored ball spots and line-to-gain never move at a quarter change; OT stays manual-only. | The originally drafted rule flipped the label-based direction itself every quarter, which is internally inconsistent with a coordinate where `0` is always the HOME goal line: a literal flip would have moved a 2nd-quarter HOME gain toward HOME's own goal line. Found and corrected during implementation, before any rehearsal used the incorrect version. | If local overtime rules are approved and OT direction stops being manual-only. |
 | September 4, 2026 | Task 8 gap 1: lifecycle follows accepted quarter commands (including quarter Undo): PRE → PRE_GAME, HALF → HALFTIME, FINAL → FINAL, all playing labels → IN_PROGRESS. A successful game-clock Start leaving pregame/halftime enters IN_PROGRESS; End Game sets FINAL and New Game restores PRE_GAME. PRE/HALF entry selects its stopped event preset only when switching countdown kind; an already selected countdown retains its time. | No overlapping lifecycle control; team-name validation now leaves pregame. Expiry never advances lifecycle. | Operator rehearsal. |
 | September 4, 2026 | Persist an additive play_clock_cleared flag; retain old blank-zero interpretation for legacy snapshots lacking it. | The old model erased expiry versus clear intent; the renderer cannot recreate it safely. | Recovery compatibility/rehearsal. |
@@ -906,7 +907,7 @@ cleans it up with the other owned windows.
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
 | Implementation status | Every Phase 2 implementation task is done. Tasks 1-9: separate recovery startup, authoritative lifecycle and play-clock visibility, immediate command publication, responsive spectator layout, keyboard safety and generated shortcut help. The September 5 audit added expiration recording, application-version-safe recovery, and a whole-game rehearsal. Task 11 produced the offline one-folder package at 0.1.0, and Task 10 then replaced the Task 1 fixed display index with a remembered display identity, an explicit selector, and disconnect reporting — after which the package was rebuilt and confirmed to carry it. A separate fixed-size test spectator window now supports local layout checks and practice without participating in production display management. **Task 10's policy is verified against injected screen lists only; nothing has been placed on a second monitor.** Task 12 (rehearsal) remains unstarted. |
-| Automated suite | **Not clean, and not a release gate until reconciled.** A full discovery run on September 5, 2026 (`.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, with `SCOREBOARD_DATA_DIR` pointed at an isolated folder) reported **597 tests, 15 failures, 3 errors** in 25.5 seconds. Every one reproduces the pre-existing baseline; none is a regression from the Field Assistant or the layout editor. The inventory is below. |
+| Automated suite | **Not clean, and not a release gate until reconciled.** A full discovery run on September 5, 2026 (`.\.venv\Scripts\python.exe -m unittest discover -s tests -v`, with `SCOREBOARD_DATA_DIR` pointed at an isolated folder) reported **597 tests, 15 failures, 3 errors** in 25.5 seconds. Every one reproduces the pre-existing baseline; none is a regression from the Field Assistant or the layout editor. A September 5 re-run after the Field Assistant volunteer screen and `manual` action: **615 tests, 16 failures, 3 errors**, the same inventory (the 16th is the host-specific `DataLocationTests` row). The inventory is below. |
 | Repository status | Work is on `feature/field-status`, which currently points at the same commit as `main` (`2b29942`); everything committed is merged. The Phase 1 foundation commit `6f9fc18` was pushed and independently cloned cleanly. `phase-2-audit` and `feature/layout-editor` are earlier branches retained for history. The Field Assistant and the presentation layout editor exist **only as uncommitted working-tree changes** until the September 5 documentation-reconciliation commit lands. The `AGENTS.md` change and the `docs/agents/` directory are now in-scope, tracked modifications rather than the unrelated bystander files an earlier revision of this row described. |
 | Testing follow-ups | Five findings from local spectator-preview testing are recorded in [`.scratch/testing-followups`](.scratch/testing-followups/spec.md). The pregame/game-clock and quarter-safety requests change the current documented workflow and await owner decisions; the color/label changes are ready as one small presentation pass. All five findings are now resolved: the presentation layout editor that issue 05 filed as Phase 3 discovery was delivered on September 5, 2026 (see "Phase 2 owner request 3"), and the Field Assistant was delivered for rehearsal the same day (see "Owner-requested next scoreboard work" item 4). |
 
@@ -919,7 +920,15 @@ regression without stashing and re-running. Command:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Result: **597 tests, 15 failures, 3 errors.**
+Result: **597 tests, 15 failures, 3 errors.** Re-run on September 5, 2026 after
+the Field Assistant draft-ownership and `PRE` corrections: **608 tests, 16
+failures, 3 errors** — the same inventory below, plus the `DataLocationTests`
+row, which fails on this host whether or not `SCOREBOARD_DATA_DIR` is set
+(the default per-user root resolves to `Scoreboard Logs`, not `Scoreboard`).
+No Field Assistant test fails. Re-run again on September 5, 2026 after the
+volunteer-screen rebuild, the `pywebviewready` bridge fix, and the `manual`
+action: **615 tests, 16 failures, 3 errors** — the identical inventory; the
+seven new Field Assistant tests all pass.
 
 | Count | Where | Why it fails | Owner |
 |---|---|---|---|
@@ -1063,10 +1072,87 @@ lifecycle (open/close/reopen, a helper push failure destroying only the
 helper, operator shutdown closing it) against pywebview-shaped fakes, not a
 real window.
 
-The three Field Assistant modules run **29 tests** together — rules 19,
-finalize rehearsal 6, window lifecycle 4 — counted from an actual run on
-September 5, 2026, not estimated. Together with the presentation layout
+The three Field Assistant modules ran **29 tests** together at delivery —
+rules 19, finalize rehearsal 6, window lifecycle 4 — counted from an actual run
+on September 5, 2026, not estimated; the corrections recorded below bring that
+to 35. Together with the presentation layout
 editor's 100, that is the 129 focused tests recorded in commit `274119d`.
+
+**Corrections after first operator use (September 5, 2026).** The window as
+first delivered could not finalize anything. The helper re-seeded its draft
+ball from the authoritative spot on any refresh push with no accepted preview
+and no pointer held down, and the host pushes a complete snapshot ten times a
+second, so the ball returned to the persisted spot — `HOME 50` at the start of
+a game — within 100 ms of every nudge, arrow key, drag, or yard selection;
+Re-sync re-armed the overwrite rather than helping. Separately, the calculator
+accepted only the four regulation quarters, while a game's persisted quarter is
+`PRE` until the operator advances it, so every preview at the start of a game
+failed with "quarter must be a regulation quarter or OT". Both are fixed: the
+draft ball is re-seeded only on open, on Re-sync, and after a committed action
+(a quarter boundary may re-draw the same spot on the mirrored side, never move
+it), and `PRE` is now one of the assistant's quarters, treated as "before the
+1st quarter" with the same rules direction and drawing side the 1st quarter
+will use, without finalizing ever advancing the quarter. `HALF`, `OT`, and
+`FINAL` remain manual-only. Every operator change now also re-previews
+automatically, so the Proposed panel always describes the ball on screen, while
+Confirm remains a separate press that a stale draft disables. The rules
+document's Amendments note records both defects and their fixes, and its
+FA-29/FA-30 matrix rows cover them.
+
+**Verification of those corrections.** `tests/unit/test_field_assistant.py`
+adds the `PRE`-as-first-quarter and `HALF`/`OT`/`FINAL`-stay-manual cases;
+`tests/integration/test_field_assistant_window.py` adds a
+`FieldAssistantDraftOwnershipTests` source contract asserting that no refresh
+push re-seeds the draft, that exactly four sites arm a re-seed, that operator
+changes ask Python for a fresh preview, and that the draft envelope still
+carries no calculated football value. The three Field Assistant modules now
+run **35 tests** together. The behavior was also exercised in a browser
+against the real page with a stubbed bridge: a real mouse drag and the nudge
+buttons held their spot across hundreds of simulated 10 Hz pushes, one preview
+was requested per drag on release, a mirrored `home_goal_side` push re-drew the
+same spot on the other side, a revision change still raised the stale banner
+and disabled Confirm, and Re-sync and a committed action each re-seeded from
+authority. That is a browser-automation claim on this development host, not a
+WebView2 or live-operator claim.
+
+**Second correction, September 5, 2026 — the bridge was never attached, and
+the screen is rebuilt for volunteers.** The owner's second attempt still
+could not finalize anything: Confirm stayed disabled with no message. A harness
+that launches the real application under pywebview/WebView2, opens the helper
+through the operator bridge, and presses the actual buttons with
+`evaluate_js` showed the cause in one run: `field_assistant.js` listened for
+`pywebviewready` on `document`, pywebview dispatches it on `window`, so the
+page ran with a null bridge and every preview returned before reaching Python,
+while the 10 Hz `applyView` pushes kept the window looking alive. The same
+harness run with the old script never enabled Confirm; with the fix it did.
+The owner's verdict on the screen itself — too hard for a volunteer with five
+minutes of training, no obvious path for kickoffs/punts, no intuitive manual
+override — drove a rebuild: one panel at a time (direction asked once in plain
+words; "who has the ball" for every series start including kickoff returns;
+then "click where the ball ended, press what happened"), the Confirm label
+carrying the previewed result, a single **OTHER TEAM'S BALL HERE** for every
+explicit change of possession, and a **FIX MANUALLY…** panel backed by a new
+`manual` action that Python validates (team, down, distance or Goal, clicked
+spot; only the line to gain is derived) and commits through the same atomic
+command. The yard numbers, which had drifted off their lines, are positioned
+by percentage. The rules document's Amendments entry, its rewritten section 4,
+new section 4.6, the `Manual set` transition row, and FA-31 record this.
+
+**Verification of the second correction.** `tests/unit/test_field_assistant.py`
+adds FA-31 (`manual`: line to gain per down/team/quarter, goal-to-go, clamping
+at the goal line, every rejection); `tests/unit/test_commands.py` adds the
+service round trip (preview → finalize, one revision, persisted
+possession/down/distance/ball/line-to-gain); `tests/integration/test_field_assistant_window.py`
+adds the `window`-level `pywebviewready` contract and the one-panel-at-a-time /
+Confirm-label contract. The full discovered suite reports **615 tests, 16
+failures, 3 errors** — the documented inventory, no regression. The real-runtime
+harness (development host, pywebview 6.2.1 on WebView2, isolated data folder)
+drove seven consecutive commits — direction, opening series at HOME 25, a play
+to HOME 32 (2nd & 3), a punt to AWAY 20, a manual AWAY 3rd & 4 at AWAY 40, an
+AWAY touchdown, a +1 try, and a kickoff return at HOME 30 — with the DOM and the
+persisted state agreeing at every revision (final: HOME 0, AWAY 7, REV 7). That
+is a WebView2 claim on this development host, not a target-laptop or
+live-operator claim.
 
 **Deliberately manual, not implemented:** OT direction, onside/blocked
 kicks, defensive try returns, offsetting/multiple penalties, enforcement from
@@ -1074,10 +1160,11 @@ a different spot, automatic possession flips, any clock change, live ball
 tracking, networking, OBS, LED, and physical controllers all remain the
 documented manual escape hatch.
 
-**Remaining evidence before game-day use.** Native Windows/WebView2
-rendering of the helper window, a physical 1366×768 at 100%/125% visual
-check, and a live operator rehearsal have not been performed; only
-fake-window host tests and a static browser render exist. This is separate
+**Remaining evidence before game-day use.** A physical 1366×768 at
+100%/125% visual check and a live operator rehearsal with volunteers have not
+been performed. Native WebView2 rendering and the full press-by-press flow
+have now been exercised on the development host by the real-runtime harness
+described above, not on the target laptop. This is separate
 from, and does not advance, Task 12, the Phase 0 HDMI gate, or any other
 stadium-readiness item in this document.
 

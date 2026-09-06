@@ -11,7 +11,7 @@
     <strong>FIELD ASSISTANT</strong>
     <span id="revision">REV —</span>
     <span id="clocks" aria-label="Read-only clock context">GAME — · PLAY —</span>
-    <button type="button" id="resync">Re-sync</button>
+    <button type="button" id="resync" title="Throw away what is on this screen and reload the scoreboard's current field status">Reload from scoreboard</button>
   </header>
 
   <!-- This exact wording is the stale-draft safety boundary in the approved
@@ -21,20 +21,20 @@
   <p id="notice" class="notice" role="status" aria-live="polite"></p>
 
   <main>
-    <section class="field-panel" aria-label="Clickable field. Select the final ball spot.">
+    <section class="field-panel" aria-label="Clickable field. Click where the ball ended up.">
       <div class="spot-readout">
         <div class="readout-block draft">
-          <span class="readout-label">DRAFT</span>
+          <span class="readout-label">BALL IS AT</span>
           <span id="draft-spot" class="readout-value">50</span>
         </div>
-        <div class="nudges" role="group" aria-label="Nudge the draft ball spot">
+        <div class="nudges" role="group" aria-label="Nudge the ball">
           <button type="button" id="nudge-left-5" class="nudge">◀◀ 5 yd</button>
           <button type="button" id="nudge-left-1" class="nudge">◀ 1 yd</button>
           <button type="button" id="nudge-right-1" class="nudge">1 yd ▶</button>
           <button type="button" id="nudge-right-5" class="nudge">5 yd ▶▶</button>
         </div>
         <div class="readout-block current">
-          <span class="readout-label">CURRENT</span>
+          <span class="readout-label">SCOREBOARD SHOWS</span>
           <span id="current-spot" class="readout-value small">—</span>
           <span id="current-down" class="readout-sub"></span>
         </div>
@@ -42,104 +42,156 @@
 
       <div class="field-row">
         <div class="endzone" id="endzone-left">HOME<br><span>GOAL</span></div>
-        <div class="field" id="field" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-label="Draft final ball spot">
+        <div class="field" id="field" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-label="Where the ball is">
           <div class="yard-lines" aria-hidden="true"></div>
+          <div class="yard-labels" id="yard-labels" aria-hidden="true"></div>
           <div class="line-to-gain" id="line-to-gain" hidden><span>LINE TO GAIN</span></div>
-          <div class="direction" id="direction">SET 1ST-QUARTER DIRECTION BELOW TO BEGIN</div>
-          <button type="button" class="ball" id="ball" aria-label="Drag or use arrow keys to choose final ball spot">BALL</button>
+          <div class="direction" id="direction">STEP 1: PICK WHICH END ZONE HOME SCORES IN (RIGHT PANEL)</div>
+          <button type="button" class="ball" id="ball" aria-label="Drag or use arrow keys to move the ball">BALL</button>
         </div>
         <div class="endzone" id="endzone-right">AWAY<br><span>GOAL</span></div>
       </div>
-      <p class="field-help">Click or drag BALL, use the yard buttons, or press arrow keys (one yard per press). Yard lines are labeled every 10 yards.</p>
+      <div class="field-help">
+        <span>Click the field, drag the BALL, use the yard buttons, or press ◀ ▶ keys.</span>
+        <label class="direct-spot">Or type it:
+          <select id="spot-team" aria-label="Yard line side"><option value="home">HOME</option><option value="away">AWAY</option></select>
+          <select id="spot-yard" aria-label="Yard line"></select>
+        </label>
+      </div>
     </section>
 
-    <section class="workflow" aria-label="Field Assistant workflow">
+    <section class="workflow" aria-label="What happened">
       <div class="statuses">
-        <article><h2>Current</h2><p id="current-status">Read the current snapshot.</p></article>
-        <article><h2>Proposed</h2><p id="proposed-status">Choose an action to preview.</p></article>
+        <article><h2>Scoreboard now</h2><p id="current-status">Reading the scoreboard…</p></article>
+        <article class="proposed"><h2>After you confirm</h2><p id="proposed-status">Press what happened.</p></article>
       </div>
 
-      <div class="controls">
-        <label>Workflow
-          <select id="kind">
-            <option value="start_series">Start / re-sync series</option>
-            <option value="normal_play">Normal play</option>
-            <option value="incomplete_pass">Incomplete pass</option>
-            <option value="penalty">Penalty resolution</option>
-            <option value="turnover">Turnover on downs</option>
-            <option value="touchdown">Touchdown</option>
-            <option value="try">Try / PAT</option>
-            <option value="field_goal">Made field goal</option>
-            <option value="safety">Safety</option>
-            <option value="kickoff">Kickoff</option>
-          </select>
-        </label>
-
-        <label id="group-offense" data-group="offense">
-          <span id="team-label-text">Offense</span>
-          <select id="team"><option value="home">HOME</option><option value="away">AWAY</option></select>
-        </label>
-
-        <div id="group-direction" data-group="direction">
-          <label>HOME attacks toward
-            <select id="home-direction">
-              <option value="1">the RIGHT side of this screen in the 1st quarter</option>
-              <option value="-1">the LEFT side of this screen in the 1st quarter</option>
-            </select>
-          </label>
-          <p id="direction-established-note" class="established-note" hidden>Already set for this game. Changing this selection has no effect.</p>
-        </div>
-
-        <label id="group-spot" data-group="spot">Direct ball label
-          <span class="direct-spot"><select id="spot-team"><option value="home">HOME</option><option value="away">AWAY</option></select><select id="spot-yard"></select></span>
-        </label>
-
-        <div id="group-penalty" data-group="penalty">
-          <p class="group-heading">Penalty enforcement spot</p>
-          <div class="penalty-buttons" role="group" aria-label="Penalty yardage, positive benefits the offense">
-            <button type="button" class="penalty-yards" data-yards="-15" aria-pressed="false">−15 (defense)</button>
-            <button type="button" class="penalty-yards" data-yards="-10" aria-pressed="false">−10 (defense)</button>
-            <button type="button" class="penalty-yards" data-yards="-5" aria-pressed="false">−5 (defense)</button>
-            <button type="button" class="penalty-yards" data-yards="5" aria-pressed="false">+5 (offense)</button>
-            <button type="button" class="penalty-yards" data-yards="10" aria-pressed="false">+10 (offense)</button>
-            <button type="button" class="penalty-yards" data-yards="15" aria-pressed="false">+15 (offense)</button>
+      <div class="panels">
+        <!-- Step 1, asked once per game. The choice is held here until the first
+             confirmed series saves it; Python persists it with that command. -->
+        <div class="panel" id="panel-direction" data-panel="direction" hidden>
+          <h2 class="question">Which end zone does <span class="team-word">HOME</span> score in during the 1st quarter?</h2>
+          <div class="big-row" id="home-direction" role="group" aria-label="HOME's first-quarter scoring end zone">
+            <button type="button" class="big" data-direction="-1">◀ LEFT end zone</button>
+            <button type="button" class="big" data-direction="1">RIGHT end zone ▶</button>
           </div>
-          <button type="button" id="penalty-no-shortcut" class="penalty-yards" data-yards="0" aria-pressed="true">No shortcut — use ball spot</button>
-          <p id="penalty-selected-label" class="group-note">Selected: no shortcut — use ball spot.</p>
-          <label>Penalty result
+          <p class="hint">Look at which way HOME will be driving on the opening series. The teams switch ends every quarter on their own — you will not be asked again this game.</p>
+        </div>
+
+        <!-- No team has the ball: opening kickoff, after any score, or a fix. -->
+        <div class="panel" id="panel-start" data-panel="start" hidden>
+          <h2 class="question">Who has the ball?</h2>
+          <p class="steps"><b>1.</b> Click the field where the ball is. <b>2.</b> Press the team.</p>
+          <div class="big-row" role="group" aria-label="Team that has the ball">
+            <button type="button" class="big" data-action="start_series" data-team="home"><span class="team-word" data-team-name="home">HOME</span> BALL HERE</button>
+            <button type="button" class="big" data-action="start_series" data-team="away"><span class="team-word" data-team-name="away">AWAY</span> BALL HERE</button>
+          </div>
+          <p class="hint">Use this after the opening kickoff, after every score's kickoff, or any time the scoreboard has no down showing. It starts 1st &amp; 10 (or 1st &amp; Goal) at the ball.</p>
+          <div class="row3 secondary">
+            <button type="button" data-open="score">SCORE…</button>
+            <button type="button" data-open="manual">FIX MANUALLY…</button>
+          </div>
+        </div>
+
+        <!-- Ordinary play: click where the ball ended, press what happened. -->
+        <div class="panel" id="panel-play" data-panel="play" hidden>
+          <p class="steps"><b>1.</b> Click the field where the ball ended up. <b>2.</b> Press what happened.</p>
+          <button type="button" class="big action" data-action="normal_play">PLAY OVER — BALL HERE<small>run or completed pass · sack · scramble. Down &amp; distance are worked out for you.</small></button>
+          <button type="button" class="big action" data-action="incomplete_pass">INCOMPLETE PASS<small>ball stays where it was, next down</small></button>
+          <button type="button" class="big action" data-action="turnover" id="turnover-button">OTHER TEAM'S BALL HERE<small>punt · interception · fumble · turnover on downs · kickoff return</small></button>
+          <div class="row3">
+            <button type="button" data-open="penalty">PENALTY…</button>
+            <button type="button" data-open="score">SCORE…</button>
+            <button type="button" data-open="manual">FIX MANUALLY…</button>
+          </div>
+        </div>
+
+        <div class="panel sub" id="panel-penalty" data-panel="penalty" hidden>
+          <div class="sub-head"><button type="button" class="back" data-back>◀ Back</button><h2>Penalty</h2></div>
+          <p class="steps">Ball should be where the play <em>ended</em>. Pick the yards, then what happens to the down.</p>
+          <div class="penalty-buttons" role="group" aria-label="Penalty yardage, positive benefits the offense">
+            <button type="button" class="penalty-yards" data-yards="-15" aria-pressed="false">−15 <small>against offense</small></button>
+            <button type="button" class="penalty-yards" data-yards="-10" aria-pressed="false">−10 <small>against offense</small></button>
+            <button type="button" class="penalty-yards" data-yards="-5" aria-pressed="false">−5 <small>against offense</small></button>
+            <button type="button" class="penalty-yards" data-yards="5" aria-pressed="false">+5 <small>against defense</small></button>
+            <button type="button" class="penalty-yards" data-yards="10" aria-pressed="false">+10 <small>against defense</small></button>
+            <button type="button" class="penalty-yards" data-yards="15" aria-pressed="false">+15 <small>against defense</small></button>
+          </div>
+          <button type="button" id="penalty-no-shortcut" class="penalty-yards wide" data-yards="0" aria-pressed="true">No yards — just use where I put the ball</button>
+          <p id="penalty-selected-label" class="group-note">Selected: no yards — use the ball spot.</p>
+          <label class="field-label">What happens to the down?
             <select id="resolution">
-              <option value="repeat_down">Repeat down</option>
-              <option value="count_down">Count down</option>
-              <option value="automatic_first">Automatic first down</option>
-              <option value="no_play">No play</option>
-              <option value="decline">Decline penalty</option>
+              <option value="repeat_down">Replay the down (same down)</option>
+              <option value="count_down">Next down (the down counts)</option>
+              <option value="automatic_first">Automatic 1st down</option>
+              <option value="no_play">No play (everything as before the snap)</option>
+              <option value="decline">Penalty declined (take the play)</option>
             </select>
           </label>
         </div>
 
-        <div id="group-score-recorded" data-group="score-recorded">
+        <div class="panel sub" id="panel-score" data-panel="score" hidden>
+          <div class="sub-head"><button type="button" class="back" data-back>◀ Back</button><h2>Score</h2></div>
+          <p class="steps">Press the team that scored. Points show on the Confirm button before anything changes.</p>
+          <div class="score-grid" role="group" aria-label="Scoring plays">
+            <span class="score-name">TOUCHDOWN</span>
+            <button type="button" data-action="touchdown" data-team="home"><span data-team-name="home">HOME</span> +6</button>
+            <button type="button" data-action="touchdown" data-team="away"><span data-team-name="away">AWAY</span> +6</button>
+            <span class="score-name">FIELD GOAL</span>
+            <button type="button" data-action="field_goal" data-team="home"><span data-team-name="home">HOME</span> +3</button>
+            <button type="button" data-action="field_goal" data-team="away"><span data-team-name="away">AWAY</span> +3</button>
+            <span class="score-name">SAFETY</span>
+            <button type="button" data-action="safety" data-team="home"><span data-team-name="home">HOME</span> +2</button>
+            <button type="button" data-action="safety" data-team="away"><span data-team-name="away">AWAY</span> +2</button>
+          </div>
+          <div class="try-block" id="try-block">
+            <p class="group-heading">TRY / PAT after a <span id="try-team-word">HOME</span> touchdown</p>
+            <div class="try-buttons" role="group" aria-label="Try or PAT result">
+              <button type="button" class="try-points" data-action="try" data-points="0" aria-pressed="false">NO GOOD</button>
+              <button type="button" class="try-points" data-action="try" data-points="1" aria-pressed="false">KICK +1</button>
+              <button type="button" class="try-points" data-action="try" data-points="2" aria-pressed="false">2-POINT +2</button>
+            </div>
+            <div class="try-team" role="group" aria-label="Team attempting the try">
+              <span>Team:</span>
+              <button type="button" class="try-team-button" data-try-team="home" aria-pressed="true"><span data-team-name="home">HOME</span></button>
+              <button type="button" class="try-team-button" data-try-team="away" aria-pressed="false"><span data-team-name="away">AWAY</span></button>
+            </div>
+          </div>
           <label class="checkbox-row">
             <input type="checkbox" id="score-recorded">
-            Score already recorded elsewhere (do not add points again)
+            Points were already added on the main scoreboard — don't add them again
           </label>
         </div>
 
-        <div id="group-try-points" data-group="try-points">
-          <p class="group-heading">Try / PAT result</p>
-          <div class="try-buttons" role="group" aria-label="Try or PAT points">
-            <button type="button" class="try-points" data-points="0" aria-pressed="true">No score</button>
-            <button type="button" class="try-points" data-points="1" aria-pressed="false">+1</button>
-            <button type="button" class="try-points" data-points="2" aria-pressed="false">+2</button>
+        <!-- The in-assistant manual escape hatch: the operator states facts;
+             Python validates them and derives only the line to gain. -->
+        <div class="panel sub" id="panel-manual" data-panel="manual" hidden>
+          <div class="sub-head"><button type="button" class="back" data-back>◀ Back</button><h2>Fix manually</h2></div>
+          <p class="steps">Put the ball where it is, then set the team, down and distance yourself.</p>
+          <p class="group-heading">Whose ball</p>
+          <div class="choice-row" role="group" aria-label="Team with the ball">
+            <button type="button" class="manual-team" data-manual-team="home" aria-pressed="true"><span data-team-name="home">HOME</span></button>
+            <button type="button" class="manual-team" data-manual-team="away" aria-pressed="false"><span data-team-name="away">AWAY</span></button>
           </div>
-          <p id="try-selected-label" class="group-note">Selected: no score.</p>
+          <p class="group-heading">Down</p>
+          <div class="choice-row" role="group" aria-label="Down">
+            <button type="button" class="manual-down" data-down="1" aria-pressed="true">1st</button>
+            <button type="button" class="manual-down" data-down="2" aria-pressed="false">2nd</button>
+            <button type="button" class="manual-down" data-down="3" aria-pressed="false">3rd</button>
+            <button type="button" class="manual-down" data-down="4" aria-pressed="false">4th</button>
+          </div>
+          <p class="group-heading">Distance</p>
+          <div class="choice-row distance-row" role="group" aria-label="Distance">
+            <button type="button" class="manual-distance" data-distance="10" aria-pressed="true">10</button>
+            <button type="button" class="manual-distance" data-distance="0" aria-pressed="false">GOAL</button>
+            <label class="other-distance">Other: <input type="number" id="manual-distance-other" min="1" max="99" step="1" inputmode="numeric" placeholder="yds"></label>
+          </div>
         </div>
       </div>
 
-      <p class="manual">Unsupported situations (OT, onside/blocked kicks, defensive try returns, offsetting or multiple penalties) stay manual. Use the main operator window’s <strong>Field</strong> drawer, then re-sync here.</p>
       <div class="actions">
-        <button type="button" id="preview">Preview result</button>
-        <button type="button" id="discard">Discard draft</button>
-        <button type="button" id="confirm" class="confirm" disabled>Confirm Play</button>
+        <button type="button" id="discard">Cancel</button>
+        <button type="button" id="confirm" class="confirm" disabled>CONFIRM</button>
       </div>
     </section>
   </main>

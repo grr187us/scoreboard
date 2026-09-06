@@ -1218,6 +1218,51 @@ class FieldAssistantCompositeCommandTests(unittest.TestCase):
         self.assertEqual(undone.state.ball_on, before.ball_on)
         self.assertEqual(undone.state.assistant_line_to_gain, before.assistant_line_to_gain)
 
+    def test_fa_31_manual_action_previews_and_finalizes_as_one_composite_command(self) -> None:
+        service, _ = self._service_in_first()
+        service.finalize_field_action(
+            FieldAction(
+                "start_series",
+                {"offense": "home", "ball_absolute": 25, "first_quarter_home_direction": 1},
+            )
+        )
+        revision = service.revision
+
+        manual = FieldAction(
+            "manual",
+            {"ball_on": {"team": "away", "yard_line": 30}, "team": "home", "down": 3, "distance": 4},
+        )
+        preview = service.preview_field_action(manual)
+        self.assertTrue(preview["accepted"], preview.get("error"))
+        self.assertEqual(
+            preview["preview"],
+            {
+                "ball_on": {"team": "away", "yard_line": 30},
+                "possession": "home",
+                "down": 3,
+                "distance": 4,
+                "line_to_gain": 74,
+                "first_quarter_home_direction": 1,
+                "score_delta": {"home": 0, "away": 0},
+                "classification": "manual",
+                "summary": "Set HOME 3rd & 4",
+                "follow_up": "",
+                "requires_explicit_turnover": False,
+            },
+        )
+
+        result = service.finalize_field_action(manual, expected_revision=revision)
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(result.revision, revision + 1)
+        self.assertEqual(result.state.down, 3)
+        self.assertEqual(result.state.distance, 4)
+        self.assertEqual(result.state.possession, "home")
+        self.assertEqual(result.state.ball_on.team, "away")
+        self.assertEqual(result.state.ball_on.yard_line, 30)
+        self.assertEqual(result.state.assistant_line_to_gain, 74)
+        self.assertEqual(result.state.assistant_first_quarter_home_direction, 1)
+
     def test_finalize_rejects_stale_revision_and_never_changes_clocks(self) -> None:
         service, fake = self._service_in_first()
         service.submit(cmd.game_clock_start())

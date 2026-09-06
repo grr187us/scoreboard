@@ -19,6 +19,7 @@ from scoreboard.domain.field_assistant import (
     preview_field_goal,
     preview_incomplete_pass,
     preview_kickoff,
+    preview_manual,
     preview_normal_play,
     preview_safety,
     preview_touchdown,
@@ -191,6 +192,91 @@ class FieldAssistantRuleTests(unittest.TestCase):
 
         kickoff = preview_kickoff(home_context, "home", 25)
         self.assertEqual(kickoff.series.line_to_gain, 35)
+
+    def test_pre_is_usable_and_draws_like_the_first_quarter(self) -> None:
+        # A game starts in PRE. Refusing the assistant there made it unusable
+        # exactly while the operator is staging the opening series.
+        for direction in (1, -1):
+            with self.subTest(direction=direction):
+                self.assertEqual(home_goal_side(direction, "PRE"), home_goal_side(direction, "1st"))
+                self.assertEqual(direction_for(direction, "PRE", "home"), 1)
+                self.assertEqual(direction_for(direction, "PRE", "away"), -1)
+
+        pre = FieldAssistantContext(
+            quarter="PRE", possession=None, ball_on=BallSpot(), down=None,
+            distance=None, series=SeriesState(1, None),
+        )
+        opening = start_series(pre, "home", 35)
+        self.assertEqual(opening.ball_on, BallSpot("home", 35))
+        self.assertEqual((opening.down, opening.distance), (1, 10))
+        self.assertEqual(opening.series.line_to_gain, 45)
+
+        running = preview_normal_play(setup_context(quarter="PRE", spot=35), 43)
+        self.assertEqual((running.down, running.distance), (2, 2))
+
+    def test_half_ot_and_final_stay_manual(self) -> None:
+        self.assertIsNone(home_goal_side(1, "HALF"))
+        self.assertIsNone(home_goal_side(1, "FINAL"))
+        with self.assertRaises(FieldAssistantValidationError):
+            start_series(setup_context(quarter="OT"), "home", 35)
+        for quarter in ("HALF", "FINAL"):
+            with self.subTest(quarter=quarter), self.assertRaises(FieldAssistantValidationError):
+                setup_context(quarter=quarter)
+
+    def test_fa_31_manual_sets_stated_down_and_distance_with_correct_line_to_gain(self) -> None:
+        for first_direction in (1, -1):
+            for quarter in ("1st", "2nd", "3rd", "4th"):
+                context = FieldAssistantContext(
+                    quarter, None, BallSpot(), None, None, SeriesState(first_direction, None)
+                )
+                for down in (1, 2, 3, 4):
+                    with self.subTest(first_direction=first_direction, quarter=quarter, down=down):
+                        home = preview_manual(context, "home", down, 10, 50)
+                        self.assertEqual(
+                            (home.possession, home.down, home.distance, home.series.line_to_gain, home.classification),
+                            ("home", down, 10, 60, "manual"),
+                        )
+                        self.assertEqual(home.summary, f"Set HOME {['1st', '2nd', '3rd', '4th'][down - 1]} & 10")
+
+                        away = preview_manual(context, "away", down, 10, 50)
+                        self.assertEqual(
+                            (away.possession, away.down, away.distance, away.series.line_to_gain),
+                            ("away", down, 10, 40),
+                        )
+
+    def test_fa_31_manual_goal_to_go_uses_the_offenses_target_goal_line(self) -> None:
+        context = FieldAssistantContext("1st", None, BallSpot(), None, None, SeriesState(1, None))
+        home = preview_manual(context, "home", 1, 0, 90)
+        away = preview_manual(context, "away", 1, 0, 10)
+        self.assertEqual((home.distance, home.series.line_to_gain, home.summary), (0, 100, "Set HOME 1st & Goal"))
+        self.assertEqual((away.distance, away.series.line_to_gain, away.summary), (0, 0, "Set AWAY 1st & Goal"))
+
+    def test_fa_31_manual_clamps_an_overrunning_distance_to_the_goal_line(self) -> None:
+        context = FieldAssistantContext("1st", None, BallSpot(), None, None, SeriesState(1, None))
+        result = preview_manual(context, "home", 3, 10, absolute_from_ball_spot(BallSpot("away", 4)))
+        self.assertEqual((result.series.line_to_gain, result.distance, result.down), (100, 4, 3))
+        self.assertEqual(result.summary, "Set HOME 3rd & 4")
+
+    def test_fa_31_manual_rejects_invalid_input(self) -> None:
+        context = FieldAssistantContext("1st", None, BallSpot(), None, None, SeriesState(1, None))
+        for down in (0, 5, True):
+            with self.subTest(down=down), self.assertRaises(FieldAssistantValidationError):
+                preview_manual(context, "home", down, 10, 50)
+        for distance in (-1, 100, True):
+            with self.subTest(distance=distance), self.assertRaises(FieldAssistantValidationError):
+                preview_manual(context, "home", 1, distance, 50)
+        for spot in (0, 100):
+            with self.subTest(spot=spot), self.assertRaises(FieldAssistantValidationError):
+                preview_manual(context, "home", 1, 10, spot)
+        no_direction = FieldAssistantContext("1st", None, BallSpot(), None, None, SeriesState(None, None))
+        with self.assertRaises(FieldAssistantValidationError):
+            preview_manual(no_direction, "home", 1, 10, 50)
+        for quarter in ("HALF", "OT", "FINAL"):
+            with self.subTest(quarter=quarter), self.assertRaises(FieldAssistantValidationError):
+                bad_quarter = FieldAssistantContext(quarter, None, BallSpot(), None, None, SeriesState(1, None))
+                preview_manual(bad_quarter, "home", 1, 10, 50)
+        with self.assertRaises(FieldAssistantValidationError):
+            preview_manual(context, "visitors", 1, 10, 50)
 
     def test_dispatcher_uses_bridge_neutral_action_envelope(self) -> None:
         result = calculate_field_action(setup_context(), FieldAction("normal_play", {"final_absolute": 30}))

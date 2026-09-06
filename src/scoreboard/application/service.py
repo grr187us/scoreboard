@@ -424,6 +424,8 @@ class ScoreboardService:
                 raw["add_score"] = False
         elif kind == "kickoff":
             raw.setdefault("receiving_team", raw.get("team"))
+        elif kind == "manual":
+            raw.setdefault("possession", raw.get("team"))
         if kind == "penalty":
             option = raw.get("option")
             # ±5/10/15 are offense-relative shortcuts.  Deriving their
