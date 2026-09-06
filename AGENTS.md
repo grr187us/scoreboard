@@ -54,7 +54,7 @@ Presentation and integrations must not become authoritative state owners. Option
 - Update the relevant requirement/architecture/UX document when a decision changes.
 - Do not mark an item complete based only on files existing; record the verification performed.
 - Before committing, review the complete diff, validate relative Markdown links, and report every remaining uncommitted file.
-- The discovered suite is not green. Run it, and compare the result against the failure inventory in `PROJECT_ROADMAP.md` before calling anything a regression; the known failures are legacy pregame/quarter expectations plus the `tests/ui/` checks on a machine without Node and Playwright.
+- The discovered suite is green as of September 6, 2026 (750 tests, 0 failures, 0 errors, 3 skipped). Run it; the 3 skips are `@unittest.skip`s naming open question A-1 (whether a game-clock Start should always blank the play clock) and are expected, not a pass on that question. Anything else failing or erroring is a regression — see "Automated suite failure inventory" in `PROJECT_ROADMAP.md` for how the suite got here.
 
 ## Agent skills
 

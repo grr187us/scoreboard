@@ -176,7 +176,7 @@ class RefreshTests(ApplicationTestCase):
         operator_view = published[0][1]
         spectator_view = published[1][1]
         self.assertEqual(operator_view["clocks"]["game"]["display"], "29:57")
-        self.assertEqual(spectator_view["clocks"]["game"]["display"], "11:57")
+        self.assertEqual(spectator_view["clocks"]["game"]["display"], "29:57")
         self.assertIn("health", operator_view)
         self.assertNotIn("health", spectator_view)
 

@@ -1,0 +1,15 @@
+{
+  "name": "scoreboard-dev-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development-only browser test tooling for the Scoreboard project. Nothing here ships with the application; the runtime is Python/WebView2 with bundled static files.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test:ui": "python -m unittest tests.ui.test_spectator_browser tests.ui.test_keyboard_browser tests.ui.test_layout_editor_browser -v"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

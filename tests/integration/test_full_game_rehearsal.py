@@ -113,8 +113,12 @@ class FullGameRehearsal(TemporaryDataDirectoryTest):
         self.send("set_team_name", {"team": "away", "name": "Eagles"})
 
         # Pregame: the 30:00 countdown runs down on its own and expires.
-        self.send("event_countdown_select", {"label": "PREGAME"})
-        self.send("event_countdown_start")
+        # Follow-up 01 "unified pregame clock": while PRE is selected the
+        # game-clock engine is the one authoritative KICKOFF IN countdown in
+        # both operator and spectator views (docs/MVP_REQUIREMENTS.md F-025),
+        # so Game Clock Start -- not the separate event-countdown commands --
+        # is what actually runs it down.
+        self.send("game_clock_start")
         self.advance(30 * 60.0, step=1.0)
         view = self.bridge.get_snapshot()
         self.assertEqual(view["clocks"]["event"]["display"], "0:00")

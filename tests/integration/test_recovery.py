@@ -41,7 +41,7 @@ class RestartRecoveryTests(TemporaryDataDirectoryTest):
         self.submit(service, store, cmd.set_team_name("away", "Eagles"))
         self.submit(service, store, cmd.add_score("home", 6))
         self.submit(service, store, cmd.add_score("away", 3))
-        self.submit(service, store, cmd.set_quarter("2nd"))
+        self.submit(service, store, cmd.set_quarter("2nd", confirmed=True))
         self.submit(service, store, cmd.play_clock_preset(40.0))
         self.submit(service, store, cmd.game_clock_start())
         self.submit(service, store, cmd.play_clock_start())
@@ -208,7 +208,7 @@ class CorruptDatabaseTests(TemporaryDataDirectoryTest):
     def saved_game(self) -> None:
         service, store = self.started_session()
         self.submit(service, store, cmd.add_score("home", 6))
-        self.submit(service, store, cmd.set_quarter("2nd"))
+        self.submit(service, store, cmd.set_quarter("2nd", confirmed=True))
         store.close()
 
     def test_a_corrupt_primary_loads_the_backup_and_says_so(self) -> None:
@@ -307,7 +307,7 @@ class ApplicationUpgradeRecoveryTests(TemporaryDataDirectoryTest):
         service, store = self.started_session(app_version=written_by)
         self.submit(service, store, cmd.set_team_name("home", "Tigers"))
         self.submit(service, store, cmd.add_score("home", 6))
-        self.submit(service, store, cmd.set_quarter("2nd"))
+        self.submit(service, store, cmd.set_quarter("2nd", confirmed=True))
         self.submit(service, store, cmd.game_clock_start())
         self.monotonic.advance(5.0)
         store.checkpoint(service.materialized_state())

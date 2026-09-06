@@ -30,8 +30,12 @@ async function measureWidgets(page) {
       const name = element.getAttribute('data-widget');
       if (text.left < safe.left - .5 || text.right > safe.right + .5 ||
           text.top < safe.top - .5 || text.bottom > safe.bottom + .5) errors.push('outside safe area: ' + name);
-      if (text.left < box.left - .5 || text.right > box.right + .5 ||
-          text.top < box.top - .5 || text.bottom > box.bottom + .5) errors.push('text outside box: ' + name + ' text ' + JSON.stringify(text.toJSON()) + ' box ' + JSON.stringify(box.toJSON()));
+      // 1px, not .5: a Range rect around inline text sits up to ~0.8px above
+      // the flex box that centres it (Arial's ascent at line-height 1.15),
+      // which is not visible overflow. Anything a real wrap causes is tens
+      // of pixels and still fails.
+      if (text.left < box.left - 1 || text.right > box.right + 1 ||
+          text.top < box.top - 1 || text.bottom > box.bottom + 1) errors.push('text outside box: ' + name + ' text ' + JSON.stringify(text.toJSON()) + ' box ' + JSON.stringify(box.toJSON()));
       rects.push({ name, left: text.left, right: text.right, top: text.top, bottom: text.bottom });
     }
     for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {

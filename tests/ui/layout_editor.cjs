@@ -152,12 +152,17 @@ async function main(data) {
     await page.dispatchEvent('#prop-y', 'input');
     await page.waitForFunction(() => document.querySelectorAll('#issue-list button').length > 0);
     await page.click('[data-select-widget="quarter"]');
+    // v2 keeps the issue list in a drawer behind the status summary; the
+    // summary itself must already say there is an error before it is opened.
+    assert.match(await page.textContent('#status-summary'), /1 error/);
+    await page.click('#status-summary');
+    await page.waitForSelector('#issue-list button', { state: 'visible' });
     await page.click('#issue-list button');
     assert.equal(await page.textContent('#inspector-title'), 'Ball on');
     checks.push('issue selects widget');
 
     // --- Reset this widget restores the default values ---------------------
-    await page.click('[data-action="reset_widget"]');
+    await page.click('#action-reset_widget');
     await page.waitForFunction(
       expectedY => Number(document.getElementById('prop-y').value) === expectedY,
       pct(data.state.layout.widgets.ball_on.y));
@@ -170,7 +175,9 @@ async function main(data) {
     checks.push('reset widget names the screen');
 
     // --- Save as sends the typed name, with no blocking dialog -------------
-    await page.click('[data-action="save_as_open"]');
+    // v2 files Save as... under the layout-name menu in the top bar.
+    await page.click('#layout-menu-button');
+    await page.click('#save-as-open');
     await page.fill('#save-as-name', 'Night game');
     await page.click('[data-action="save_as_confirm"]');
     await page.waitForFunction(() =>
@@ -230,20 +237,22 @@ async function main(data) {
     checks.push('resize by handle');
 
     // Arrow keys and the on-screen arrows nudge, and Shift nudges further.
+    // Leftwards: the boundary drag above left the widget against the right
+    // safe edge, where a rightward nudge is (correctly) clamped to nothing.
     const beforeNudge = await geometry('quarter');
-    await page.click('[data-action="nudge_right"]');
+    await page.click('[data-action="nudge_left"]');
     const nudgedByButton = await geometry('quarter');
-    assert.ok(nudgedByButton.x > beforeNudge.x, 'the arrow button must move it right');
+    assert.ok(nudgedByButton.x < beforeNudge.x, 'the arrow button must move it left');
 
     await page.locator('#canvas').click({ position: { x: 4, y: 4 } });
     await page.click('[data-select-widget="quarter"]');
-    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowLeft');
     const nudgedByKey = await geometry('quarter');
-    const fine = nudgedByKey.x - nudgedByButton.x;
-    await page.keyboard.press('Shift+ArrowRight');
+    const fine = nudgedByButton.x - nudgedByKey.x;
+    await page.keyboard.press('Shift+ArrowLeft');
     const nudgedFar = await geometry('quarter');
-    assert.ok(fine > 0, 'the arrow key must move it right');
-    assert.ok(nudgedFar.x - nudgedByKey.x > fine, 'Shift must move it further than a plain arrow');
+    assert.ok(fine > 0, 'the arrow key must move it left');
+    assert.ok(nudgedByKey.x - nudgedFar.x > fine, 'Shift must move it further than a plain arrow');
     checks.push('nudge by key and button');
 
     // Typing in a field keeps its own arrow-key behaviour.
@@ -375,7 +384,7 @@ async function main(data) {
     checks.push('switch back to the game screen');
 
     // Saving still sends the whole document, screens and all.
-    await page.click('[data-action="save"]');
+    await page.click('#save');
     await page.waitForFunction(() =>
       window.__calls[window.__calls.length - 1].name === 'save_layout');
     checks.push('save after editing another screen');

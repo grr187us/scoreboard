@@ -37,6 +37,62 @@
     return icon('field');
   }
 
+  /** Bring `host`'s children into line with the freshly built `fresh` nodes
+   * while keeping every node whose tag has not changed, updating its
+   * attributes and text in place. Why not `replaceChildren`: a mousedown on
+   * a rail button blurs whichever inspector field the operator just typed
+   * in, that field's native 'change' commits the draft, and the commit
+   * re-renders this rail before the mouseup arrives. If the rebuild swapped
+   * the button out, the browser would deliver the click to the old and new
+   * targets' common ancestor (the row's parent), nothing would match
+   * `[data-select-widget]`, and the first click after typing a value would
+   * appear to do nothing. Morphing keeps the pressed node alive across the
+   * commit, so the click lands where it was aimed. */
+  function morphChildren(host, fresh) {
+    var old = Array.prototype.slice.call(host.childNodes);
+    var index;
+    for (index = 0; index < fresh.length; index += 1) {
+      if (index < old.length) {
+        morphNode(old[index], fresh[index], host);
+      } else {
+        host.appendChild(fresh[index]);
+      }
+    }
+    for (index = old.length - 1; index >= fresh.length; index -= 1) {
+      host.removeChild(old[index]);
+    }
+  }
+
+  function morphNode(oldNode, newNode, parent) {
+    if (oldNode.nodeType !== newNode.nodeType || oldNode.nodeName !== newNode.nodeName) {
+      parent.replaceChild(newNode, oldNode);
+      return;
+    }
+    if (oldNode.nodeType === Node.TEXT_NODE) {
+      if (oldNode.nodeValue !== newNode.nodeValue) {
+        oldNode.nodeValue = newNode.nodeValue;
+      }
+      return;
+    }
+    if (oldNode.nodeType !== Node.ELEMENT_NODE) {
+      return;
+    }
+    var attrIndex;
+    for (attrIndex = oldNode.attributes.length - 1; attrIndex >= 0; attrIndex -= 1) {
+      var staleName = oldNode.attributes[attrIndex].name;
+      if (!newNode.hasAttribute(staleName)) {
+        oldNode.removeAttribute(staleName);
+      }
+    }
+    for (attrIndex = 0; attrIndex < newNode.attributes.length; attrIndex += 1) {
+      var attribute = newNode.attributes[attrIndex];
+      if (oldNode.getAttribute(attribute.name) !== attribute.value) {
+        oldNode.setAttribute(attribute.name, attribute.value);
+      }
+    }
+    morphChildren(oldNode, Array.prototype.slice.call(newNode.childNodes));
+  }
+
   function buildRailRow(app, id, label, kind, visible, canDelete) {
     var row = document.createElement('div');
     row.className = 'rail-row';
@@ -98,7 +154,7 @@
     var doc = app.screenDoc();
 
     var groupsHost = el('rail-groups');
-    groupsHost.replaceChildren();
+    var groupNodes = [];
     var groups = descriptor.widget_groups || [];
     groups.forEach(function (groupName) {
       var group = document.createElement('div');
@@ -126,15 +182,17 @@
           Boolean(widget.visible), false));
       });
       group.appendChild(body);
-      groupsHost.appendChild(group);
+      groupNodes.push(group);
     });
+    morphChildren(groupsHost, groupNodes);
 
     var elementsBody = el('rail-elements-body');
-    elementsBody.replaceChildren();
+    var elementRows = [];
     S.elementsForLayers(doc).forEach(function (element) {
-      elementsBody.appendChild(buildRailRow(app, element.id, elementLabel(element), element.type,
+      elementRows.push(buildRailRow(app, element.id, elementLabel(element), element.type,
         element.visible !== false, true));
     });
+    morphChildren(elementsBody, elementRows);
     el('rail-elements-count').textContent = String((doc.elements || []).length);
   }
 

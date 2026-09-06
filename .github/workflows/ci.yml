@@ -1,0 +1,55 @@
+name: CI
+
+# One job on a Windows runner, because the host layer imports pywebview and
+# pythonnet, the browser checks drive the installed Microsoft Edge through
+# Playwright's `msedge` channel, and the target laptop is Windows. Everything
+# here is the same sequence tests/README.md documents for a developer machine.
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the package and its pinned dependencies
+        run: |
+          python -m pip install --upgrade "pip==24.0"
+          python -m pip install -e .
+          python -m pip check
+
+      - name: Byte-compile every Python file
+        run: python -m compileall -q src tests tools
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Playwright (Edge channel, no browser download)
+        run: npm ci
+
+      - name: Relative Markdown link check
+        run: python tools/check_markdown_links.py
+
+      - name: Full unittest suite (isolated data folder)
+        shell: pwsh
+        run: |
+          $env:SCOREBOARD_DATA_DIR = Join-Path $env:RUNNER_TEMP "scoreboard-data"
+          New-Item -ItemType Directory -Force $env:SCOREBOARD_DATA_DIR | Out-Null
+          python -m unittest discover -s tests -v

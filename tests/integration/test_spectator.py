@@ -42,7 +42,7 @@ class SpectatorFoundationTests(ApplicationTestCase):
     def test_spectator_uses_clear_wording_and_expanded_live_quarter(self):
         app = self.make_application()
         bridge = app.start_new()
-        bridge.command('set_quarter', {'label': '2nd'})
+        bridge.command('set_quarter', {'label': '2nd', 'confirmed': True})
         view = bridge.spectator_snapshot()
 
         self.assertEqual(view['quarter'], '2nd')
@@ -90,12 +90,16 @@ class SpectatorFoundationTests(ApplicationTestCase):
     def test_lifecycle_transitions_name_lock_undo_and_countdown_boundaries(self):
         app = self.make_application()
         bridge = app.start_new()
-        bridge.command('quarter_forward')
+        bridge.command('quarter_forward', {'confirmed': True})
         self.assertEqual(app.service.state.lifecycle, 'IN_PROGRESS')
         self.assertFalse(bridge.command('set_team_name', {'team': 'home', 'name': 'EAGLES'})['accepted'])
-        bridge.command('undo')
-        self.assertEqual(app.service.state.lifecycle, 'PRE_GAME')
-        bridge.command('set_quarter', {'label': 'HALF'})
+        # Follow-up 01: leaving PRE loads a fresh quarter clock, so a simple
+        # quarter-only Undo could not restore the discarded pregame countdown
+        # and is deliberately refused (matches
+        # GameClockCommandTests.test_a_confirmed_quarter_change_cannot_be_undone).
+        self.assertFalse(bridge.command('undo')['accepted'])
+        self.assertEqual(app.service.state.lifecycle, 'IN_PROGRESS')
+        bridge.command('set_quarter', {'label': 'HALF', 'confirmed': True})
         self.assertEqual(app.service.state.lifecycle, 'HALFTIME')
         self.assertEqual(bridge.spectator_snapshot()['clocks']['event']['display'], '15:00')
         for seconds, display, phase in [(900, '15:00', 'HALFTIME'), (181, '3:01', 'HALFTIME'),
@@ -105,6 +109,13 @@ class SpectatorFoundationTests(ApplicationTestCase):
             self.assertEqual((event['display'], event['phase']), (display, phase))
             self.assertEqual(event['warmup_follows'], '3:00' if phase == 'HALFTIME' else None)
         bridge.command('game_clock_start')
+        # docs/MVP_REQUIREMENTS.md 4.3: "only an accepted quarter transition
+        # enters IN_PROGRESS" -- a game-clock Start at the end of warmup no
+        # longer carries an implicit quarter change, so lifecycle stays
+        # HALFTIME until the operator explicitly (and now confirmed) advances
+        # the quarter.
+        self.assertEqual(app.service.state.lifecycle, 'HALFTIME')
+        bridge.command('quarter_forward', {'confirmed': True})
         self.assertEqual(app.service.state.lifecycle, 'IN_PROGRESS')
         bridge.command('end_game')
         self.assertEqual(app.service.state.lifecycle, 'FINAL')

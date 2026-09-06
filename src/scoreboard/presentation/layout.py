@@ -492,7 +492,7 @@ _EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, Any]]] = {
                "font_scale": 0.035, "font_weight": 400, "text_align": "center",
                "pregame_visible": False, "halftime_visible": True},
     "home_name": {"x": 0.04, "y": 0.72, "width": 0.30, "height": 0.12,
-                  "font_scale": 0.040, "font_weight": 700, "text_align": "right",
+                  "font_scale": 0.024, "font_weight": 700, "text_align": "right",
                   "pregame_visible": True, "halftime_visible": True},
     "home_score": {"x": 0.35, "y": 0.70, "width": 0.12, "height": 0.16,
                    "font_scale": 0.070, "font_weight": 700, "text_align": "center",
@@ -501,7 +501,7 @@ _EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, Any]]] = {
                    "font_scale": 0.070, "font_weight": 700, "text_align": "center",
                    "pregame_visible": True, "halftime_visible": True},
     "away_name": {"x": 0.66, "y": 0.72, "width": 0.30, "height": 0.12,
-                  "font_scale": 0.040, "font_weight": 700, "text_align": "left",
+                  "font_scale": 0.024, "font_weight": 700, "text_align": "left",
                   "pregame_visible": True, "halftime_visible": True},
 }
 
