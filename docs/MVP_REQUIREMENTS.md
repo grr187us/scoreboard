@@ -1,7 +1,7 @@
 # MVP Requirements
 
-**Status:** Phase 1 baseline, updated by the September 5, 2026 Phase 2 audit; implementation Tasks 1-11 are substantially built. Focused Bundle A verification passes, while the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors. Task 10's real two-display/stadium evidence and Task 12 rehearsal remain open. Section 4.6 (down/distance/possession/ball position/timeouts) and local-time display (P-010) were added and implemented on September 5, 2026; see `PROJECT_ROADMAP.md` for evidence.
-**Last updated:** September 5, 2026
+**Status:** Phase 1 baseline reconciled with the September 6, 2026 working tree. Tasks 1-11 are substantially built; the current full suite is green at 913 tests with 3 explicit A-1 skips. Task 10's real two-display/stadium evidence and Task 12 rehearsal remain open. C4 publication isolation is only partially complete and the latest working tree must be repackaged before target-laptop acceptance; see `PROJECT_ROADMAP.md` and `CURRENT_PROJECT_AUDIT_2026-09-06.md`.
+**Last updated:** September 6, 2026
 
 ## 1. Purpose and requirement language
 
@@ -60,7 +60,7 @@ These values make implementation and testing concrete without claiming to settle
 | F-011 | Scores MUST start at 0 for a new game and MUST be displayed as non-negative integers. | New-game test and negative-input test. |
 | F-012 | Separate home and away controls MUST provide `+1`, `+2`, `+3`, and `+6`. | Click and keyboard tests for every increment/team pair. |
 | F-013 | A score change MUST identify the team, delta, old value, and new value in the event log. | Inspect structured log after each command. |
-| F-014 | The operator MUST be able to undo the most recent reversible scoring or quarter command. Undo MUST be a new logged command, not deletion of history. | Execute, undo, restart, and verify state/log. |
+| F-014 | The operator MUST be able to undo reversible scoring, quarter, clock-correction, field-status, and Field Assistant commands from a bounded in-memory LIFO history. The current bound is 20. Undo MUST be a new logged command, not deletion of history; deliberate non-reversible barriers clear the stack, and recovery MUST NOT restore pre-crash undo entries. | Execute multiple reversible commands, undo in LIFO order, cross a barrier, restart, and verify state/log/history behavior. |
 | F-015 | A correction panel MUST provide `-1`, `-2`, `-3`, and `-6`, reject results below zero without changing state, and visually separate corrections from normal scoring. | UI and command validation tests. |
 | F-016 | Direct score entry MUST require an explicit Apply action and confirmation showing old and new values. | UI test that typing alone does not change state. |
 | F-017 | The display MUST support at least scores 0–199 without overlap. Values above the supported visual range MUST be rejected with an operator-visible error, not clipped silently. | Layout tests at 0, 99, 100, and 199; rejection at 200. |
@@ -175,6 +175,33 @@ flips remain the documented manual escape hatch
 rendering of the helper window, the 1366×768-at-100%/125% visual check, and a
 live operator rehearsal remain outstanding (`docs/UX_AND_LAYOUT.md` §11).
 
+### 4.8 Crowd-facing game status (added September 6, 2026, audit item F3)
+
+When play stopped, the board previously froze with no explanation: there was no
+`FLAG`, `TIMEOUT`, `INJURY`, or `DELAY` indicator anywhere and no timeout
+countdown, so the crowd saw a still scoreboard — still showing the old down and
+distance — while a penalty was being worked. The layout editor's free text
+could not fill the gap, because it is fixed operator-typed copy rather than a
+live toggle (`docs/UX_AND_LAYOUT.md` section 10.8).
+
+| ID | Requirement | Verification |
+|---|---|---|
+| F-080 | The operator MUST be able to raise one crowd-facing status message — `FLAG`, `TIMEOUT`, `INJURY`, or `DELAY` — on the spectator board, and clear it, from an always-visible control that needs no drawer, menu, or mode change. | Command tests; operator source-contract test. |
+| F-081 | A status message MUST be presentation only. It MUST NOT change score, clocks, quarter, down, distance, possession, field position, or timeouts, and it MUST NOT enter, clear, or consume the F-014 undo history — a crowd toggle must never push a scoring mistake out of reach. | Command and undo-isolation tests. |
+| F-082 | A status countdown MUST be available beside the message, loadable to 30, 60, or 90 seconds, startable and stoppable independently, using the same monotonic/deadline timing model as the other clocks (F-032) and stopping at zero. Raising `TIMEOUT` MUST load and start 60 seconds in one single transition. | Fake-time command tests; one-revision test. |
+| F-083 | Both the message and the countdown MUST be rendered as text by Python and bound by the spectator board as ordinary optional widgets: absent or empty text hides the widget rather than drawing an empty box, so neither appears on the wall until the operator raises one (D-001, F-066). | View-model and layout-render tests. |
+| F-084 | A status message MUST NOT clear itself when its countdown expires — the expired `0:00` is itself information the crowd wants, and only the operator knows when play has resumed. `New Game` MUST clear both message and countdown with every other reset field (F-065). | Fake-time expiry and new-game tests. |
+
+**Deliberately not built.** The wall shows the status *word* only, with no team
+name: the default board has no free space that holds `TIMEOUT — ` plus a
+24-character name (F-010) legibly, which team called a timeout is already
+carried by `timeout_used` and the timeouts readout, and an operator who wants
+it on the wall can enlarge or restyle the widget in the layout editor. A crowd
+status is never charged against a team's timeouts — `timeout_used` remains the
+separate, undoable command that does that. The Field Assistant does not raise
+`FLAG` automatically; opening a draft in a helper window must not mutate
+authoritative state (F-072).
+
 ## 5. Operator-usability requirements
 
 | ID | Requirement | Verification |
@@ -187,6 +214,7 @@ live operator rehearsal remain outstanding (`docs/UX_AND_LAYOUT.md` §11).
 | U-006 | Focus in a text field MUST suppress global scoring/clock shortcuts. | Type shortcut characters in every editable field. |
 | U-007 | Every rejected action MUST leave state unchanged and show plain-language feedback with a recovery action when possible. | Invalid-command tests. |
 | U-008 | The previous reversible command and a clearly labeled Undo action MUST be visible during normal operation. | UI inspection. |
+| U-009 | The operator MUST be able to see the whole undo history — every action a repeated Undo would reverse, newest first, with the next one marked — before spending it, and without leaving the live controls, so a second action never forecloses fixing the first with no view of what is being given up (F-014, audit item I4). | Source-contract and view-model tests. |
 
 ## 6. Keyboard requirements
 
@@ -223,7 +251,7 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 | ID | Requirement | Verification |
 |---|---|---|
-| D-001 | The spectator window MUST show only home name/score, away name/score, quarter, game clock, play clock, and, while the game board is shown, down/distance, field position, and possession (F-060 through F-066, added September 5, 2026). During pregame and halftime, when the countdown board replaces the game board, that board MUST also show both team names and both scores beneath the countdown (added September 5, 2026, deep-dive audit C3: until then the wall was scoreless for the whole intermission). Since September 6, 2026 that countdown board is the active layout's pre-game or halftime **screen** (schema v3, `docs/UX_AND_LAYOUT.md` §10.9): its built-in default satisfies this requirement, and an operator who hides the score widgets on a custom screen is making a deliberate presentation choice the editor shows plainly, not a defect. By default, timeouts remaining and the static game-clock label are still not drawn — the default field inventory is unchanged. The presentation layout editor (added September 5, 2026; rebuilt as v2 the same day; `docs/UX_AND_LAYOUT.md` §10) additionally lets the operator turn on the positionable `home_timeouts`/`away_timeouts`/`game_clock_label` widgets, and, in v2, add operator-authored decorative free text, images, and shapes (up to 24 elements, none bound to a game field) as a presentation choice, but doing so is an operator layout decision, not an automatic answer to owner decision B-4 (whether timeouts should appear on the spectator board), which remains open (section 13). | Visual inventory check; layout-editor widget-visibility and element-rendering tests. |
+| D-001 | The spectator window MUST show home name/score, away name/score, quarter, game clock, play clock, and, while the game board is shown, down/distance, field position, and possession (F-060 through F-066, added September 5, 2026). During pregame and halftime, when the countdown board replaces the game board, that board MUST also show both team names and both scores beneath the countdown (added September 5, 2026, deep-dive audit C3). Since September 6, 2026 that countdown board is the active layout's pre-game or halftime **screen** (schema v3, `docs/UX_AND_LAYOUT.md` §10.9): its built-in default satisfies this requirement, and an operator who hides a score widget is making a deliberate layout choice. By default, timeouts remaining and the static game-clock label are not drawn. The editor can expose those optional widgets and add decorative free text, images, and shapes. Since September 6, 2026 the game registry also carries the optional `status_message` and `status_clock` widgets (section 4.8): both are empty, and therefore hidden, until the operator raises a crowd status, so the board is unchanged from before F3 in normal play. | Visual inventory check; layout-editor widget-visibility and element-rendering tests; crowd-status view-model and render tests. |
 | D-002 | It MUST support borderless fullscreen on a selected Windows display and remember that preference. If the display is unavailable, it MUST keep the operator usable and report `DISPLAY NOT FOUND` rather than silently taking over the primary screen. | Multi-monitor disconnect/reconnect tests. |
 | D-003 | Layout MUST use a resolution-independent logical canvas, scalable typography, and safe margins; it MUST NOT assume the stadium's unknown pixel dimensions. The safe-area margin is now a validated, editable layout property (default 4% inset per side, adjustable only within a documented minimum and maximum inset; added September 5, 2026): every visible widget must fit inside it, and a layout that would place one outside it is rejected rather than silently accepted or clipped. | Render at 1280×720, 1366×768, 1920×1080, and a portrait test mode; layout-editor safe-area validation tests. |
 | D-004 | State changes SHOULD appear within 100 ms in the spectator view on the target laptop; MUST appear within 250 ms. | Timestamped integration test. |
@@ -274,9 +302,11 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 
 ## 11. Explicit non-goals
 
-Down, distance, possession, ball position, and timeouts are implemented (section 4.6, September 5, 2026) and are no longer non-goals. The MVP does not implement penalties, statistics, rosters, team logos/colors as a requirement, animations, sponsor scheduling, audio, video, replay, OBS scenes/control, livestreaming, networking or multiple operators, cloud services, user accounts, automated HDMI switching, direct LED/RJ45 protocols, or the physical USB controller.
+Down, distance, possession, ball position, and timeouts are implemented (section 4.6, September 5, 2026) and are no longer non-goals. The MVP does not implement penalties, statistics, rosters, team logos on the board, animations, sponsor scheduling, audio, video, replay, OBS scenes/control, livestreaming, networking or multiple operators, cloud services, user accounts, automated HDMI switching, direct LED/RJ45 protocols, or the physical USB controller.
 
 A presentation layout editor for spectator-board placement, sizing, color, free text, images, and simple shapes is implemented as v2 (September 5, 2026; `docs/UX_AND_LAYOUT.md` §10, `docs/PHASE_2_BACKLOG.md`). It remains presentation-only: it advances no state revision, submits no command, and does not add media, OBS, animations, sponsor rotation, networking, per-resolution layouts, physical controllers, SVG images, downloaded fonts, or a way to bind free text to an authoritative field. **Added September 6, 2026 (verified in focused suites, the full discovery run, and a real pywebview run):** the pregame/halftime event countdown board, previously excluded from the editor, is now covered by it as two additional editable screens (schema v3) — see `docs/UX_AND_LAYOUT.md` §10.9 and `docs/ARCHITECTURE.md` §9. See `docs/PHASE_2_BACKLOG.md` for the full exclusion list.
+
+Saved team presets are implemented (September 6, 2026, audit item F4; `docs/UX_AND_LAYOUT.md` §5b, `docs/ARCHITECTURE.md` §9): an operator can save a team's name, short name, and two colours to `teams.json` and apply it to either side in one confirmed click. That click is the existing `set_team_name` command, so F-010 and the pregame-only rule are unchanged; the colours and short name are shown on the operator's own board and carried in every view model, but **no spectator-board widget binds to them yet** — team colours and logos on the wall remain a later presentation-layout feature, not a requirement.
 
 A Field Assistant convenience path for ordinary end-of-play field-status updates is implemented (section 4.7, September 5, 2026; `docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md`). It automates only the scrimmage, penalty, and scoring/kickoff outcomes that document describes; OT direction, onside/blocked kicks, defensive try returns, offsetting/multiple penalties, non-standard enforcement spots, automatic possession flips, and any clock change remain manual, unautomated corrections through the existing controls.
 

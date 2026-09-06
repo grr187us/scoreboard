@@ -57,6 +57,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -109,6 +110,10 @@ CLOCK_EXPIRED: Final[dict[str, str]] = {
     "game": "game_clock_expired",
     "play": "play_clock_expired",
     "event": "event_countdown_expired",
+    # F3's crowd-facing status countdown: additive entry so
+    # host/bridge.py's _record_expirations can note it reaching zero on its
+    # own, in the same shape as the other three (.scratch/f3-i4/DESIGN.md).
+    "status": "status_clock_expired",
 }
 
 #: The game clock expired naturally while a play clock was running.  The paired
@@ -120,6 +125,15 @@ PLAY_CLOCK_CLEARED_ON_GAME_CLOCK_STOP: Final[str] = "play_clock_cleared_on_game_
 #: successful transaction. The cap stops an all-session outage from growing
 #: without bound; it is far larger than a game's realistic command count.
 MAX_PENDING_HISTORY_ROWS: Final[int] = 2000
+
+#: A full-database backup copy is not free, and the original policy ran it
+#: after *every* accepted command -- fine at human command rates, but a shared
+#: cost the C4 audit found stacking up under the command lock (ARCHITECTURE.md
+#: §8). The policy stays "refresh after a verified commit, never from a
+#: half-written file"; only the cadence is bounded. A skipped refresh is never
+#: lost: it is remembered as pending and flushed by the next eligible moment
+#: (a later checkpoint, or the store closing) rather than silently dropped.
+BACKUP_MIN_INTERVAL_SECONDS: Final[float] = 2.0
 
 _SCHEMA_STATEMENTS: Final[tuple[str, ...]] = (
     """
@@ -520,6 +534,7 @@ class GameStore:
         diagnostics: Diagnostics | None = None,
         app_version: str = APP_VERSION,
         using_backup: bool = False,
+        monotonic: Callable[[], float] | None = None,
     ) -> None:
         self._paths = paths
         self._connection = connection
@@ -527,9 +542,16 @@ class GameStore:
         self._diagnostics = NullDiagnostics() if diagnostics is None else diagnostics
         self._app_version = app_version
         self._using_backup = using_backup
+        self._monotonic = time.monotonic if monotonic is None else monotonic
         self._game_id: int | None = None
         self._pending_history: list[tuple[Any, ...]] = []
         self._last_displayed: tuple[int, int, int] | None = None
+        # Bounded backup cadence (C4): ``None`` means no backup has been taken
+        # yet this session, which is the one case a bounded refresh always
+        # honours immediately -- a brand-new session must never start with a
+        # stale or missing backup.
+        self._last_backup_at: float | None = None
+        self._backup_pending = False
         self._status = PersistenceStatus(
             saved=False,
             message="No game has been saved yet.",
@@ -545,6 +567,7 @@ class GameStore:
         diagnostics: Diagnostics | None = None,
         app_version: str = APP_VERSION,
         using_backup: bool = False,
+        monotonic: Callable[[], float] | None = None,
     ) -> "GameStore":
         paths.ensure()
         connection = connect(paths.database)
@@ -556,6 +579,7 @@ class GameStore:
             diagnostics=diagnostics,
             app_version=app_version,
             using_backup=using_backup,
+            monotonic=monotonic,
         )
 
     # --- Accessors ----------------------------------------------------------
@@ -573,6 +597,11 @@ class GameStore:
         return self._paths
 
     def close(self) -> None:
+        # A pending backup is one the bounded cadence deferred, not one that
+        # was ever refused; closing is a verified-commit boundary exactly like
+        # ``record_shutdown``, so it is the last safe moment to flush it.
+        if self._backup_pending:
+            self._write_backup_now()
         try:
             self._connection.close()
         except sqlite3.Error:
@@ -629,7 +658,7 @@ class GameStore:
             self._game_id = previous_game_id
             return self._fail("begin_session", exc)
         self._reset_display_cadence(state)
-        self._refresh_backup()
+        self._refresh_backup(force=True)
         return self._succeed(state, timestamp, "Game state saved.")
 
     def record_shutdown(self, state: GameState) -> PersistenceStatus:
@@ -647,7 +676,7 @@ class GameStore:
                 )
         except (sqlite3.Error, OSError) as exc:
             return self._fail("record_shutdown", exc)
-        self._refresh_backup()
+        self._refresh_backup(force=True)
         return self._succeed(state, timestamp, "Game state saved at shutdown.")
 
     # --- Command recording --------------------------------------------------
@@ -828,6 +857,7 @@ class GameStore:
             raise NoActiveGame("begin_session() must be called before checkpointing")
         displayed = self._display_key(state)
         if not force and displayed == self._last_displayed:
+            self._flush_pending_backup_if_due()
             return False
         timestamp = self._timestamp()
         try:
@@ -836,9 +866,15 @@ class GameStore:
                 self._write_state(connection, state, timestamp, CHECKPOINT_CLOCK_TICK)
         except (sqlite3.Error, OSError) as exc:
             self._fail("checkpoint", exc)
+            self._flush_pending_backup_if_due()
             return False
         self._last_displayed = displayed
         self._succeed(state, timestamp, "Game state saved.")
+        # The refresh tick is the one caller that runs whether or not an
+        # operator ever touches a control, so a backup the bounded cadence
+        # deferred earlier still reaches disk within one interval even during
+        # a long stretch with no accepted command (P-003, C4).
+        self._flush_pending_backup_if_due()
         return True
 
     # --- Internals ----------------------------------------------------------
@@ -1006,13 +1042,44 @@ class GameStore:
             self._app_version,
         )
 
-    def _refresh_backup(self) -> None:
+    def _refresh_backup(self, *, force: bool = False) -> None:
         """Refresh the last-known-good backup from the just-committed database.
 
-        The policy is bounded and testable: refresh after a verified commit,
-        never from a half-written file, and never on a running-clock tick alone.
-        A backup failure is logged and surfaced but does not retract a primary
-        save that really did commit.
+        The policy stays "refresh after a verified commit, never from a
+        half-written file, never on a running-clock tick alone" -- only the
+        *cadence* is bounded (C4): a copy of the whole database on every
+        accepted command stacked up as real cost under the command lock, and
+        every caller here already runs after that lock is released. ``force``
+        always refreshes now (session start and shutdown); otherwise a refresh
+        within :data:`BACKUP_MIN_INTERVAL_SECONDS` of the last one is deferred
+        -- remembered as pending, never dropped -- and flushed by the next
+        eligible :meth:`checkpoint` or by :meth:`close`.
+        """
+
+        if not force and self._last_backup_at is not None:
+            if self._monotonic() - self._last_backup_at < BACKUP_MIN_INTERVAL_SECONDS:
+                self._backup_pending = True
+                return
+        self._write_backup_now()
+
+    def _flush_pending_backup_if_due(self) -> None:
+        """Take a deferred backup once the bounded interval has actually passed."""
+
+        if not self._backup_pending:
+            return
+        if (
+            self._last_backup_at is None
+            or self._monotonic() - self._last_backup_at >= BACKUP_MIN_INTERVAL_SECONDS
+        ):
+            self._write_backup_now()
+
+    def _write_backup_now(self) -> None:
+        """Perform the backup copy unconditionally and reset the cadence clock.
+
+        The timestamp advances whether or not the copy actually succeeded: a
+        failure is logged by :meth:`persistence_failure` below and the primary
+        save is never retracted for it, exactly as before this cadence existed;
+        bounding *when* the next attempt is eligible does not change that.
         """
 
         try:
@@ -1023,6 +1090,9 @@ class GameStore:
                 destination.close()
         except (sqlite3.Error, OSError) as exc:
             self._diagnostics.persistence_failure(operation="refresh_backup", error=str(exc))
+        finally:
+            self._last_backup_at = self._monotonic()
+            self._backup_pending = False
 
     def _succeed(
         self, state: GameState, timestamp: str, message: str
@@ -1138,6 +1208,7 @@ HISTORY_COLUMNS: Final[Sequence[str]] = (
 
 
 __all__ = [
+    "BACKUP_MIN_INTERVAL_SECONDS",
     "CLOCK_EXPIRED",
     "CHECKPOINT_CLOCK_TICK",
     "CHECKPOINT_COMMAND",

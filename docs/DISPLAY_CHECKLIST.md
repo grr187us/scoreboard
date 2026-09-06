@@ -1,7 +1,7 @@
 # Two-display checklist
 
 **Status:** not executed. Every box below is open.
-**Last updated:** September 5, 2026
+**Last updated:** September 6, 2026 (C5 moved display recovery into the dedicated Display drawer)
 
 Task 10 built display selection, persisted display identity, close and reopen, and disconnect reporting. The *policy* is covered by 73 automated tests that inject a fake screen list, because the development host exposes exactly one display (5120x1440). None of that proves how Windows, WebView2, or the stadium's LED processor actually behave.
 
@@ -24,13 +24,13 @@ $env:SCOREBOARD_DATA_DIR = "$env:TEMP\scoreboard-display-rehearsal"
 ## 1. First run, nothing saved
 
 - [ ] **Two displays, no saved preference.** Launch. The spectator board opens fullscreen on the **second** display, not on the one holding the controls. Record which physical monitor Windows calls Display 2.
-- [ ] **Nothing was silently remembered.** Open **Corrections → Spectator display**. It should say *No display saved yet*, even though the board is showing. A default is not a choice.
+- [ ] **Nothing was silently remembered.** Open **Display… → Available now**. It should say *No display saved yet*, even though the board is showing. A default is not a choice.
 - [ ] **One display only.** Disconnect the second display and launch again. No spectator window appears over the controls, and the operator says so in plain language. This is the behaviour that protects the operator; confirm it before trusting anything else.
 - [ ] **Deliberately choosing the only screen.** With one display, choose it from the panel. The board opens over the controls, because that is what was asked for. `Alt`+`Tab` back to the operator window and confirm the controls still work.
 
 ## 2. Choosing and remembering
 
-- [ ] **Choose the second display.** Corrections → Spectator display → click the second display. The board moves there immediately.
+- [ ] **Choose the second display.** Display… → Available now → click the second display. The board moves there immediately.
 - [ ] **It was remembered.** The panel now shows `Saved: <geometry> (\\.\DISPLAYn)`. Confirm the device name is present; if it is blank, note it — matching then falls back to geometry alone.
 - [ ] **`config.json` holds it.** Open `config.json` in the data folder and confirm the `display` section matches what the panel showed.
 - [ ] **Restart.** Close and relaunch. The board returns to the same physical monitor with no operator action. Record how long from launch to a visible board.

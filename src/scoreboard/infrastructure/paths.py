@@ -32,6 +32,10 @@ CONFIG_FILENAME: Final[str] = "config.json"
 #: file from ``config.json`` -- see ``scoreboard.infrastructure.layouts`` for
 #: why -- so it gets its own filename constant here rather than a section key.
 LAYOUTS_FILENAME: Final[str] = "layouts.json"
+#: The saved-team library (spec F4 section 3.1). Its own file for the same
+#: reason ``layouts.json`` is separate from ``config.json`` -- see
+#: ``scoreboard.infrastructure.teams`` for why.
+TEAMS_FILENAME: Final[str] = "teams.json"
 LOCK_FILENAME: Final[str] = "scoreboard.lock"
 LOG_DIRECTORY_NAME: Final[str] = "logs"
 LOG_FILENAME: Final[str] = "application.log"
@@ -163,6 +167,10 @@ class ScoreboardPaths:
         return self.root / LAYOUTS_FILENAME
 
     @property
+    def teams(self) -> Path:
+        return self.root / TEAMS_FILENAME
+
+    @property
     def lock(self) -> Path:
         return self.root / LOCK_FILENAME
 
@@ -202,6 +210,7 @@ class ScoreboardPaths:
             "database": str(self.database),
             "backup": str(self.backup),
             "log_file": str(self.log_file),
+            "teams": str(self.teams),
         }
 
 
@@ -391,6 +400,7 @@ __all__ = [
     "LOG_FILENAME",
     "PathResolutionError",
     "ScoreboardPaths",
+    "TEAMS_FILENAME",
     "clear_chosen_root",
     "default_root",
     "describe_resolution",

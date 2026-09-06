@@ -12,6 +12,7 @@ from scoreboard.domain.state import (
     GameState,
     MAX_GAME_CLOCK_SECONDS,
     MAX_PREGAME_CLOCK_SECONDS,
+    MAX_STATUS_CLOCK_SECONDS,
     MAX_TIMEOUTS,
     StateValidationError,
     default_state,
@@ -63,6 +64,18 @@ def state_to_snapshot(state: GameState) -> dict[str, Any]:
             "first_quarter_home_direction": state.assistant_first_quarter_home_direction,
             "line_to_gain": state.assistant_line_to_gain,
         },
+        # F3's crowd-facing status word and its countdown (additive: a
+        # snapshot written before this change has no "status" key at all, and
+        # must still load with fresh-state defaults -- see snapshot_to_state
+        # below and the "football"/"assistant" fallbacks it already follows).
+        "status": {
+            "label": state.game_status,
+            "clock": {
+                "seconds": state.status_clock.seconds,
+                "running": state.status_clock.running,
+            },
+            "clock_cleared": state.status_clock_cleared,
+        },
     }
 
 
@@ -93,6 +106,11 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
         # Assistant state is additive.  Older snapshots had no key, and must
         # recover into the safe "assistant setup required" state.
         assistant = snapshot.get("assistant", {})
+        # F3's status block is additive too: a snapshot written before this
+        # change has no "status" key at all, and must still load with the
+        # same defaults a fresh GameState() carries (P-004, P-006).
+        status = snapshot.get("status", {})
+        status_clock = status.get("clock", {})
         ball_on = football.get(
             "ball_on",
             {"team": _DEFAULT_BALL_ON.team, "yard_line": _DEFAULT_BALL_ON.yard_line},
@@ -135,6 +153,13 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
                 "first_quarter_home_direction"
             ),
             assistant_line_to_gain=assistant.get("line_to_gain"),
+            game_status=status.get("label"),
+            status_clock=ClockValue(
+                status_clock.get("seconds", 0.0),
+                status_clock.get("running", False),
+                MAX_STATUS_CLOCK_SECONDS,
+            ),
+            status_clock_cleared=status.get("clock_cleared", True),
         )
     except (KeyError, TypeError, AttributeError) as exc:
         raise StateValidationError(f"invalid snapshot shape: {exc}") from exc

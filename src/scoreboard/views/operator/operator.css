@@ -7,7 +7,7 @@
 
 body {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   gap: var(--gap);
   padding: var(--gap);
 }
@@ -18,8 +18,12 @@ body {
 .health { grid-row: 1; }
 .alert { grid-row: 2; }
 .board { grid-row: 3; }
-.quarter-bar { grid-row: 4; }
-.tools { grid-row: 5; }
+/* The crowd row (F3) is a fixed-height row like the quarter bar and the tool
+ * bar; only the board still flexes, so adding it costs the board its height
+ * and nothing on the page scrolls (U-001). */
+.crowd-bar { grid-row: 4; }
+.quarter-bar { grid-row: 5; }
+.tools { grid-row: 6; }
 
 /* --- Health strip (U-005) ------------------------------------------------ */
 
@@ -49,6 +53,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The strip is allowed to grow to hold two 44px buttons; at the narrowest
+ * supported width (1093px CSS, U-001) it saves the room by shrinking the
+ * brand text and chip padding first. It never wraps. */
+@media (max-width: 1150px) {
+  .brand {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+
+  .chip {
+    padding: 2px 6px;
+  }
+}
+
 .chip.bad {
   background: #40201f;
   border-color: var(--danger);
@@ -61,13 +79,33 @@ body {
 }
 
 .chip-button {
-  /* The button an operator reaches for when the wall has gone dark, so it is
-     the largest thing the health strip can hold without pushing the live
-     board off a 1366x768 screen (U-001). The 44px accessibility target needs
-     a layout revisit, not a taller strip; recorded in UX_AND_LAYOUT.md. */
-  min-height: 32px;
+  /* The button an operator reaches for when the wall has gone dark, so it
+     meets the 44px accessibility floor like every other control (U-001,
+     section 8). The strip is allowed to grow to hold it; see the media query
+     above for how it stays inside the U-001 viewports without wrapping. */
+  min-height: var(--touch);
+  min-width: 168px;
+  font-weight: 700;
+  font-size: 15px;
   padding: 0 10px;
   border-color: var(--warn);
+}
+
+/* A second, always-visible way into the display panel, deliberately quieter
+ * than Reopen so the loud warm-coloured button stays the one to reach for
+ * when the board has actually gone dark. */
+.chip-button.secondary {
+  min-width: 120px;
+  font-weight: 400;
+  font-size: 14px;
+  border-color: var(--edge);
+}
+
+/* Every control on the display-recovery path meets the 44px floor, not only
+ * the two in the strip: the display buttons in the drawer are what a
+ * volunteer hits when the wall has gone dark and the saved display is gone. */
+#display-drawer .row button {
+  min-height: var(--touch);
 }
 
 /* --- Rejections and failures (U-007) ------------------------------------ */
@@ -217,6 +255,84 @@ button.is-current {
   opacity: 0.5;
 }
 
+/* --- Crowd message bar (F3) --------------------------------------------- */
+
+/* Shares the quarter bar's shape deliberately: these are both "one live row of
+ * small controls", and an operator should not have to learn a second visual
+ * language for the row directly above the one they already use. */
+.crowd-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.crowd-bar .label {
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  font-size: 12px;
+}
+
+.crowd-bar button {
+  min-height: 36px;
+  min-width: 48px;
+  font-weight: 700;
+}
+
+/* What the wall is currently saying, in the wall's own amber. Text first: the
+ * chip always spells the message out, and colour is only a second cue
+ * (U-002's principle applied to a new field). */
+.crowd-chip {
+  min-width: 92px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.crowd-chip.active {
+  background: #40350f;
+  border-color: #ffc845;
+  color: #ffe6a8;
+}
+
+.crowd-clock {
+  min-width: 60px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Running is red like the play clock: both are "a countdown the crowd can
+ * see running out". The RUNNING/STOPPED meaning is still carried by the
+ * de-emphasised START/STOP pair, never by colour alone. */
+.crowd-clock.running-status {
+  color: var(--danger);
+}
+
+/* The crowd row carries the most buttons of any fixed row, so it is the first
+ * thing to give up padding at the narrowest supported width (U-001). */
+@media (max-width: 1150px) {
+  .crowd-bar {
+    gap: 6px;
+  }
+
+  .crowd-bar button {
+    min-width: 44px;
+    padding: 0 6px;
+  }
+
+  .crowd-chip {
+    min-width: 76px;
+  }
+}
+
 /* --- Quarter bar -------------------------------------------------------- */
 
 .quarter-bar {
@@ -266,14 +382,70 @@ button.is-current {
   letter-spacing: 0.04em;
 }
 
+/* Still reads as the strip's text, not as another button competing with UNDO
+ * beside it: no fill, no border until it is pointed at. It is a button only
+ * because it now opens the undo history (I4, U-009). */
 .last-action {
   margin-left: auto;
   color: var(--ink-dim);
+  background: none;
+  border: 1px solid transparent;
+  text-align: left;
+  font: inherit;
+  padding: 4px 6px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.last-action:hover,
+.last-action:focus-visible {
+  border-color: var(--edge);
 }
 
 .last-action #last-action {
   color: var(--ink);
   font-weight: 600;
+}
+
+/* How many further Undos are waiting behind this one. Hidden at 0 and 1,
+ * where it would say nothing the strip does not already say. */
+.undo-depth {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.history-list li {
+  padding: 3px 0;
+}
+
+.history-list li.next {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.history-list li .next-mark {
+  color: var(--ink-dim);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+.history-list li.empty {
+  list-style: none;
+  margin-left: -22px;
+  color: var(--ink-dim);
 }
 
 #undo {
@@ -449,3 +621,70 @@ button.danger:hover:not(:disabled) {
 
 #shortcut-help table { width: 100%; border-collapse: collapse; margin-block: 1rem; }
 #shortcut-help th, #shortcut-help td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--edge); }
+
+/* --- Teams drawer (F4) --------------------------------------------------- */
+
+.team-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 20px;
+  font-weight: 600;
+}
+
+.swatch {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 10px;
+}
+
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.team-name-cell {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-name-cell small {
+  color: var(--ink-dim);
+  margin-left: 4px;
+}
+
+/* --- Identity stripe on the live board (F4) ------------------------------
+ * Deliberately thin: the board's height budget is already spent (U-001), so
+ * this must never push a live control off screen. Height + border stays
+ * under 18px total. */
+.identity-stripe {
+  display: block;
+  height: 14px;
+  line-height: 14px;
+  margin: 2px 0 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: #12161c;
+  border-bottom-width: 3px;
+  border-bottom-style: solid;
+  overflow: hidden;
+  border-radius: 2px 2px 0 0;
+}

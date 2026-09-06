@@ -19,6 +19,7 @@
     <span class="chip" id="chip-play">PLAY &mdash; STOPPED</span>
     <span class="chip" id="chip-display">DISPLAY CLOSED</span>
     <button type="button" id="reopen-display" class="chip-button" data-action="reopen_display">Reopen Display</button>
+    <button type="button" id="open-display" class="chip-button secondary" data-action="open_display">Display&hellip;</button>
     <span class="chip" id="chip-save">SAVED</span>
     <span class="chip" id="chip-revision">Rev 0</span>
   </header>
@@ -29,6 +30,7 @@
     <section class="team" aria-labelledby="home-heading">
       <h2 id="home-heading">HOME<span class="possession-flag" id="home-possession"></span></h2>
       <p class="team-name" data-field="teams.home.name">HOME</p>
+      <span class="identity-stripe" id="home-identity-stripe" hidden></span>
       <p class="score numeric" data-field="teams.home.score">0</p>
       <div class="score-buttons">
         <button type="button" data-command="add_score" data-team="home" data-points="1">+1</button>
@@ -75,6 +77,7 @@
     <section class="team" aria-labelledby="away-heading">
       <h2 id="away-heading">AWAY<span class="possession-flag" id="away-possession"></span></h2>
       <p class="team-name" data-field="teams.away.name">AWAY</p>
+      <span class="identity-stripe" id="away-identity-stripe" hidden></span>
       <p class="score numeric" data-field="teams.away.score">0</p>
       <div class="score-buttons">
         <button type="button" data-command="add_score" data-team="away" data-points="1">+1</button>
@@ -84,6 +87,31 @@
       </div>
     </section>
   </main>
+
+  <!--
+    Crowd-facing game status (audit item F3). These are always visible on
+    purpose: when play stops the board used to freeze with no explanation, and
+    a message an operator has to open a drawer to raise is a message that does
+    not get raised during a live game. Every button here is an ordinary
+    data-command control, so it reaches the same validated Python airlock as
+    scoring. None of them touches the score, the clocks, or the undo history.
+  -->
+  <section class="crowd-bar" aria-label="Crowd message">
+    <span class="label">CROWD</span>
+    <span class="crowd-chip" id="crowd-status">&mdash;</span>
+    <button type="button" id="crowd-flag" data-command="set_game_status" data-label="FLAG">FLAG</button>
+    <!-- One press raises the word and starts the 1:00 charged-timeout
+         countdown, the same atomic load-and-start shape as `25 + START`.
+         It deliberately does NOT charge the timeout: `timeout_used` in the
+         Field drawer does that, is undoable, and is a separate decision. -->
+    <button type="button" id="crowd-timeout" data-command="set_game_status" data-label="TIMEOUT" data-seconds="60">TIMEOUT</button>
+    <button type="button" id="crowd-injury" data-command="set_game_status" data-label="INJURY">INJURY</button>
+    <button type="button" id="crowd-delay" data-command="set_game_status" data-label="DELAY">DELAY</button>
+    <button type="button" id="crowd-clear" data-command="clear_game_status">CLEAR</button>
+    <span class="crowd-clock numeric" id="crowd-clock" data-field="status.clock_display">&nbsp;</span>
+    <button type="button" id="crowd-start" data-command="status_clock_start">START</button>
+    <button type="button" id="crowd-stop" data-command="status_clock_stop">STOP</button>
+  </section>
 
   <section class="quarter-bar" aria-label="Quarter and undo">
     <span class="label">QUARTER</span>
@@ -97,11 +125,20 @@
       <span class="sep">&middot;</span>
       <span>TO <span data-field="football.timeouts.home">3</span>/<span data-field="football.timeouts.away">3</span></span>
     </span>
-    <span class="last-action">LAST: <span id="last-action">nothing yet</span></span>
+    <!--
+      The LAST strip is also the way into the undo history (audit item I4).
+      Undo is a bounded stack now, not one level, so the operator must be able
+      to see what a repeated Undo would give up before spending it (U-009) --
+      and the strip is the one place they already look for it, which is why
+      this is not a new tool-bar button.
+    -->
+    <button type="button" class="last-action" id="last-action-button" data-action="open_history">LAST: <span
+        id="last-action">nothing yet</span><span class="undo-depth" id="undo-depth" hidden></span></button>
     <button type="button" id="undo" data-command="undo">UNDO</button>
   </section>
 
   <footer class="tools">
+    <button type="button" id="open-teams" data-action="open_teams">Teams &#9656;</button>
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
     <button type="button" id="open-event" data-action="open_event">Halftime &#9656;</button>
     <button type="button" id="open-field" data-action="open_field">Field &#9656;</button>
@@ -186,13 +223,45 @@
                 data-arg-name="name" data-confirm="local" data-confirm-title="Change the AWAY team name?">Apply&hellip;</button>
       </div>
 
-      <!-- Which display the spectator board goes on. Like the row below it,
-           this is not a game correction; both are here because the drawer
-           overlays the page and scrolls inside itself, so nothing added here
-           can push a live control off a 1366x768 screen (U-001). One-click
-           Reopen Display stays in the health strip, where it is needed fast. -->
-      <div class="row section" id="display-row">
-        <span class="row-label">Spectator display</span>
+      <!-- Where the game and its logs are written. This is not a game
+           correction; it is here because the drawer overlays the page and
+           scrolls inside itself, so nothing added here can push a live
+           control off a 1366x768 screen (U-001). Which display the spectator
+           board goes on moved to its own Display drawer on September 6, 2026;
+           see #display-drawer. -->
+      <div class="row section" id="data-folder-row">
+        <span class="row-label">Saved to</span>
+        <span class="folder-path" id="data-folder-path">&hellip;</span>
+        <button type="button" data-action="choose_data_folder">Choose folder&hellip;</button>
+        <button type="button" data-action="use_default_folder">Use standard folder</button>
+      </div>
+      <p class="hint" id="data-folder-note">The game running now keeps saving where it is. A new
+        folder is used the next time the scoreboard starts.</p>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Which display the spectator board goes on. Its own drawer since
+       September 6, 2026 (audit item C5): the health strip's one-click Reopen
+       stays for the fast path, but the fallback selector no longer shares a
+       drawer with destructive corrections. -->
+  <div class="drawer" id="display-drawer" hidden aria-label="Spectator display">
+    <div class="drawer-panel">
+      <h2>SPECTATOR DISPLAY</h2>
+      <p class="hint">Where the board is shown. Nothing here changes scores, clocks, or the game.</p>
+
+      <div class="row" id="display-status-row">
+        <span class="row-label">Status</span>
+        <span class="chip" id="drawer-display-chip">DISPLAY CLOSED</span>
+        <span class="folder-path" id="display-detail">&hellip;</span>
+        <button type="button" id="drawer-reopen-display" class="chip-button" data-action="reopen_display">Reopen Display</button>
+      </div>
+
+      <div class="row" id="display-row">
+        <span class="row-label">Saved display</span>
         <span class="folder-path" id="display-summary">&hellip;</span>
         <button type="button" data-action="forget_display">Forget saved display</button>
       </div>
@@ -203,17 +272,52 @@
         <span class="quarter-choices" id="display-choices"></span>
       </div>
 
-      <!-- Where the game and its logs are written. Deliberately inside this
-           overlay rather than on the board: the drawer scrolls inside itself,
-           so nothing here can push a live control off screen (U-001). -->
-      <div class="row section" id="data-folder-row">
-        <span class="row-label">Saved to</span>
-        <span class="folder-path" id="data-folder-path">&hellip;</span>
-        <button type="button" data-action="choose_data_folder">Choose folder&hellip;</button>
-        <button type="button" data-action="use_default_folder">Use standard folder</button>
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
       </div>
-      <p class="hint" id="data-folder-note">The game running now keeps saving where it is. A new
-        folder is used the next time the scoreboard starts.</p>
+    </div>
+  </div>
+
+  <!-- A saved team library is a laptop preference, not game state (F4). Applying
+       a preset still goes through the same validated set_team_name command an
+       operator could type by hand -- pregame-only, undoable, confirmed. -->
+  <div class="drawer" id="teams-drawer" hidden aria-label="Teams">
+    <div class="drawer-panel">
+      <h2>TEAMS</h2>
+      <p class="hint">Pick a saved team for each side. Team names can change only
+        before kickoff, and each change asks you to confirm. Colours and short
+        names are saved for the board; they never change scores or clocks.</p>
+
+      <div class="row" id="teams-now-row">
+        <span class="row-label">Now</span>
+        <span class="team-now">
+          <span class="swatch" id="home-identity-swatch" hidden></span>
+          <span data-field="teams.home.name">HOME</span>
+          <span id="home-identity-short"></span>
+        </span>
+        <span class="team-now">
+          <span class="swatch" id="away-identity-swatch" hidden></span>
+          <span data-field="teams.away.name">AWAY</span>
+          <span id="away-identity-short"></span>
+        </span>
+      </div>
+
+      <div id="team-list" class="team-list" aria-label="Saved teams"></div>
+
+      <div class="row" id="team-form">
+        <span class="row-label">Save a team</span>
+        <input type="text" id="team-name-input" maxlength="24" data-draft="true"
+               aria-label="Team name">
+        <input type="text" id="team-short-input" maxlength="6" data-draft="true"
+               aria-label="Short name (up to 6)">
+        <input type="color" id="team-primary-input" value="#FFFFFF" data-draft="true"
+               aria-label="Primary colour">
+        <input type="color" id="team-secondary-input" value="#111111" data-draft="true"
+               aria-label="Secondary colour">
+        <button type="button" data-action="save_team">Save team</button>
+        <button type="button" data-action="prefill_team" data-team="home">Use HOME name</button>
+        <button type="button" data-action="prefill_team" data-team="away">Use AWAY name</button>
+      </div>
 
       <div class="row end">
         <button type="button" data-action="close_drawer">Close</button>
@@ -329,6 +433,28 @@
       </div>
 
       <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    Undo history (audit item I4). This is a read-only view of the reversible
+    transitions the service is holding, newest first, plus the Undo button
+    itself so the operator can walk back while watching the list. It shows
+    what Undo will reverse; it deliberately offers no way to reach past a
+    newer entry, because restoring an old value out of order would produce a
+    board no sequence of commands could have produced.
+  -->
+  <div class="drawer" id="history-drawer" hidden aria-label="Undo history">
+    <div class="drawer-panel">
+      <h2>UNDO HISTORY</h2>
+      <p class="hint">Undo reverses these in order, newest first. An action that cannot be
+        undone &mdash; New Game, End Game, or a quarter change that moved a clock &mdash;
+        clears this list rather than letting Undo skip past it.</p>
+      <ol class="history-list" id="history-list"></ol>
+      <div class="row">
+        <button type="button" data-command="undo">UNDO</button>
         <button type="button" data-action="close_drawer">Close</button>
       </div>
     </div>

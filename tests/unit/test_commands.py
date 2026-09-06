@@ -98,6 +98,27 @@ class AcceptedCommandContractTests(unittest.TestCase):
             ("timeout used", lambda s, f: None, cmd.timeout_used("home")),
             ("timeout correction", lambda s, f: None, cmd.timeout_correct("home", -1)),
             ("set timeouts", lambda s, f: None, cmd.set_timeouts("away", 1)),
+            ("set game status", lambda s, f: None, cmd.set_game_status("FLAG")),
+            (
+                "set game status with a countdown",
+                lambda s, f: None,
+                cmd.set_game_status("TIMEOUT", seconds=60.0),
+            ),
+            (
+                "clear game status",
+                lambda s, f: s.submit(cmd.set_game_status("FLAG")),
+                cmd.clear_game_status(),
+            ),
+            (
+                "status clock start",
+                lambda s, f: s.submit(cmd.set_game_status("TIMEOUT", seconds=60.0)),
+                cmd.status_clock_start(),
+            ),
+            (
+                "status clock stop",
+                lambda s, f: s.submit(cmd.set_game_status("TIMEOUT", seconds=60.0)),
+                cmd.status_clock_stop(),
+            ),
         ]
 
     def test_accepted_command_advances_exactly_one_revision(self) -> None:
@@ -273,6 +294,18 @@ class RejectedCommandContractTests(unittest.TestCase):
                 lambda s, f: None,
                 cmd.set_timeouts("home", 4),
                 cmd.INVALID_TIMEOUT_TARGET,
+            ),
+            (
+                "unknown crowd status label",
+                lambda s, f: None,
+                cmd.set_game_status("SACK"),
+                cmd.INVALID_GAME_STATUS,
+            ),
+            (
+                "non-preset status clock seconds",
+                lambda s, f: None,
+                cmd.set_game_status("TIMEOUT", seconds=45.0),
+                cmd.INVALID_STATUS_CLOCK_PRESET,
             ),
         ]
 
@@ -457,6 +490,129 @@ class UndoTests(unittest.TestCase):
         self.assertFalse(result.accepted)
         self.assertEqual(result.error.code, cmd.NOT_UNDOABLE)
         self.assertIs(service.state, before)
+
+
+class UndoHistoryTests(unittest.TestCase):
+    """I4: a bounded stack of reversible transitions, not one global level.
+
+    ``UndoTests`` above still exercises the single-entry cases exactly as they
+    read before this feature; these add the stack-specific behaviour: more
+    than one entry surviving at once, the depth cap, and that a barrier
+    command (or Undo itself) never leaves a partial stack behind.
+    """
+
+    def test_two_undos_reverse_two_commands_newest_first_and_restore_the_start(
+        self,
+    ) -> None:
+        service, _ = make_service()
+        start_home = service.state.home_score
+        start_away = service.state.away_score
+        service.submit(cmd.add_score("home", 6))
+        service.submit(cmd.add_score("away", 3))
+        revision_after_both = service.revision
+
+        first = service.submit(cmd.undo())
+        self.assertTrue(first.accepted, first.error)
+        self.assertEqual(first.revision, revision_after_both + 1)
+        # Newest first: the away +3 the operator entered last is reversed
+        # before the earlier home +6.
+        self.assertEqual(first.state.away_score, start_away)
+        self.assertEqual(first.state.home_score, start_home + 6)
+
+        second = service.submit(cmd.undo())
+        self.assertTrue(second.accepted, second.error)
+        self.assertEqual(second.state.home_score, start_home)
+        self.assertEqual(second.state.away_score, start_away)
+        self.assertEqual(service.undo_history, ())
+
+    def test_a_stack_deeper_than_max_depth_drops_the_oldest_and_keeps_the_newest_twenty(
+        self,
+    ) -> None:
+        service, _ = make_service()
+        # One more push than the cap allows.
+        for _ in range(cmd.MAX_UNDO_DEPTH + 1):
+            service.submit(cmd.add_score("home", 1))
+        self.assertEqual(service.state.home_score, cmd.MAX_UNDO_DEPTH + 1)
+        self.assertEqual(len(service.undo_history), cmd.MAX_UNDO_DEPTH)
+
+        for _ in range(cmd.MAX_UNDO_DEPTH):
+            result = service.submit(cmd.undo())
+            self.assertTrue(result.accepted, result.error)
+
+        # The very first +1 was dropped the moment the stack grew past the
+        # cap, so only it remains applied once the newest twenty have all
+        # been walked back -- proving both that the cap dropped the oldest
+        # entry and that the newest twenty are each individually reachable.
+        self.assertEqual(service.state.home_score, 1)
+        self.assertEqual(service.undo_history, ())
+
+        blocked = service.submit(cmd.undo())
+        self.assertFalse(blocked.accepted)
+        self.assertEqual(blocked.error.code, cmd.NOT_UNDOABLE)
+
+    def test_new_game_and_end_game_clear_the_entire_stack_not_just_its_top(
+        self,
+    ) -> None:
+        for label, dangerous in (
+            ("new game", cmd.new_game(confirmed=True)),
+            ("end game", cmd.end_game()),
+        ):
+            with self.subTest(command=label):
+                service, _ = make_service()
+                service.submit(cmd.add_score("home", 6))
+                service.submit(cmd.add_score("away", 3))
+                self.assertEqual(len(service.undo_history), 2)
+
+                service.submit(dangerous)
+                before = service.state
+
+                result = service.submit(cmd.undo())
+
+                self.assertFalse(result.accepted)
+                self.assertEqual(result.error.code, cmd.NOT_UNDOABLE)
+                self.assertIs(service.state, before)
+                self.assertEqual(service.undo_history, ())
+
+    def test_a_running_clock_quarter_change_clears_the_entire_stack(self) -> None:
+        # Started already in a live quarter (rather than moving there from
+        # PRE through set_quarter) so the two score corrections below are the
+        # only thing on the stack: a direct move out of PRE is its own
+        # barrier (it abandons the kickoff countdown), which would otherwise
+        # confound this test with a second, unrelated reason for a clear.
+        fake = FakeMonotonic()
+        state = default_state().evolve(quarter="2nd", lifecycle="IN_PROGRESS")
+        service = ScoreboardService(state=state, monotonic_clock=fake)
+        service.submit(cmd.add_score("home", 6))
+        service.submit(cmd.add_score("away", 3))
+        self.assertEqual(len(service.undo_history), 2)
+        service.submit(cmd.game_clock_start())
+        fake.advance(30.0)
+        service.submit(cmd.quarter_forward(confirmed=True))
+        before = service.state
+
+        result = service.submit(cmd.undo())
+
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.error.code, cmd.NOT_UNDOABLE)
+        self.assertIs(service.state, before)
+        self.assertEqual(service.undo_history, ())
+
+    def test_undo_never_pushes_an_entry_so_a_second_undo_does_not_redo(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.add_score("home", 6))
+
+        first = service.submit(cmd.undo())
+        self.assertTrue(first.accepted, first.error)
+        self.assertEqual(first.state.home_score, 0)
+
+        second = service.submit(cmd.undo())
+
+        self.assertFalse(second.accepted)
+        self.assertEqual(second.error.code, cmd.NOT_UNDOABLE)
+        # If Undo had pushed its own reversal onto the stack, this second
+        # Undo would have "redone" the +6 instead of being refused.
+        self.assertEqual(service.state.home_score, 0)
+        self.assertEqual(service.undo_history, ())
 
 
 class QuarterTests(unittest.TestCase):
@@ -1178,6 +1334,174 @@ class FootballStateTests(unittest.TestCase):
         self.assertEqual(undone.state.home_timeouts, 3)
 
 
+class CrowdStatusTests(unittest.TestCase):
+    """F3: the crowd-facing status word and its countdown.
+
+    Deliberately not part of Undo (see .scratch/f3-i4/DESIGN.md): none of the
+    four commands here appear in either UNDOABLE_COMMANDS or
+    NON_UNDOABLE_COMMANDS, so they must never push an undo entry and never
+    clear the stack either.
+    """
+
+    def test_set_game_status_is_accepted_for_every_label(self) -> None:
+        for label in ("FLAG", "TIMEOUT", "INJURY", "DELAY"):
+            with self.subTest(label=label):
+                service, _ = make_service()
+
+                result = service.submit(cmd.set_game_status(label))
+
+                self.assertTrue(result.accepted, result.error)
+                self.assertEqual(result.state.game_status, label)
+                self.assertTrue(result.state.status_clock_cleared)
+                self.assertAlmostEqual(result.state.status_clock.seconds, 0.0)
+
+    def test_unknown_label_is_rejected_and_mutates_nothing(self) -> None:
+        service, _ = make_service()
+        before_state = service.state
+
+        result = service.submit(cmd.set_game_status("SACK"))
+
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.error.code, cmd.INVALID_GAME_STATUS)
+        self.assertIs(service.state, before_state)
+        self.assertIsNone(service.state.game_status)
+
+    def test_non_preset_seconds_is_rejected_and_mutates_nothing(self) -> None:
+        service, _ = make_service()
+        before_state = service.state
+
+        result = service.submit(cmd.set_game_status("TIMEOUT", seconds=45.0))
+
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.error.code, cmd.INVALID_STATUS_CLOCK_PRESET)
+        self.assertIs(service.state, before_state)
+        self.assertIsNone(service.state.game_status)
+        self.assertFalse(service.status_clock.running)
+
+    def test_set_game_status_with_seconds_raises_and_starts_in_one_revision(self) -> None:
+        service, fake = make_service()
+        before_revision = service.revision
+
+        result = service.submit(cmd.set_game_status("TIMEOUT", seconds=60.0))
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(result.state.revision, before_revision + 1)
+        self.assertEqual(result.state.game_status, "TIMEOUT")
+        self.assertTrue(result.state.status_clock.running)
+        self.assertAlmostEqual(result.state.status_clock.seconds, 60.0)
+        self.assertFalse(result.state.status_clock_cleared)
+
+        fake.advance(1.0)
+        self.assertAlmostEqual(service.status_clock.remaining_at(), 59.0)
+
+    def test_clear_game_status_clears_the_label_and_the_countdown_together(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_game_status("TIMEOUT", seconds=60.0))
+
+        result = service.submit(cmd.clear_game_status())
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertIsNone(result.state.game_status)
+        self.assertTrue(result.state.status_clock_cleared)
+        self.assertAlmostEqual(result.state.status_clock.seconds, 0.0)
+        self.assertFalse(result.state.status_clock.running)
+
+    def test_status_clock_start_and_stop_match_the_engine(self) -> None:
+        service, fake = make_service()
+        service.submit(cmd.set_game_status("TIMEOUT", seconds=30.0))
+        service.submit(cmd.status_clock_stop())
+        self.assertFalse(service.status_clock.running)
+
+        result = service.submit(cmd.status_clock_start())
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertTrue(result.state.status_clock.running)
+        fake.advance(1.0)
+        self.assertAlmostEqual(service.status_clock.remaining_at(), 29.0)
+
+        stopped = service.submit(cmd.status_clock_stop())
+        self.assertTrue(stopped.accepted, stopped.error)
+        self.assertFalse(stopped.state.status_clock.running)
+
+    def test_none_of_the_four_commands_are_undoable(self) -> None:
+        for label, command in (
+            ("set_game_status", cmd.set_game_status("FLAG")),
+            ("clear_game_status", cmd.clear_game_status()),
+            ("status_clock_start", cmd.status_clock_start()),
+            ("status_clock_stop", cmd.status_clock_stop()),
+        ):
+            with self.subTest(command=label):
+                self.assertNotIn(command.type, cmd.UNDOABLE_COMMANDS)
+                self.assertNotIn(command.type, cmd.NON_UNDOABLE_COMMANDS)
+
+    def test_a_score_then_a_crowd_status_change_still_lets_undo_reverse_the_score(
+        self,
+    ) -> None:
+        service, _ = make_service()
+        service.submit(cmd.add_score("home", 6))
+        service.submit(cmd.set_game_status("FLAG"))
+
+        result = service.submit(cmd.undo())
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(result.state.home_score, 0)
+        # The crowd status itself is untouched by Undo: it is not the thing
+        # being reversed, and it was never on the stack to begin with.
+        self.assertEqual(result.state.game_status, "FLAG")
+
+    def test_undo_history_is_unchanged_across_all_four_status_commands(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.add_score("home", 6))
+        history_before = service.undo_history
+
+        service.submit(cmd.set_game_status("TIMEOUT", seconds=60.0))
+        self.assertEqual(service.undo_history, history_before)
+
+        service.submit(cmd.status_clock_stop())
+        self.assertEqual(service.undo_history, history_before)
+
+        service.submit(cmd.status_clock_start())
+        self.assertEqual(service.undo_history, history_before)
+
+        service.submit(cmd.clear_game_status())
+        self.assertEqual(service.undo_history, history_before)
+
+        # And a barrier command that follows the status commands is still
+        # able to reverse the earlier score exactly as if they had never run.
+        result = service.submit(cmd.undo())
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(result.state.home_score, 0)
+
+    def test_the_message_survives_the_countdowns_natural_expiry(self) -> None:
+        service, fake = make_service()
+        service.submit(cmd.set_game_status("TIMEOUT", seconds=30.0))
+
+        fake.advance(31.0)
+        observation = service.observe_tick()
+
+        self.assertEqual(observation.state.game_status, "TIMEOUT")
+        self.assertAlmostEqual(observation.state.status_clock.seconds, 0.0)
+        self.assertFalse(observation.state.status_clock.running)
+        self.assertFalse(observation.state.status_clock_cleared)
+        # No revision was spent on the natural expiry.
+        self.assertEqual(service.revision, service.state.revision)
+
+    def test_new_game_clears_both_the_status_word_and_its_countdown(self) -> None:
+        service, _ = make_service()
+        service.submit(cmd.set_game_status("INJURY", seconds=90.0))
+
+        result = service.submit(cmd.new_game(confirmed=True))
+
+        self.assertTrue(result.accepted, result.error)
+        self.assertIsNone(result.state.game_status)
+        self.assertTrue(result.state.status_clock_cleared)
+        self.assertAlmostEqual(result.state.status_clock.seconds, 0.0)
+        self.assertFalse(result.state.status_clock.running)
+        # The engine itself must also be reset, not merely the reported state,
+        # so a later tick cannot resume the old game's countdown.
+        self.assertFalse(service.status_clock.running)
+
+
 class FieldAssistantCompositeCommandTests(unittest.TestCase):
     def _service_in_first(self):
         fake = FakeMonotonic()
@@ -1237,6 +1561,53 @@ class FieldAssistantCompositeCommandTests(unittest.TestCase):
         self.assertEqual(undone.state.home_score, before.home_score)
         self.assertEqual(undone.state.ball_on, before.ball_on)
         self.assertEqual(undone.state.assistant_line_to_gain, before.assistant_line_to_gain)
+
+    def test_a_composite_finalize_is_one_entry_alongside_ordinary_score_entries(
+        self,
+    ) -> None:
+        """I4: the stack treats a composite Field Assistant action as one row.
+
+        A finalize touches seven fields at once, yet it must occupy exactly
+        one slot in the undo stack -- neither expanding into several entries
+        an operator would have to reverse one field at a time, nor merging
+        with the plain score corrections stacked on either side of it.
+        """
+
+        service, _ = self._service_in_first()
+        service.submit(cmd.add_score("away", 3))
+        start_state = service.state
+
+        finalized = service.finalize_field_action(
+            FieldAction(
+                "start_series",
+                {"offense": "home", "ball_absolute": 25, "first_quarter_home_direction": 1},
+            ),
+            expected_revision=service.revision,
+        )
+        self.assertTrue(finalized.accepted, finalized.error)
+        self.assertEqual(len(service.undo_history), 2)
+
+        service.submit(cmd.add_score("home", 6))
+        self.assertEqual(len(service.undo_history), 3)
+
+        # Newest first: the home +6, then the composite finalize as a single
+        # entry despite its seven changed fields, then the earlier away +3.
+        undo_score = service.submit(cmd.undo())
+        self.assertTrue(undo_score.accepted, undo_score.error)
+        self.assertEqual(undo_score.state.home_score, 0)
+        self.assertEqual(len(service.undo_history), 2)
+
+        undo_finalize = service.submit(cmd.undo())
+        self.assertTrue(undo_finalize.accepted, undo_finalize.error)
+        self.assertEqual(undo_finalize.state.ball_on, start_state.ball_on)
+        self.assertEqual(undo_finalize.state.possession, start_state.possession)
+        self.assertEqual(undo_finalize.state.down, start_state.down)
+        self.assertEqual(len(service.undo_history), 1)
+
+        undo_first_score = service.submit(cmd.undo())
+        self.assertTrue(undo_first_score.accepted, undo_first_score.error)
+        self.assertEqual(undo_first_score.state.away_score, 0)
+        self.assertEqual(service.undo_history, ())
 
     def test_fa_31_manual_action_previews_and_finalizes_as_one_composite_command(self) -> None:
         service, _ = self._service_in_first()

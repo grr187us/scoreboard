@@ -21,6 +21,7 @@ from scoreboard.infrastructure.paths import (
     resolve_paths,
 )
 from scoreboard.infrastructure.persistence import (
+    BACKUP_MIN_INTERVAL_SECONDS,
     CHECKPOINT_CLOCK_TICK,
     GAME_ACTIVE,
     GAME_ARCHIVED,
@@ -37,8 +38,29 @@ from scoreboard.infrastructure.persistence import (
 
 from tests.integration.support import (
     FailingConnection,
+    FakeMonotonic,
     TemporaryDataDirectoryTest,
 )
+
+
+class _AutoAdvancingMonotonic:
+    """A monotonic source that advances on its own, every time it is read.
+
+    C4 bounds ``GameStore``'s backup refresh to once every
+    :data:`BACKUP_MIN_INTERVAL_SECONDS`, measured against an injected
+    monotonic clock. A test that genuinely needs "the backup after this exact
+    command" -- rather than after the bounded interval -- injects this instead
+    of the real clock, so each read the store takes is already past the
+    interval without the test sleeping for real time at all.
+    """
+
+    def __init__(self, start: float = 0.0, step: float = BACKUP_MIN_INTERVAL_SECONDS + 0.5) -> None:
+        self.value = start
+        self.step = step
+
+    def __call__(self) -> float:
+        self.value += self.step
+        return self.value
 
 
 class DataLocationTests(TemporaryDataDirectoryTest):
@@ -135,7 +157,12 @@ class TransactionTests(TemporaryDataDirectoryTest):
         )
 
     def test_an_interrupted_commit_leaves_a_valid_backup(self) -> None:
-        service, store = self.started_session()
+        # C4: the backup refresh is bounded to once every
+        # BACKUP_MIN_INTERVAL_SECONDS: an auto-advancing monotonic makes each
+        # of the two commands below land after the interval, so this test
+        # still proves the backup reflects the last *verified* commit, not
+        # just the first one of the session.
+        service, store = self.started_session(monotonic=_AutoAdvancingMonotonic())
         self.submit(service, store, cmd.add_score("home", 6))
 
         store._connection = FailingConnection(store._connection, fail_commit=True)
@@ -175,6 +202,62 @@ class TransactionTests(TemporaryDataDirectoryTest):
         stored = read_stored_game(self.paths.database)
         self.assertEqual(stored.state.home_score, 6)
         self.assertEqual(stored.state.away_score, 3)
+
+
+class BoundedBackupTests(TemporaryDataDirectoryTest):
+    """C4: a full backup copy on every accepted command is bounded, not free.
+
+    The policy stays "refresh after a verified commit, never from a
+    half-written file" -- only the cadence changed: a refresh within
+    :data:`BACKUP_MIN_INTERVAL_SECONDS` of the last one is deferred rather
+    than skipped, and a later eligible checkpoint (or the store closing)
+    flushes it.
+    """
+
+    def test_the_backup_is_not_rewritten_on_every_command_inside_the_interval(self) -> None:
+        monotonic = FakeMonotonic(1000.0)
+        service, store = self.started_session(monotonic=monotonic)
+        first_backup_mtime = self.paths.backup.stat().st_mtime_ns
+        first_backup_home_score = read_stored_game(self.paths.backup).state.home_score
+
+        # Two commands land well inside the bounded interval: the backup must
+        # not move at all, even though the primary database did.
+        self.submit(service, store, cmd.add_score("home", 6))
+        monotonic.advance(0.5)
+        self.submit(service, store, cmd.add_score("away", 3))
+
+        self.assertEqual(self.paths.backup.stat().st_mtime_ns, first_backup_mtime)
+        self.assertEqual(
+            read_stored_game(self.paths.backup).state.home_score, first_backup_home_score
+        )
+        self.assertEqual(read_stored_game(self.paths.database).state.home_score, 6)
+        self.assertTrue(store._backup_pending)
+
+    def test_a_later_checkpoint_flushes_the_deferred_backup_once_the_interval_elapses(self) -> None:
+        monotonic = FakeMonotonic(2000.0)
+        service, store = self.started_session(monotonic=monotonic)
+        self.submit(service, store, cmd.add_score("home", 6))  # deferred: still inside the interval
+        self.assertTrue(store._backup_pending)
+        self.assertEqual(read_stored_game(self.paths.backup).state.home_score, 0)
+
+        monotonic.advance(BACKUP_MIN_INTERVAL_SECONDS + 0.1)
+        wrote = store.checkpoint(service.materialized_state())
+
+        self.assertFalse(store._backup_pending)
+        self.assertEqual(read_stored_game(self.paths.backup).state.home_score, 6)
+        # The clock was never started, so there was nothing new to checkpoint
+        # in the primary database -- only the deferred backup was due.
+        self.assertFalse(wrote)
+
+    def test_closing_the_store_flushes_a_still_deferred_backup(self) -> None:
+        monotonic = FakeMonotonic(3000.0)
+        service, store = self.started_session(monotonic=monotonic)
+        self.submit(service, store, cmd.add_score("home", 6))
+        self.assertTrue(store._backup_pending)
+
+        store.close()
+
+        self.assertEqual(read_stored_game(self.paths.backup).state.home_score, 6)
 
 
 class ActionHistoryTests(TemporaryDataDirectoryTest):

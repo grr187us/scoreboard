@@ -8,7 +8,7 @@ A working scoreboard now runs from this repository on a development Windows host
 
 - **Phase 0 — discovery and feasibility:** substantially complete, with the critical stadium HDMI test still open.
 - **Phase 1 — repository, requirements, layout, and architecture:** documentation foundation created; owner decisions and field evidence remain open.
-- **Phase 2 — core MVP:** implementation tasks 1–11 are substantially implemented, plus three owner-requested additions delivered after them (spectator local time, the expanded football state fields, and the presentation layout editor) and the Field Assistant. The current Bundle A workflow passes focused verification. As of September 6, 2026 the full discovered suite is green: **750 tests, 0 failures, 0 errors, 3 skipped** on the rebuilt `.venv` with Node.js and a repo-local Playwright installed. The 3 skips are tests blocked on question A-1 (whether a game-clock Start should always blank the play clock) and are not a pass — that football-rules question still needs the owner and officials. Task 10's two-display and stadium acceptance evidence remain open. A fifteen-finding deep-dive audit on September 5, 2026 is recorded in `PROJECT_ROADMAP.md` under "Deep-dive audit"; the five lightest findings were fixed the same day, and the environment/suite findings (I1, I2) were completed September 6, 2026.
+- **Phase 2 — core MVP:** implementation Tasks 1–11 are substantially implemented, with Task 12 and hardware acceptance still open. The September 6 reconciliation run is green: **853 tests, 0 failures, 0 errors, 3 skipped** from a clean temporary Python 3.11.9 environment with Node.js on `PATH`. The 3 skips are tests blocked on question A-1 and are not a pass. Current working-tree additions include I4's bounded Undo history, the presets half of F4, and layout-only F3 groundwork. C4's off-lock publication safety is real but its cross-thread/per-window ordering is reopened; see the [current project audit](docs/CURRENT_PROJECT_AUDIT_2026-09-06.md).
 - **Production media, OBS, networking, and hardware-controller work:** deferred.
 
 `PROJECT_ROADMAP.md` is the authority on status and evidence. Nothing here may be treated as release-ready on the strength of a passing automated suite; the open hardware and rehearsal evidence is listed there.
@@ -52,7 +52,7 @@ The Phase 2 MVP provides, or will provide:
 | Capability | State |
 |---|---|
 | Editable home and away team names and scores | Built |
-| Scoring controls for `+1`, `+2`, `+3`, `+6`, plus corrections and one-level undo | Built |
+| Scoring controls for `+1`, `+2`, `+3`, `+6`, plus corrections and a 20-entry in-memory LIFO Undo history | Built |
 | Manual quarter control with running-clock confirmation | Built |
 | Countdown game clock on a monotonic deadline | Built |
 | Independent play clock with 25-second and 40-second presets | Built |
@@ -65,7 +65,7 @@ The Phase 2 MVP provides, or will provide:
 | A repeatable offline Windows package and one-action launch | Built at version 0.1.0 after Task 10; clean-machine and target-laptop checks remain open |
 | Down, distance, possession, field position, and timeouts remaining | Built and tested; owner/officials decisions on the timeout default and halftime reset remain open |
 | Human-readable Eastern-time recovery timestamps | Built and tested |
-| Field Assistant: a separate helper window that proposes down, distance, spot, penalty, turnover, and scoring outcomes and commits them as one reviewable action | Built and tested against the FA-01 to FA-28 matrix; no game-day rehearsal evidence yet |
+| Field Assistant: a separate helper window that proposes down, distance, spot, penalty, turnover, and scoring outcomes and commits them as one reviewable action | Built and tested against the FA-01 to FA-31 matrix; development-host WebView2 exercised, but no target-laptop or live-volunteer rehearsal evidence yet |
 | Presentation layout editor (v2): a separate canvas-style window that positions, styles, and saves spectator-board widgets plus free text/image/box elements, with undo, multi-select, and layout presets, without touching game state | Built and tested against focused suites and both a stub-bridge preview and the real pywebview runtime; the Playwright browser suite now runs (Node.js and a repo-local Playwright installed September 6, 2026) and found a real layers-rail click-loss defect, fixed the same day; owner sign-off on the default layout and a stadium-resolution legibility check remain open |
 | Presentation layout editor (v3, September 6, 2026): the pregame and halftime countdown presentation is now two additional editable screens in the same editor, with their own event widgets and presets | ✅ Delivered and verified September 6, 2026 (focused suites, full discovery run against the known baseline, real pywebview run) — see "Phase 2 owner request 4" in `PROJECT_ROADMAP.md` |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
@@ -110,7 +110,8 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/PHASE_2_BACKLOG.md` | Ordered, bounded implementation tasks |
 | `docs/PACKAGING.md` | How the offline Windows package is built, installed, and verified |
 | `docs/DISPLAY_CHECKLIST.md` | The manual two-display and stadium checks that Task 10 still owes |
-| `docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` | The Field Assistant's football rules, operator workflow, and the FA-01 to FA-28 requirement matrix |
+| `docs/CURRENT_PROJECT_AUDIT_2026-09-06.md` | Current implementation/document deviations, release blockers, and safe local cleanup candidates |
+| `docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` | The Field Assistant's football rules, operator workflow, and the FA-01 to FA-31 requirement matrix |
 | `docs/agents/` | Conventions the engineering skills follow in this repo: the `.scratch/` issue tracker, triage labels, and domain docs |
 | `docs/evidence/` | Captured measurements and screenshots, each claimed by a roadmap entry |
 | `docs/PHASE_2_TASK_1_RUNTIME_PROOF.md` | Environment setup, dependency pins, and the original multi-window proof |
@@ -144,7 +145,7 @@ Run the automated suite from the repository root:
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-The three `tests/ui/` checks — spectator board, keyboard, and layout editor — additionally need Node.js, Playwright, and Edge. Run `npm ci` once from the repository root to install a repo-local Playwright (pinned in the root `package.json`); the scripts then launch the Microsoft Edge already installed on Windows and no browser download is needed. Missing tooling fails explicitly rather than skipping. As of September 6, 2026 this suite is green on a machine with that setup: 750 tests, 0 failures, 0 errors, 3 skips (each an explicit `@unittest.skip` naming open question A-1). See "The suite is green" in `tests/README.md` for how to read the skips, and `tools/check_markdown_links.py` plus `.github/workflows/ci.yml` for the same sequence run automatically.
+The three `tests/ui/` checks — spectator board, keyboard, and layout editor — additionally need Node.js, Playwright, and Edge. Run `npm ci` once from the repository root to install a repo-local Playwright (pinned in the root `package.json`); the scripts then launch the Microsoft Edge already installed on Windows and no browser download is needed. Missing tooling fails explicitly rather than skipping. As of the September 6, 2026 reconciliation this suite is green: 853 tests, 0 failures, 0 errors, 3 skips (each an explicit `@unittest.skip` naming open question A-1). The repository-local `.venv` is generated and this machine's copy currently has a stale interpreter path; recreate it if needed. See "The suite is green" in `tests/README.md`.
 
 ## Licensing
 

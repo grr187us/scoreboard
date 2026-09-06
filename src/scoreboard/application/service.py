@@ -36,6 +36,7 @@ from scoreboard.domain.clocks import (
     EventCountdown,
     GameClock,
     PlayClock,
+    StatusCountdown,
     clear_play_clock_on_game_clock_start,
     clear_play_clock_on_game_clock_stop,
     event_phase_for,
@@ -57,7 +58,9 @@ from scoreboard.domain.commands import (
     INVALID_FIELD_ACTION,
     INVALID_COMMAND,
     INVALID_PLAY_CLOCK_PRESET,
+    INVALID_STATUS_CLOCK_PRESET,
     INVALID_TEAM_NAME,
+    MAX_UNDO_DEPTH,
     NON_UNDOABLE_COMMANDS,
     NOT_UNDOABLE,
     NOTHING_TO_UNDO,
@@ -104,8 +107,15 @@ class _Transition:
     game_clock: GameClock | None = None
     play_clock: PlayClock | None = None
     event_clock: EventCountdown | None = None
+    status_clock: StatusCountdown | None = None
     undo: UndoEntry | None = None
     clears_undo: bool = False
+    #: Set only by ``_handle_undo``: this transition is Undo itself reversing
+    #: the stack's top entry, so the commit step must pop exactly that one
+    #: entry rather than treating Undo as an ordinary barrier that clears the
+    #: whole stack (Undo is a member of ``NON_UNDOABLE_COMMANDS``, which would
+    #: otherwise wipe out the older entries a second Undo is meant to reach).
+    pops_undo: bool = False
     replacement_state: GameState | None = None
 
 
@@ -210,7 +220,14 @@ class ScoreboardService:
         self._game_clock = GameClock.from_state(initial, monotonic_clock=monotonic)
         self._play_clock = PlayClock.from_state(initial, monotonic_clock=monotonic)
         self._event_clock = EventCountdown.from_state(initial, monotonic_clock=monotonic)
-        self._undo: UndoEntry | None = None
+        self._status_clock = StatusCountdown.from_state(initial, monotonic_clock=monotonic)
+        # A bounded, strictly last-in-first-out stack (I4): the newest entry
+        # is always index -1, and Undo only ever reverses that one. A single
+        # global level would foreclose fixing an earlier mistake the moment a
+        # second reversible command follows it; the stack keeps every entry
+        # reachable, in order, until a barrier command clears it or it grows
+        # past MAX_UNDO_DEPTH and drops its oldest member.
+        self._undo_stack: list[UndoEntry] = []
         self._undo_blocked_by: CommandType | None = None
         self._applying = False
 
@@ -245,6 +262,10 @@ class ScoreboardService:
         return self._event_clock
 
     @property
+    def status_clock(self) -> StatusCountdown:
+        return self._status_clock
+
+    @property
     def monotonic_clock(self) -> Callable[[], float]:
         """The single time source shared by the service and both engines."""
 
@@ -270,6 +291,7 @@ class ScoreboardService:
             # The HALFTIME/WARMUP label is derived, so it changes at 3:00 while
             # the countdown runs rather than waiting for the next command.
             event_phase=event_phase_for(self._state.event_phase, countdown.seconds),
+            status_clock=self._status_clock.to_clock_value(now=current),
         )
 
     def observe_tick(self, now: float | None = None) -> TickObservation:
@@ -312,6 +334,19 @@ class ScoreboardService:
                 )
                 play_clock_cleared = True
 
+        status_before = self._status_clock.current_value(current)
+        status_expired = self._status_clock.value.running and not status_before.running
+        if status_expired:
+            self._status_clock = self._status_clock.expire(now=current)
+            # This is deliberately not ``evolve``: it records a system
+            # observation without assigning an operator-command revision.
+            # ``status_clock_cleared`` stays False here -- the wall keeps
+            # showing "0:00" alongside the still-raised message until the
+            # operator explicitly clears it (.scratch/f3-i4/DESIGN.md).
+            self._state = replace(
+                self._state, status_clock=self._status_clock.to_clock_value(now=current)
+            )
+
         return TickObservation(
             state=self.materialized_state(current),
             game_clock_expired=game_expired,
@@ -322,9 +357,25 @@ class ScoreboardService:
 
     @property
     def undo_entry(self) -> UndoEntry | None:
-        """The transition a single Undo would reverse, if any."""
+        """The transition a single Undo would reverse, if any.
 
-        return self._undo
+        This is the stack's newest entry: every existing caller (the bridge's
+        "LAST: ..." strip, the tests that asked about "the" undo entry before
+        I4 introduced the stack) keeps working unchanged.
+        """
+
+        return self._undo_stack[-1] if self._undo_stack else None
+
+    @property
+    def undo_history(self) -> tuple[UndoEntry, ...]:
+        """Every reversible transition currently on the stack, newest first.
+
+        Newest-first matches the order the operator experiences them in: the
+        top row is the one the next Undo reverses, exactly like
+        :attr:`undo_entry`.
+        """
+
+        return tuple(reversed(self._undo_stack))
 
     # --- Command entry point ------------------------------------------------
 
@@ -545,6 +596,9 @@ class ScoreboardService:
         event_clock = (
             self._event_clock if transition.event_clock is None else transition.event_clock
         )
+        status_clock = (
+            self._status_clock if transition.status_clock is None else transition.status_clock
+        )
 
         if transition.replacement_state is not None:
             next_state = transition.replacement_state
@@ -589,6 +643,7 @@ class ScoreboardService:
                 changes["event_phase"] = event_phase_for(
                     changes.get("event_phase", self._state.event_phase), countdown.seconds
                 )
+                changes.setdefault("status_clock", status_clock.to_clock_value(now=now))
             try:
                 next_state = self._state.evolve(**changes)
             except StateValidationError as exc:
@@ -600,16 +655,38 @@ class ScoreboardService:
         self._game_clock = game_clock
         self._play_clock = play_clock
         self._event_clock = event_clock
+        self._status_clock = status_clock
 
         # The declared eligibility sets have the final say, so a handler can
         # never quietly make a dangerous command undoable (F-014).
         undo_entry = transition.undo if command.type in UNDOABLE_COMMANDS else None
         clears_undo = transition.clears_undo or command.type in NON_UNDOABLE_COMMANDS
-        if undo_entry is not None:
-            self._undo = undo_entry
+        if transition.pops_undo:
+            # Undo is itself a member of NON_UNDOABLE_COMMANDS (there is no
+            # "redo"), so the generic ``clears_undo`` check below would wipe
+            # the whole stack if it ran here -- exactly the bug this stack
+            # exists to fix, since a second Undo needs the older entries still
+            # in place. Popping only the one entry Undo just reversed is the
+            # entire effect; the rest of the stack, newest-first order and
+            # all, is untouched. ``_undo_blocked_by`` is set the same way any
+            # other non-undoable command sets it -- it is only ever consulted
+            # once the stack is empty, so setting it here is a no-op while
+            # older entries remain and becomes the correct "undo cannot be
+            # undone" answer the moment the stack drains.
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._undo_blocked_by = command.type
+        elif undo_entry is not None:
+            self._undo_stack.append(undo_entry)
+            # Drop the oldest entry rather than growing without bound or
+            # refusing a correction just because the operator has made a lot
+            # of them; MAX_UNDO_DEPTH is generous enough that this only ever
+            # trims history nobody was going to reach anyway.
+            if len(self._undo_stack) > MAX_UNDO_DEPTH:
+                del self._undo_stack[0]
             self._undo_blocked_by = None
         elif clears_undo:
-            self._undo = None
+            self._undo_stack.clear()
             self._undo_blocked_by = command.type
 
         return CommandResult(
@@ -725,7 +802,7 @@ class ScoreboardService:
     # --- Undo ---------------------------------------------------------------
 
     def _handle_undo(self, command: Command, now: float) -> _Transition | CommandError:
-        entry = self._undo
+        entry = self._undo_stack[-1] if self._undo_stack else None
         if entry is None:
             if self._undo_blocked_by is not None:
                 return CommandError(
@@ -747,7 +824,7 @@ class ScoreboardService:
                     team=entry.team,
                     source=command.source,
                 ),
-                clears_undo=True,
+                pops_undo=True,
             )
         current = getattr(self._state, entry.field)
         # Undo is a new forward transition, not a rollback: the revision keeps
@@ -767,7 +844,7 @@ class ScoreboardService:
                 team=entry.team,
                 source=command.source,
             ),
-            clears_undo=True,
+            pops_undo=True,
         )
 
     # --- Quarter and lifecycle ---------------------------------------------
@@ -886,6 +963,7 @@ class ScoreboardService:
             game_clock=GameClock(value=fresh.game_clock, monotonic_clock=self._monotonic),
             play_clock=PlayClock(value=fresh.play_clock, monotonic_clock=self._monotonic),
             event_clock=EventCountdown.from_state(fresh, monotonic_clock=self._monotonic),
+            status_clock=StatusCountdown(value=fresh.status_clock, monotonic_clock=self._monotonic),
             clears_undo=True,
         )
 
@@ -1157,6 +1235,87 @@ class ScoreboardService:
             )
         return self._event_transition(command, now, corrected)
 
+    # --- Crowd status (F3) --------------------------------------------------
+    #
+    # The crowd-facing status word and its stoppage countdown are presentation,
+    # not a scoring or lifecycle fact: none of the four commands below appear
+    # in either UNDOABLE_COMMANDS or NON_UNDOABLE_COMMANDS
+    # (domain/commands.py), so they leave the undo stack untouched entirely,
+    # exactly like the clock commands (.scratch/f3-i4/DESIGN.md).
+
+    def _status_clock_transition(
+        self, command: Command, now: float, next_clock: StatusCountdown
+    ) -> _Transition:
+        return _Transition(
+            event=EventIntent(
+                command=command.type,
+                field="status_clock",
+                old_value=_clock_snapshot(self._status_clock.current_value(now)),
+                new_value=_clock_snapshot(next_clock.current_value(now)),
+                source=command.source,
+            ),
+            status_clock=next_clock,
+        )
+
+    def _handle_set_game_status(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        old_label = self._state.game_status
+        new_label = str(command.label)
+        if command.seconds is not None:
+            # Load the preset and start it in the same transition -- one
+            # revision, the play_clock_preset_start precedent -- so pressing
+            # TIMEOUT both raises the word and starts its countdown at once.
+            try:
+                next_clock = self._status_clock.load_preset(
+                    float(command.seconds), now=now
+                ).start(now=now)
+            except StateValidationError as exc:
+                return CommandError(
+                    INVALID_STATUS_CLOCK_PRESET, f"Status clock preset rejected: {exc}."
+                )
+            clock_cleared = False
+        else:
+            next_clock = self._status_clock.clear(now=now)
+            clock_cleared = True
+        return _Transition(
+            changes={"game_status": new_label, "status_clock_cleared": clock_cleared},
+            event=EventIntent(
+                command=command.type,
+                field="game_status",
+                old_value=old_label,
+                new_value=new_label,
+                source=command.source,
+            ),
+            status_clock=next_clock,
+        )
+
+    def _handle_clear_game_status(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        old_label = self._state.game_status
+        return _Transition(
+            changes={"game_status": None, "status_clock_cleared": True},
+            event=EventIntent(
+                command=command.type,
+                field="game_status",
+                old_value=old_label,
+                new_value=None,
+                source=command.source,
+            ),
+            status_clock=self._status_clock.clear(now=now),
+        )
+
+    def _handle_status_clock_start(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        return self._status_clock_transition(command, now, self._status_clock.start(now=now))
+
+    def _handle_status_clock_stop(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        return self._status_clock_transition(command, now, self._status_clock.stop(now=now))
+
     # --- Expanded football state --------------------------------------------
     #
     # Down, distance, possession, ball position, and timeouts remaining are
@@ -1425,6 +1584,10 @@ class ScoreboardService:
         CommandType.TIMEOUT_CORRECT: _handle_timeout_correct,
         CommandType.SET_TIMEOUTS: _handle_set_timeouts,
         CommandType.FINALIZE_FIELD_ACTION: _handle_finalize_field_action,
+        CommandType.SET_GAME_STATUS: _handle_set_game_status,
+        CommandType.CLEAR_GAME_STATUS: _handle_clear_game_status,
+        CommandType.STATUS_CLOCK_START: _handle_status_clock_start,
+        CommandType.STATUS_CLOCK_STOP: _handle_status_clock_stop,
     }
 
 

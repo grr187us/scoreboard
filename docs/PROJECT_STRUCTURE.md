@@ -1,7 +1,7 @@
 # Proposed Phase 2 Project Structure
 
 **Status:** Approved structure; implementation now fills the Phase 2 boundaries
-**Last updated:** September 5, 2026 (added the presentation-layout modules and views, then the Field Assistant rules module, bridge wiring, and helper-window views)
+**Last updated:** September 6, 2026 (reconciled publisher, saved-team, layout-editor split, CI/tooling, and data-location ownership)
 
 ## 1. Principle
 
@@ -30,6 +30,9 @@ scoreboard/
 ├─ PROJECT_ROADMAP.md
 ├─ High School LED Scoreboard — Project Knowledge Base.md
 ├─ pyproject.toml                   # Phase 2 task 1: runtime/dev dependencies
+├─ package.json                     # pinned browser-test development dependency
+├─ package-lock.json
+├─ .github/workflows/ci.yml         # Windows verification gate
 ├─ .gitignore
 ├─ assets/
 │  ├─ README.md                    # ownership and licensing policy
@@ -42,7 +45,8 @@ scoreboard/
 │  ├─ OPEN_SOURCE_REVIEW.md
 │  ├─ PROJECT_STRUCTURE.md
 │  ├─ PHASE_2_BACKLOG.md
-│  ├─ FIELD_ASSISTANT_RULES_AND_WORKFLOW.md  # rules spec, coordinate model, FA-01..FA-28 matrix (added September 5, 2026)
+│  ├─ FIELD_ASSISTANT_RULES_AND_WORKFLOW.md  # rules spec, coordinate model, FA-01..FA-31 matrix
+│  ├─ CURRENT_PROJECT_AUDIT_2026-09-06.md   # point-in-time implementation/document reconciliation
 │  ├─ agents/                      # conventions the engineering skills follow in this repo
 │  └─ evidence/                    # captured measurements and screenshots, each claimed by a roadmap entry
 ├─ src/scoreboard/
@@ -64,10 +68,11 @@ scoreboard/
 │  ├─ infrastructure/
 │  │  ├─ paths.py                  # Windows per-user data locations
 │  │  ├─ persistence.py            # SQLite transactions, backup, action history
-│  │  ├─ config.py                 # operator preferences that are not game state: display identity, data-folder choice
+│  │  ├─ config.py                 # non-game preferences stored in config.json, including display identity
 │  │  ├─ diagnostics.py            # rotating application diagnostics
 │  │  ├─ local_time.py             # display-only UTC-to-Eastern timestamp conversion
-│  │  └─ layouts.py                # layouts.json read/write, atomic replace, schema-version fallback (added September 5, 2026)
+│  │  ├─ layouts.py                # layouts.json read/write, atomic replace, schema-version fallback (added September 5, 2026)
+│  │  └─ teams.py                  # teams.json read/write, atomic replace, schema-version fallback (added September 6, 2026)
 │  ├─ host/
 │  │  ├─ app.py                    # webview lifecycle and shutdown; owns the six window slots
 │  │  ├─ startup.py                # separate report/resume/new startup surface
@@ -75,23 +80,30 @@ scoreboard/
 │  │  ├─ folders.py                # native Windows folder picker for the data directory
 │  │  ├─ bridge.py                 # narrow JS/Python contract; also hosts FieldAssistantBridge (added September 5, 2026)
 │  │  ├─ layout_bridge.py          # presentation-layout host bridge; no game-mutating method (added September 5, 2026)
+│  │  ├─ teams.py                  # saved-team library host bridge; no game-mutating method (added September 6, 2026)
+│  │  ├─ publisher.py              # off-lock latest-pending webview delivery boundary (C4; known ordering gap documented)
 │  │  └─ displays.py               # enumeration, selection, reopen/fullscreen
 │  ├─ views/
 │  │  ├─ shared/                   # base.css tokens/reset, render.js helpers, board.js/board.css widget renderer (added September 5, 2026)
 │  │  ├─ operator/                 # index.html, operator.css, operator.js, keyboard.js
 │  │  ├─ startup/                  # recovery preview and explicit choices
-│  │  ├─ layout/                   # presentation layout editor: index.html, layout.css, layout.js (added September 5, 2026)
+│  │  ├─ layout/                   # editor shell plus layout.js, editor-state.js, editor-canvas.js, editor-panels.js
 │  │  ├─ field_assistant/          # helper window: index.html, field_assistant.js, field_assistant.css (added September 5, 2026)
 │  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer
 │  └─ integrations/                # empty/uncreated until a later phase needs it
 │     ├─ obs.py                    # future output adapter, not MVP
 │     └─ controller.py             # future optional input adapter, not MVP
-└─ tests/
+├─ tests/
    ├─ README.md
    ├─ test_displays.py             # host display-selection helpers that need no window
    ├─ unit/                        # domain/application deterministic tests
    ├─ integration/                 # persistence, bridge, recovery, layout, and Field Assistant tests
    └─ ui/                          # contract/smoke tests where justified
+└─ tools/
+│  ├─ build_package.py             # verified PyInstaller build entry point
+│  ├─ check_markdown_links.py      # local relative-link verifier
+│  ├─ measure_clock_accuracy.py    # Task 12 clock-accuracy evidence helper
+│  └─ scoreboard.spec             # PyInstaller configuration
 ```
 
 An earlier version of this tree proposed a `tests/fixtures/` directory. It was never created and nothing depends on it; tests build their inputs in-process under an injected fake clock, so the entry has been dropped rather than left as a phantom.
@@ -112,11 +124,15 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 | `application/recovery.py` | Validated startup restore as stopped, owner choice | Silent auto-resume |
 | `infrastructure/persistence.py` | One SQLite transaction per accepted command, the last-known-good backup, the append-only action history, and the single-instance lock | Deciding game rules or producing a revision |
 | `infrastructure/layouts.py` | `layouts.json` read/write, atomic replace, schema-version fallback | Deciding widget geometry or producing a state revision |
-| `infrastructure/config.py` | Non-game operator preferences: display identity and geometry, data-folder choice | Game state or a state revision |
+| `infrastructure/teams.py` | `teams.json` read/write, atomic replace, schema-version fallback, team validation/short-name derivation | Applying a team name to the game, or a state revision |
+| `infrastructure/paths.py` | Platform-default and chosen data-folder resolution, including the bootstrap `data-location.json` pointer | Game state, display preferences, or persistence policy |
+| `infrastructure/config.py` | Non-game preferences inside the selected data folder: display identity and geometry | Game state, the bootstrap data-folder choice, or a state revision |
 | `host/preflight.py` | Runtime and WebView2 prerequisite checks, and fatal-launch reporting | Game state or window lifecycle |
 | `host/folders.py` | The native Windows folder-picker dialog | Game state or persistence policy |
 | `host/bridge.py` | JSON-compatible command/snapshot boundary; also `FieldAssistantBridge`'s `get_snapshot`/`preview_field_action`/`finalize_field_action` | Duplicate game state |
 | `host/layout_bridge.py` | Read/validate/save/publish spectator layouts | Any game-mutating method |
+| `host/teams.py` | Read/save/delete the saved-team library in memory; identity lookup by current team name for the view model | Submitting `set_team_name` or any other command |
+| `host/publisher.py` | Execute webview delivery away from the command lock and coalesce pending updates | Authoritative ordering, game state, or persistence; see the reopened C4 limitation in `ARCHITECTURE.md` |
 | `host/displays.py` | Enumeration, display preference, reopen/fullscreen | HDMI switching or LED protocol |
 | operator view | Input intent, forms, feedback, ephemeral UI state | Authoritative scores/clocks |
 | spectator view | Responsive rendering of complete snapshots | Commands or persistence |
@@ -134,12 +150,13 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 
 The application resolves a per-user Windows data directory and creates runtime subdirectories there. Repository source paths must never be used for live state.
 
-On Windows the root is `SHGetKnownFolderPath(FOLDERID_LocalAppData)` + `Scoreboard`, resolved through the platform API rather than a hard-coded or repository-relative path. A relative path is refused outright.
+On Windows the platform-default root is `SHGetKnownFolderPath(FOLDERID_LocalAppData)` + `Scoreboard`, resolved through the platform API rather than a hard-coded or repository-relative path. It contains `data-location.json` when the operator selects another absolute data folder. That small bootstrap pointer stays in the default root; the active data files below live together in either the default or chosen root. A relative path is refused outright.
 
 ```text
 Scoreboard/
 ├─ config.json                     # created when Task 7+ needs it
 ├─ layouts.json                    # saved spectator-board presentation layouts (added September 5, 2026)
+├─ teams.json                      # saved team names, short names, and colours (added September 6, 2026)
 ├─ scoreboard.db                   # recoverable state + append-only action history
 ├─ scoreboard.backup.db            # automatically refreshed last-known-good copy
 ├─ scoreboard.lock                 # single-instance lock (R-004)
@@ -148,9 +165,14 @@ Scoreboard/
    └─ application.log              # bounded rotating diagnostics (P-008)
 ```
 
+When a different active root is selected, the platform-default root additionally
+contains `data-location.json`; it is not copied into the chosen folder.
+
 The game's durable action history lives in `scoreboard.db`, not in a separate JSONL file: one transaction must commit the new state and its history row together (P-002), which two files cannot guarantee. The rotating `application.log` records what the *program* did and is allowed to roll over; the action history records what happened in the *game* and never is.
 
 `layouts.json` is its own file, separate from both `config.json` and `scoreboard.db` (added September 5, 2026): a damaged layout library must not be able to cost the operator a saved game, and a damaged game must not be able to cost the operator a saved layout. It is read/written with the same atomic temp-file-plus-`os.replace` policy and the same "a preference file may never stop the scoreboard" contract as `config.json`.
+
+`teams.json` (added September 6, 2026) is its own file for the same reason: the saved-team library is a laptop preference, not game state (`GameState` keeps only `home_name`/`away_name`), so a damaged team library must not be able to cost the operator a saved game or layout, and vice versa. It carries the same schema-version/atomic-write contract; applying a saved team still goes through the existing, validated `set_team_name` command.
 
 Tests use isolated temporary directories and never read or overwrite the operator's real state.
 

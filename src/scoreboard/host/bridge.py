@@ -70,17 +70,26 @@ from scoreboard.domain.formatting import (
     format_down_and_distance,
     format_event_countdown,
     format_game_clock,
+    format_game_status,
     format_play_clock,
     format_possession,
+    format_status_clock,
     format_timeouts,
 )
-from scoreboard.domain.state import BallSpot, GameState, QUARTER_LABELS, SCHEMA_VERSION
+from scoreboard.domain.state import (
+    GAME_STATUS_LABELS,
+    BallSpot,
+    GameState,
+    QUARTER_LABELS,
+    SCHEMA_VERSION,
+)
 from scoreboard.host.folders import (
     FolderChoice,
     choose_data_folder,
     use_default_folder,
 )
 from scoreboard.host.layout_bridge import PresentationLayouts
+from scoreboard.host.teams import TeamPresets
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import describe_resolution
 from scoreboard.infrastructure.persistence import GameStore, PersistenceStatus
@@ -94,6 +103,20 @@ OPERATOR_KEYBOARD_SOURCE: Final[str] = "operator-keyboard"
 #: This never reaches the service: an unknown name is not a game event.
 UNKNOWN_COMMAND: Final[str] = "UNKNOWN_COMMAND"
 INVALID_ARGUMENTS: Final[str] = "INVALID_ARGUMENTS"
+
+#: A catch-all rejection for an exception the command path did not expect
+#: (C4). Nothing here is a validated command-rejection reason; it exists so an
+#: unforeseen bug fails safely -- the operator sees a plain refusal and a
+#: complete view instead of the page hanging on a broken promise, and the
+#: diagnostics log carries the real exception for later triage.
+INTERNAL_ERROR: Final[str] = "INTERNAL_ERROR"
+
+#: The message shown for :data:`INTERNAL_ERROR`, identical for ``command()``
+#: and ``finalize_field_action()`` so the two catch-alls read as one contract.
+_INTERNAL_ERROR_MESSAGE: Final[str] = (
+    "That control failed unexpectedly and changed nothing. The game is still "
+    "running; see the diagnostics log."
+)
 
 #: The arguments each command accepts from a view. Anything else is refused
 #: before a Command is built, so a typo in JavaScript cannot become a mutation.
@@ -131,6 +154,10 @@ _ALLOWED_ARGUMENTS: Final[dict[CommandType, frozenset[str]]] = {
     CommandType.TIMEOUT_USED: frozenset({"team"}),
     CommandType.TIMEOUT_CORRECT: frozenset({"team", "points"}),
     CommandType.SET_TIMEOUTS: frozenset({"team", "value"}),
+    CommandType.SET_GAME_STATUS: frozenset({"label", "seconds"}),
+    CommandType.CLEAR_GAME_STATUS: frozenset(),
+    CommandType.STATUS_CLOCK_START: frozenset(),
+    CommandType.STATUS_CLOCK_STOP: frozenset(),
 }
 
 _NUMERIC_ARGUMENTS: Final[frozenset[str]] = frozenset({"points", "value", "seconds"})
@@ -535,6 +562,27 @@ def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[
     }
 
 
+def _status_view(state: GameState) -> dict[str, Any]:
+    """F3's crowd-facing status word and its countdown -- one rendered string.
+
+    ``clock_display`` is computed once and reused inside ``clock`` so the two
+    can never disagree about what the countdown reads, exactly the same
+    "compute once, copy everywhere" rule the rest of this module follows for
+    clock text.
+    """
+
+    clock_display = format_status_clock(
+        state.status_clock.seconds, blank_at_zero=state.status_clock_cleared
+    )
+    return {
+        "label": state.game_status,
+        "active": state.game_status is not None,
+        "display": format_game_status(state.game_status),
+        "clock_display": clock_display,
+        "clock": _clock_view(state.status_clock.seconds, state.status_clock.running, clock_display),
+    }
+
+
 def spectator_view_model(state: GameState) -> dict[str, Any]:
     """Everything the spectator window renders. It requests nothing else."""
 
@@ -599,6 +647,12 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
         "football": _football_view(
             state, home_name=state.home_name, away_name=state.away_name
         ),
+        # F3: the crowd-facing status word and its countdown. ``display`` is
+        # "" with nothing raised and ``clock_display`` is "" while the
+        # countdown is cleared -- the two spectator widgets bound to these
+        # dotted paths hide themselves on empty text (OPTIONAL_WIDGET_IDS),
+        # which is how they stay off the wall until the operator raises one.
+        "status": _status_view(state),
     }
 
 
@@ -616,8 +670,21 @@ def operator_view_model(
     model["quarter_labels"] = list(QUARTER_LABELS)
     model["event_phases"] = list(SELECTABLE_EVENT_PHASES)
     model["play_clock_presets"] = [25, 40]
+    model["status_labels"] = list(GAME_STATUS_LABELS)
+    model["status_clock_presets"] = [30, 60, 90]
     model["last_action"] = _last_action_view(service.undo_entry)
     model["can_undo"] = service.undo_entry is not None
+    # I4: the whole reversible stack, newest first, each row already rendered
+    # through the same _last_action_view the "LAST: ..." strip uses -- the
+    # operator page copies these labels into its history drawer rather than
+    # building one itself (ARCHITECTURE.md: Python owns every displayed
+    # string). undo_depth is the badge next to "LAST:" (for example ``x3``);
+    # it is simply the history's length rather than a separate counter, so
+    # the two can never disagree.
+    model["undo_history"] = [
+        _last_action_view(entry) for entry in service.undo_history
+    ]
+    model["undo_depth"] = len(model["undo_history"])
     model["assistant"] = {
         "first_quarter_home_direction": state.assistant_first_quarter_home_direction,
         "line_to_gain": state.assistant_line_to_gain,
@@ -732,6 +799,7 @@ class ScoreboardBridge:
         on_accepted: Callable[[dict[str, Any]], None] | None = None,
         folder_chooser: Callable[[], FolderChoice] | None = None,
         layouts: PresentationLayouts | None = None,
+        teams: TeamPresets | None = None,
         field_assistant_opener: Callable[[], dict[str, str]] | None = None,
         logs_opener: Callable[[Path], None] | None = None,
     ) -> None:
@@ -743,6 +811,10 @@ class ScoreboardBridge:
         # Both host actions below report plainly rather than raising when it
         # is absent, exactly like a display or a folder that is not there yet.
         self._layouts = layouts
+        # Optional for the same reason. When present, every view carries each
+        # side's saved identity (short name and colours) looked up by the
+        # current team name; the lookup is an in-memory dict read (F4).
+        self._teams = teams
         self._field_assistant_opener = field_assistant_opener
         # Explorer by default; tests inject a recorder. `os.startfile` is
         # Windows-only, which is the only platform this application targets.
@@ -774,8 +846,22 @@ class ScoreboardBridge:
         args: Any = None,
         expected_revision: Any = None,
     ) -> dict[str, Any]:
-        """Submit one operator command and return its complete result."""
+        """Submit one operator command and return its complete result.
 
+        The service submit, the durable record, and the returned payload are
+        all built under the lock, exactly as before. What changed for C4 is
+        *when* ``on_accepted`` runs: it is the caller's hook into publishing a
+        new view to the windows, and publishing can end up at a webview's
+        blocking ``evaluate_js`` (ARCHITECTURE.md §8). Calling it after this
+        method's ``with`` block releases means a stalled window can never hang
+        the next command or the refresh tick behind this lock. A bare
+        exception anywhere in the submit/record/payload path is caught here,
+        exactly like ``ScoreboardApplication.tick()`` already catches one
+        around the refresh loop, so a bug in a sibling command can never leave
+        the operator staring at a control that neither completed nor said why.
+        """
+
+        accepted_view: dict[str, Any] | None = None
         with self._lock:
             built = build_command(name, args, expected_revision)
             if isinstance(built, CommandError):
@@ -790,16 +876,28 @@ class ScoreboardBridge:
                 )
                 return self._result_payload(accepted=False, error=built)
 
-            result = self._service.submit(built)
-            self._store.record_command(built, result)
-            if result.accepted and self._on_accepted is not None:
-                self._on_accepted(self._view())
-            return self._result_payload(
-                accepted=result.accepted,
-                error=result.error,
-                confirmation_required=result.confirmation_required,
-                result=result,
-            )
+            try:
+                result = self._service.submit(built)
+                self._store.record_command(built, result)
+                if result.accepted:
+                    accepted_view = self._view()
+                payload = self._result_payload(
+                    accepted=result.accepted,
+                    error=result.error,
+                    confirmation_required=result.confirmation_required,
+                    result=result,
+                )
+            except Exception as exc:  # noqa: BLE001 - reported, never left silent
+                self._diagnostics.unhandled_error(
+                    context="command", error=exc, command=str(name)
+                )
+                payload = self._result_payload(
+                    accepted=False,
+                    error=CommandError(INTERNAL_ERROR, _INTERNAL_ERROR_MESSAGE),
+                )
+        if accepted_view is not None and self._on_accepted is not None:
+            self._on_accepted(accepted_view)
+        return payload
 
     def preview_field_action(self, action: Any) -> dict[str, Any]:
         """Calculate one uncommitted assistant draft in Python.
@@ -854,6 +952,7 @@ class ScoreboardBridge:
         the store, preserving one revision, transaction, and durable row.
         """
 
+        accepted_view: dict[str, Any] | None = None
         with self._lock:
             built = self._field_action(action)
             if isinstance(built, CommandError):
@@ -865,21 +964,33 @@ class ScoreboardBridge:
                     accepted=False,
                     error=CommandError(INVALID_ARGUMENTS, "The expected revision must be a whole number."),
                 )
-            command = finalize_field_action(
-                built,
-                expected_revision=expected_revision,
-                source="field-assistant",
-            )
-            result = self._service.submit(command)
-            self._store.record_command(command, result)
-            if result.accepted and self._on_accepted is not None:
-                self._on_accepted(self._view())
-            return self._result_payload(
-                accepted=result.accepted,
-                error=result.error,
-                confirmation_required=result.confirmation_required,
-                result=result,
-            )
+            try:
+                command = finalize_field_action(
+                    built,
+                    expected_revision=expected_revision,
+                    source="field-assistant",
+                )
+                result = self._service.submit(command)
+                self._store.record_command(command, result)
+                if result.accepted:
+                    accepted_view = self._view()
+                payload = self._result_payload(
+                    accepted=result.accepted,
+                    error=result.error,
+                    confirmation_required=result.confirmation_required,
+                    result=result,
+                )
+            except Exception as exc:  # noqa: BLE001 - reported, never left silent
+                self._diagnostics.unhandled_error(
+                    context="finalize_field_action", error=exc, command="finalize_field_action"
+                )
+                payload = self._result_payload(
+                    accepted=False,
+                    error=CommandError(INTERNAL_ERROR, _INTERNAL_ERROR_MESSAGE),
+                )
+        if accepted_view is not None and self._on_accepted is not None:
+            self._on_accepted(accepted_view)
+        return payload
 
     @staticmethod
     def _field_action(value: Any) -> FieldAction | CommandError:
@@ -1006,6 +1117,67 @@ class ScoreboardBridge:
                     "message": "The presentation layout is unavailable.",
                 }
             return self._layouts.state()
+
+    # --- Saved teams (F4) ---------------------------------------------------
+
+    def teams(self) -> dict[str, Any]:
+        """The saved-team library and each side's current identity.
+
+        A host action like :meth:`presentation_layout`: read on demand, no
+        revision, no command, nothing written to the game database. Applying
+        a saved team is the ordinary ``set_team_name`` command, so it keeps
+        the pregame-only rule, the confirmation, undo, and the history row.
+        """
+
+        with self._lock:
+            return self._teams_payload()
+
+    def save_team(self, payload: Any) -> dict[str, Any]:
+        """Save or update one team preset in ``teams.json``. Changes no game value."""
+
+        if self._teams is None:
+            with self._lock:
+                return {**self._teams_payload(), "ok": False,
+                        "message": "Saved teams are unavailable in this build."}
+        result = self._teams.save(payload)
+        with self._lock:
+            return {**self._teams_payload(), "ok": result["ok"], "message": result["message"]}
+
+    def delete_team(self, name: Any) -> dict[str, Any]:
+        """Delete one team preset from ``teams.json``. Changes no game value."""
+
+        if self._teams is None:
+            with self._lock:
+                return {**self._teams_payload(), "ok": False,
+                        "message": "Saved teams are unavailable in this build."}
+        result = self._teams.delete(name)
+        with self._lock:
+            return {**self._teams_payload(), "ok": result["ok"], "message": result["message"]}
+
+    def _teams_payload(self) -> dict[str, Any]:
+        state = self._service.state
+        if self._teams is None:
+            return {"teams": [], "issues": [], "fell_back": False,
+                    "current": {"home": None, "away": None}}
+        library = self._teams.state()
+        return {
+            "teams": library["teams"],
+            "issues": library["issues"],
+            "fell_back": library["fell_back"],
+            "current": self._teams.identities(state.home_name, state.away_name),
+        }
+
+    def _with_identity(self, view: dict[str, Any]) -> dict[str, Any]:
+        """Attach each side's saved identity (or ``None``) to a view model."""
+
+        teams = view["teams"]
+        if self._teams is None:
+            identities = {"home": None, "away": None}
+        else:
+            identities = self._teams.identities(teams["home"]["name"], teams["away"]["name"])
+        teams["home"]["identity"] = identities["home"]
+        teams["away"]["identity"] = identities["away"]
+        return view
 
     def open_layout_editor(self) -> dict[str, str]:
         """Open the presentation layout editor window.
@@ -1193,6 +1365,7 @@ class ScoreboardBridge:
             "game": (state.game_clock.running, state.game_clock.seconds),
             "play": (state.play_clock.running, state.play_clock.seconds),
             "event": (state.event_countdown.running, state.event_countdown.seconds),
+            "status": (state.status_clock.running, state.status_clock.seconds),
         }
         previous = self._observed
         self._observed = (state.revision, current)
@@ -1225,7 +1398,9 @@ class ScoreboardBridge:
 
     def spectator_snapshot(self) -> dict[str, Any]:
         with self._lock:
-            return spectator_view_model(self._service.materialized_state())
+            return self._with_identity(
+                spectator_view_model(self._service.materialized_state())
+            )
 
     def shutdown(self) -> dict[str, Any]:
         """Save at clean shutdown and report the final persistence status."""
@@ -1245,11 +1420,13 @@ class ScoreboardBridge:
     # --- Internals ----------------------------------------------------------
 
     def _view(self, now: float | None = None) -> dict[str, Any]:
-        return operator_view_model(
-            self._service,
-            persistence=self._store.status,
-            display=self._display.status,
-            now=now,
+        return self._with_identity(
+            operator_view_model(
+                self._service,
+                persistence=self._store.status,
+                display=self._display.status,
+                now=now,
+            )
         )
 
     def _result_payload(
@@ -1284,6 +1461,7 @@ class ScoreboardBridge:
 
 
 __all__ = [
+    "INTERNAL_ERROR",
     "INVALID_ARGUMENTS",
     "OPERATOR_MOUSE_SOURCE",
     "OPERATOR_KEYBOARD_SOURCE",

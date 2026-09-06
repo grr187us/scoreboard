@@ -565,6 +565,29 @@ class TestSpectatorWindowTests(DisplayHostTestCase):
         self.assertIsNone(host.test_window)
         self.assertEqual(self.display_health(), health_before)
 
+    def test_a_dead_spectator_window_is_forgotten_not_retried(self) -> None:
+        """C4 review finding: a spectator push failure must not republish into
+        the same dead window. ``WindowHost._deliver`` now forgets and destroys
+        the window before reporting, so the re-publish that ``spectator_closed``
+        triggers finds no spectator -- otherwise it would fail again, report
+        again, and recurse (inline) or spin (on the publisher thread)."""
+
+        host = self.make_host()
+        self.save_wall(host)
+        host.reopen_spectator()
+        spectator = self.created[0]
+        spectator.evaluate_js = mock.Mock(side_effect=RuntimeError("wall renderer wedged"))
+
+        host._push("spectator", host._spectator_snapshot())  # must return
+
+        self.assertEqual(spectator.evaluate_js.call_count, 1)
+        self.assertTrue(spectator.destroyed)
+        self.assertIsNone(host.spectator_window)
+        health = self.display_health()
+        self.assertFalse(health["open"])
+        self.assertIn("stopped responding", health["detail"])
+        self.assertTrue(health["can_reopen"])
+
     def test_closing_or_shutdown_cleans_up_only_the_test_window_lifecycle(self) -> None:
         host = self.make_host()
         self.save_wall(host)
@@ -676,12 +699,34 @@ class HostActionTests(DisplayHostTestCase):
     def test_every_display_control_is_reachable_from_the_operator_page(self) -> None:
         from tests.integration.test_bridge import OPERATOR_HTML
 
-        self.assertIn('id="display-row"', OPERATOR_HTML)
-        self.assertIn('id="display-choices"', OPERATOR_HTML)
-        self.assertIn('data-action="forget_display"', OPERATOR_HTML)
-        # And the one-click reopen stayed in the health strip, where a lost
-        # display has to be recoverable without opening anything (D-005).
-        self.assertIn('id="reopen-display"', OPERATOR_HTML)
+        self.assertIn('id="display-drawer"', OPERATOR_HTML)
+
+        # The selector rows live inside the dedicated Display drawer (added
+        # September 6, 2026, audit item C5), not inside Corrections, which
+        # keeps the display-recovery path off a panel one click from
+        # destructive Apply buttons.
+        drawer = OPERATOR_HTML.split('<div class="drawer" id="display-drawer"', 1)[1]
+        drawer = drawer.split('<div class="drawer" id="event-drawer"', 1)[0]
+
+        self.assertIn('id="display-row"', drawer)
+        self.assertIn('id="display-choices"', drawer)
+        self.assertIn('data-action="forget_display"', drawer)
+
+        corrections = OPERATOR_HTML.split('<div class="drawer" id="corrections"', 1)[1]
+        corrections = corrections.split('<div class="drawer" id="display-drawer"', 1)[0]
+
+        self.assertNotIn('id="display-row"', corrections)
+        self.assertNotIn('id="display-choices"', corrections)
+        self.assertNotIn('data-action="forget_display"', corrections)
+
+        # The always-visible fast path -- one-click Reopen plus the new
+        # fallback opener -- stays in the health strip, where a lost display
+        # has to be recoverable without opening anything (D-005).
+        header = OPERATOR_HTML.split('<header class="health"', 1)[1]
+        header = header.split("</header>", 1)[0]
+
+        self.assertIn('id="reopen-display"', header)
+        self.assertIn('data-action="open_display"', header)
 
     def test_display_actions_share_the_one_command_lock(self) -> None:
         """A display action can never read a half-applied command.
@@ -774,6 +819,9 @@ class StartupGuardTests(DisplayHostTestCase):
 
         host = self.make_host(read_screens=screens_unavailable)
         self.addCleanup(self.application.stop_refresh)
+        # C4: ``_operator_loaded`` now also starts the publisher thread; stop
+        # it too, so no thread from this test outlives it.
+        self.addCleanup(host._operator_closing)
 
         host._operator_loaded()  # must not raise
 
@@ -784,6 +832,9 @@ class StartupGuardTests(DisplayHostTestCase):
         host = self.make_host()
         self.save_wall(host)
         self.addCleanup(self.application.stop_refresh)
+        # C4: ``_operator_loaded`` now also starts the publisher thread; stop
+        # it too, so no thread from this test outlives it.
+        self.addCleanup(host._operator_closing)
 
         host._operator_loaded()
 

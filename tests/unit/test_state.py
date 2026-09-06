@@ -14,6 +14,7 @@ from scoreboard.domain.state import (
     APP_VERSION,
     MAX_DISTANCE,
     MAX_SCORE,
+    MAX_STATUS_CLOCK_SECONDS,
     MAX_TIMEOUTS,
     MAX_YARD_LINE,
     BallSpot,
@@ -189,6 +190,25 @@ class StateTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(StateValidationError):
                 default_state().evolve(**changes)
 
+    def test_crowd_status_fields_default_to_unset_and_cleared(self) -> None:
+        state = default_state()
+
+        self.assertIsNone(state.game_status)
+        self.assertTrue(state.status_clock_cleared)
+        self.assertAlmostEqual(state.status_clock.seconds, 0.0)
+        self.assertFalse(state.status_clock.running)
+        self.assertEqual(state.status_clock.maximum_seconds, MAX_STATUS_CLOCK_SECONDS)
+
+    def test_invalid_crowd_status_fields_are_rejected(self) -> None:
+        invalid_changes = (
+            {"game_status": "SACK"},
+            {"status_clock_cleared": "yes"},
+            {"status_clock": ClockValue(0.0, False, 40.0)},
+        )
+        for changes in invalid_changes:
+            with self.subTest(changes=changes), self.assertRaises(StateValidationError):
+                default_state().evolve(**changes)
+
     def test_ball_spot_validates_its_own_fields(self) -> None:
         BallSpot("home", 0)
         BallSpot("away", MAX_YARD_LINE)
@@ -265,6 +285,44 @@ class StateTests(unittest.TestCase):
 
         self.assertIsNone(state_to_snapshot(state)["football"]["ball_on"])
         self.assertEqual(snapshot_to_state(state_to_snapshot(state)), state)
+
+    def test_crowd_status_snapshot_round_trips(self) -> None:
+        """F3: the status block round-trips through JSON like every other field."""
+
+        state = default_state().evolve(
+            game_status="TIMEOUT",
+            status_clock=ClockValue(45.0, True, MAX_STATUS_CLOCK_SECONDS),
+            status_clock_cleared=False,
+        )
+
+        payload = state_to_snapshot(state)
+        restored = json_to_state(json.dumps(payload))
+
+        self.assertEqual(
+            payload["status"],
+            {
+                "label": "TIMEOUT",
+                "clock": {"seconds": 45.0, "running": True},
+                "clock_cleared": False,
+            },
+        )
+        self.assertEqual(restored, state)
+        self.assertEqual(snapshot_to_state(payload), state)
+
+    def test_a_pre_status_expansion_snapshot_still_loads(self) -> None:
+        """P-004/P-006: a snapshot without a "status" key predates F3 and must
+        still load with the same defaults default_state() carries.
+        """
+
+        payload = state_to_snapshot(default_state())
+        del payload["status"]
+
+        restored = snapshot_to_state(payload)
+
+        self.assertEqual(restored, default_state())
+        self.assertIsNone(restored.game_status)
+        self.assertTrue(restored.status_clock_cleared)
+        self.assertAlmostEqual(restored.status_clock.seconds, 0.0)
 
 
 if __name__ == "__main__":

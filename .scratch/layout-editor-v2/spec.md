@@ -1,8 +1,8 @@
 # Presentation layout editor v2 — design spec
 
-Status: in progress (September 5, 2026). This is the single source of truth for
-the v2 overhaul. Four implementation agents build against it in parallel, each
-owning a disjoint set of files (section 9). Where this spec is silent, keep the
+Status: completed historical implementation spec (September 5, 2026). Four
+implementation agents built the v2 overhaul against disjoint ownership. The
+current schema is v3; where this spec is silent, keep the
 v1 behaviour and the v1 house rules.
 
 ## 0. Why

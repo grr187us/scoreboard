@@ -17,9 +17,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Final, Mapping
 
-from scoreboard.domain.clocks import PLAY_CLOCK_PRESETS, SELECTABLE_EVENT_PHASES
+from scoreboard.domain.clocks import (
+    PLAY_CLOCK_PRESETS,
+    SELECTABLE_EVENT_PHASES,
+    STATUS_CLOCK_PRESETS,
+)
 from scoreboard.domain.field_assistant import FieldAction
 from scoreboard.domain.state import (
+    GAME_STATUS_LABELS,
     MAX_DISTANCE,
     MAX_DOWN,
     MAX_SCORE,
@@ -83,6 +88,15 @@ class CommandType(str, Enum):
     #: One atomic Field Assistant result.  It is intentionally not composed
     #: from the manual football commands, so observers never see a half-play.
     FINALIZE_FIELD_ACTION = "finalize_field_action"
+    #: F3: the crowd-facing status word and its stoppage countdown. Neither
+    #: undoable nor a barrier -- see neither UNDOABLE_COMMANDS nor
+    #: NON_UNDOABLE_COMMANDS below -- exactly like the clock commands, because
+    #: this is presentation, not a scoring or lifecycle fact
+    #: (.scratch/f3-i4/DESIGN.md).
+    SET_GAME_STATUS = "set_game_status"
+    CLEAR_GAME_STATUS = "clear_game_status"
+    STATUS_CLOCK_START = "status_clock_start"
+    STATUS_CLOCK_STOP = "status_clock_stop"
 
 
 # --- Error codes -----------------------------------------------------------
@@ -115,10 +129,23 @@ INVALID_TIMEOUT_TARGET: Final[str] = "INVALID_TIMEOUT_TARGET"
 INVALID_FIELD_ACTION: Final[str] = "INVALID_FIELD_ACTION"
 TIMEOUT_BELOW_ZERO: Final[str] = "TIMEOUT_BELOW_ZERO"
 TIMEOUT_ABOVE_MAXIMUM: Final[str] = "TIMEOUT_ABOVE_MAXIMUM"
+INVALID_GAME_STATUS: Final[str] = "INVALID_GAME_STATUS"
+INVALID_STATUS_CLOCK_PRESET: Final[str] = "INVALID_STATUS_CLOCK_PRESET"
 
 #: A timeout correction is +1 or -1 only, mirroring how a single mis-click is
 #: corrected elsewhere; a larger swing should be a direct Set instead.
 TIMEOUT_CORRECTION_MAGNITUDE: Final[int] = 1
+
+#: How many reversible transitions the operator can walk back at once (I4).
+#: The service keeps a strictly last-in-first-out stack of these; pushing onto
+#: a full stack drops the oldest entry rather than growing without bound or
+#: refusing the operator's next scoring correction. Twenty was chosen as a
+#: depth no realistic in-order correction burst reaches (a scoring mistake, a
+#: down/distance mistake, and a timeout mistake in the same broken sequence is
+#: already an unusual night) while still comfortably outliving any single
+#: series -- an operator who has made twenty consecutive reversible mistakes
+#: needs a new game, not a longer undo stack.
+MAX_UNDO_DEPTH: Final[int] = 20
 
 #: Commands whose effect a single Undo can reverse (F-014).
 UNDOABLE_COMMANDS: Final[frozenset[CommandType]] = frozenset(
@@ -218,7 +245,14 @@ class EventIntent:
 
 @dataclass(frozen=True, slots=True)
 class UndoEntry:
-    """The single most recent reversible transition, held in memory only."""
+    """One reversible transition.
+
+    The service keeps a bounded stack of these (:data:`MAX_UNDO_DEPTH`), held in
+    memory only: a restart starts with an empty stack, exactly like the single
+    entry this replaced. Nothing here is written to disk, so there is nothing
+    to restore across a crash (see the recovery tests' deliberate "the undo
+    entry is not restored" case).
+    """
 
     command: CommandType
     field: str
@@ -405,6 +439,22 @@ def validate_command(command: Command) -> CommandError | None:
                 f"Timeouts remaining must be between 0 and {MAX_TIMEOUTS}.",
             )
 
+    if command.type is CommandType.SET_GAME_STATUS:
+        if command.label not in GAME_STATUS_LABELS:
+            return CommandError(
+                INVALID_GAME_STATUS,
+                f"{command.label!r} is not a crowd status. Choose one of: "
+                + ", ".join(GAME_STATUS_LABELS)
+                + ".",
+            )
+        if command.seconds is not None and (
+            not _is_number(command.seconds) or float(command.seconds) not in STATUS_CLOCK_PRESETS
+        ):
+            return CommandError(
+                INVALID_STATUS_CLOCK_PRESET,
+                "The status countdown loads only the 30, 60, or 90-second preset.",
+            )
+
     if command.type is CommandType.FINALIZE_FIELD_ACTION and not isinstance(
         command.action, FieldAction
     ):
@@ -573,6 +623,33 @@ def set_timeouts(team: str, value: int, *, source: str = "operator") -> Command:
     return Command(CommandType.SET_TIMEOUTS, team=team, value=value, source=source)
 
 
+def set_game_status(
+    label: str, *, seconds: float | None = None, source: str = "operator"
+) -> Command:
+    """Raise a crowd status word; optionally load and start its countdown.
+
+    Supplying ``seconds`` loads that preset and starts the countdown in the
+    same revision (the ``play_clock_preset_start`` precedent) -- one press for
+    ``TIMEOUT`` both raises the word and starts its 60-second countdown.
+    """
+
+    return Command(CommandType.SET_GAME_STATUS, label=label, seconds=seconds, source=source)
+
+
+def clear_game_status(*, source: str = "operator") -> Command:
+    """Clear the crowd status word and its countdown together."""
+
+    return Command(CommandType.CLEAR_GAME_STATUS, source=source)
+
+
+def status_clock_start(*, source: str = "operator") -> Command:
+    return Command(CommandType.STATUS_CLOCK_START, source=source)
+
+
+def status_clock_stop(*, source: str = "operator") -> Command:
+    return Command(CommandType.STATUS_CLOCK_STOP, source=source)
+
+
 def finalize_field_action(
     action: FieldAction,
     *,
@@ -598,16 +675,19 @@ __all__ = [
     "INVALID_DOWN",
     "INVALID_EVENT_PHASE",
     "INVALID_FIELD_ACTION",
+    "INVALID_GAME_STATUS",
     "INVALID_PLAY_CLOCK_PRESET",
     "INVALID_POSSESSION",
     "INVALID_QUARTER",
     "INVALID_SCORE_DELTA",
     "INVALID_SCORE_TARGET",
+    "INVALID_STATUS_CLOCK_PRESET",
     "INVALID_TEAM",
     "INVALID_TEAM_NAME",
     "INVALID_TIMEOUT_DELTA",
     "INVALID_TIMEOUT_TARGET",
     "MAX_SCORE",
+    "MAX_UNDO_DEPTH",
     "NON_UNDOABLE_COMMANDS",
     "NOTHING_TO_UNDO",
     "NOT_UNDOABLE",
@@ -631,6 +711,7 @@ __all__ = [
     "FieldAction",
     "UndoEntry",
     "add_score",
+    "clear_game_status",
     "correct_score",
     "end_game",
     "event_countdown_correct",
@@ -656,11 +737,14 @@ __all__ = [
     "set_ball_on",
     "set_distance",
     "set_down",
+    "set_game_status",
     "set_possession",
     "set_quarter",
     "set_score",
     "set_team_name",
     "set_timeouts",
+    "status_clock_start",
+    "status_clock_stop",
     "timeout_correct",
     "timeout_used",
     "undo",

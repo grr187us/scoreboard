@@ -1,5 +1,10 @@
 # Task 8 browser observations
 
+**Historical scope:** These captures document the original Task 8 event screen.
+The current schema-v3 pregame and halftime screens deliberately retain team
+names and scores beneath the countdown, so the statements and images below are
+pre-C3 evidence, not the current spectator layout contract.
+
 September 4, 2026. Captured with installed headless Microsoft Edge 152.0.4191.62
 using the bundled file pages and Python-produced view models. HTTP requests were
 blocked. This is browser evidence, not a physical LED or two-display result.

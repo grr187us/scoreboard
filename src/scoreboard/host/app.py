@@ -38,7 +38,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 import webview
 
@@ -59,7 +59,9 @@ from scoreboard.host.bridge import (
     spectator_view_model,
 )
 from scoreboard.host.layout_bridge import LayoutEditorBridge, PresentationLayouts
+from scoreboard.host.publisher import WindowPublisher
 from scoreboard.host.startup import StartupBridge
+from scoreboard.host.teams import TeamPresets
 from scoreboard.host.displays import (
     MATCH_CHOSEN,
     MATCH_DEFAULT,
@@ -114,6 +116,23 @@ TEST_SPECTATOR_HEIGHT: int = 360
 #: the same dead ball, and slow enough that it is one Windows call per eight
 #: refreshes rather than one per refresh.
 DISPLAY_WATCH_INTERVAL_SECONDS: float = 2.0
+
+
+class _PublishBatch(NamedTuple):
+    """One immutable snapshot built under the command lock, delivered without it.
+
+    C4: the tick and every accepted command each build one of these -- a
+    sequence number, the revision the operator view carried, and the two
+    formatted views -- while holding :attr:`ScoreboardApplication._command_lock`
+    briefly, then hand it to :meth:`ScoreboardApplication._deliver` after the
+    lock is released. A stalled window can then only ever block delivery of
+    the *next* batch, never a command or the refresh loop.
+    """
+
+    seq: int
+    revision: int
+    operator_view: dict[str, Any]
+    spectator_view: dict[str, Any]
 
 
 def windows_device_names() -> list[str | None]:
@@ -188,6 +207,10 @@ class ScoreboardApplication:
         # presentation layout is a host concern, not game state, so it must
         # survive across a recovered/new-game choice untouched (spec 6.2).
         self.layouts = PresentationLayouts(self.paths, diagnostics=self.diagnostics)
+        # Saved teams are the same kind of thing (F4): a laptop preference in
+        # its own file, never game state. Applying one is an ordinary
+        # ``set_team_name`` command through the bridge.
+        self.teams = TeamPresets(self.paths, diagnostics=self.diagnostics)
         self._push: Callable[[str, dict[str, Any]], None] | None = None
         # WindowHost owns this optional surface.  Keeping the predicate here
         # means normal two-window application tests do not receive a third
@@ -197,6 +220,11 @@ class ScoreboardApplication:
         self._command_lock = threading.RLock()
         self._stopping = threading.Event()
         self._refresh: threading.Thread | None = None
+        # C4: a batch's delivery order guard, separate from the command lock so
+        # a slow delivery never blocks the next command from being built.
+        self._publish_seq = 0
+        self._publish_lock = threading.Lock()
+        self._last_delivered_key: tuple[int, int] | None = None
 
     # --- The operator's startup choice (P-005) ------------------------------
 
@@ -244,21 +272,30 @@ class ScoreboardApplication:
             lock=self._command_lock,
             on_accepted=self._publish,
             layouts=self.layouts,
+            teams=self.teams,
         )
         return self.bridge
 
     # --- Refresh loop -------------------------------------------------------
 
     def tick(self, now: float | None = None) -> dict[str, Any] | None:
-        """One refresh: checkpoint if the displayed second changed, then push."""
+        """One refresh: checkpoint if the displayed second changed, then push.
+
+        C4: only ``_watch_displays()``, ``bridge.tick()``, and building the
+        immutable batch happen under ``_command_lock``. Delivery -- which can
+        end up at a webview's unboundedly blocking ``evaluate_js``
+        (ARCHITECTURE.md §8) -- runs after the lock is released, so a stalled
+        window can never hang the command every other control needs.
+        """
 
         if self.bridge is None:
             return None
         with self._command_lock:
             self._watch_displays()
             view = self.bridge.tick(now)
-            self._publish(view)
-            return view
+            batch = self._snapshot(view)
+        self._deliver(batch)
+        return view
 
     def set_display_watch(self, watch: Callable[[], None] | None) -> None:
         """Install the host's periodic check for a display appearing or going.
@@ -322,17 +359,67 @@ class ScoreboardApplication:
         self._field_assistant_active = active
 
     def _publish(self, operator_view: dict[str, Any]) -> None:
+        """Publish one operator view, e.g. from the bridge's ``on_accepted``.
+
+        C4: the bridge now calls ``on_accepted`` -- this method -- *after*
+        releasing its own lock (the same ``RLock`` as ``_command_lock``), so
+        ``_snapshot`` below takes it only briefly to build the batch before
+        this method delivers outside it.
+        """
+
+        if self.bridge is None:
+            return
+        batch = self._snapshot(operator_view)
+        self._deliver(batch)
+
+    def _snapshot(self, operator_view: dict[str, Any]) -> _PublishBatch:
+        """Build one immutable batch under the command lock. Delivers nothing."""
+
+        with self._command_lock:
+            self._publish_seq += 1
+            spectator_view = (
+                {} if self.bridge is None else self.bridge.spectator_snapshot()
+            )
+            revision = (
+                operator_view.get("revision", 0)
+                if isinstance(operator_view, dict)
+                else 0
+            )
+            return _PublishBatch(self._publish_seq, revision, operator_view, spectator_view)
+
+    def _deliver(self, batch: _PublishBatch) -> None:
+        """Push one batch to the windows, outside the command lock.
+
+        ``_publish_lock`` guards only the small ordering check-and-update
+        below, never the calls into ``self._push``: those must never block
+        behind another delivery, because ``self._push`` is exactly the hook a
+        directly-installed test publisher (or, in production, a window still
+        mid-``evaluate_js``) can make slow, and this method itself runs inside
+        a command's ``on_accepted`` as often as it runs from the refresh tick.
+        Holding a lock across it would put a slow window back in the path of
+        the very thing C4 exists to free. A batch whose ``(revision, seq)`` is
+        behind the last one actually delivered is dropped before any push
+        happens: a newer snapshot already went out, and clock refreshes at the
+        same revision still have strictly increasing ``seq``, so nothing in
+        order is ever lost.
+        """
+
         if self._push is None or self.bridge is None:
             return
+        with self._publish_lock:
+            key = (batch.revision, batch.seq)
+            if self._last_delivered_key is not None and key < self._last_delivered_key:
+                return
+            self._last_delivered_key = key
         try:
-            self._push("operator", operator_view)
+            self._push("operator", batch.operator_view)
         except Exception as exc:  # noqa: BLE001
             self.diagnostics.unhandled_error(context="operator_push", error=exc)
         try:
-            self._push("spectator", self.bridge.spectator_snapshot())
+            self._push("spectator", batch.spectator_view)
         except Exception as exc:  # noqa: BLE001
-            # A spectator that cannot render is a display problem, not a game
-            # problem: report it, mark the display, and keep the clocks running.
+            # A spectator that cannot render is a display problem, not a
+            # game problem: report it, mark the display, keep the clocks.
             self.diagnostics.unhandled_error(context="spectator_push", error=exc)
             self.bridge.display_closed(f"The display stopped responding: {exc}")
         if self._field_assistant_active is not None and self._field_assistant_active():
@@ -340,7 +427,7 @@ class ScoreboardApplication:
                 # Same complete operator snapshot the primary controls get;
                 # the helper compares its base revision and visibly marks an
                 # outstanding draft stale instead of merging it.
-                self._push("field_assistant", operator_view)
+                self._push("field_assistant", batch.operator_view)
             except Exception as exc:  # noqa: BLE001 - optional window only
                 self.diagnostics.unhandled_error(context="field_assistant_push", error=exc)
 
@@ -443,6 +530,17 @@ class WindowHost:
             monotonic=monotonic or time.monotonic,
             interval=DISPLAY_WATCH_INTERVAL_SECONDS,
         )
+        # C4: the window boundary is where a stalled WebView2 UI thread can
+        # actually block (``evaluate_js`` has no bounded primitive underneath
+        # it), so it is the one place a bounded, latest-wins delivery thread
+        # belongs. Not yet started: every existing test drives ``_push``
+        # (now ``offer``) synchronously through the inline path.
+        self._publisher = WindowPublisher(
+            self._deliver,
+            on_stall=self._on_publish_stall,
+            on_recovered=self._on_publish_recovered,
+            monotonic=monotonic or time.monotonic,
+        )
         application.set_publisher(self._push)
         application.set_display_watch(self.check_displays)
         application.reopen_spectator = self.reopen_spectator  # type: ignore[method-assign]
@@ -526,6 +624,11 @@ class WindowHost:
                 "Use Reopen Display or pick a display.",
                 needs_selection=True,
             )
+        # Started before the tick loop, so the very first refresh already has
+        # somewhere bounded to hand its view models -- otherwise an early tick
+        # would deliver inline, indistinguishable from the not-yet-started
+        # path, right up until the moment this line ran.
+        self._publisher.start()
         self.application.start_refresh()
 
     def _operator_closing(self) -> None:
@@ -540,6 +643,9 @@ class WindowHost:
             self.layout_window = None
             self.field_assistant_window = None
         self.application.stop_refresh()
+        # Bounded: never lets a stalled window keep this shutdown waiting past
+        # its timeout (WindowPublisher.stop() never raises either).
+        self._publisher.stop()
         if spectator is not None:
             spectator.destroy()
         if test_window is not None:
@@ -981,6 +1087,40 @@ class WindowHost:
         return self.application.bridge.spectator_snapshot()
 
     def _push(self, window_name: str, view: dict[str, Any]) -> None:
+        """The ``application.set_publisher`` hook: hand off, never block.
+
+        C4: the actual ``evaluate_js`` call -- the one place a stalled WebView2
+        UI thread can block unboundedly -- happens in :meth:`_deliver`, on the
+        publisher's own thread once :meth:`_operator_loaded` has started it.
+        Before that (and in every test that never starts it), ``offer``
+        delivers inline, so this stays exactly as synchronous as the old
+        ``_push`` for every test built around a fake, recording window.
+        """
+
+        self._publisher.offer(window_name, view)
+
+    def _on_publish_stall(self, window_name: str, elapsed: float) -> None:
+        self.application.diagnostics.note(
+            "PUBLISH_STALLED", window=window_name, seconds=round(elapsed, 1)
+        )
+
+    def _on_publish_recovered(self, window_name: str, elapsed: float) -> None:
+        self.application.diagnostics.note(
+            "PUBLISH_RECOVERED", window=window_name, seconds=round(elapsed, 1)
+        )
+
+    def _deliver(self, window_name: str, view: dict[str, Any]) -> None:
+        """Actually push one view model into a window's JavaScript.
+
+        Runs on the publisher's delivery thread once started -- never under
+        ``_command_lock`` -- so every failure a window can produce is handled
+        here rather than propagating to a caller that has moved on. A failed
+        operator or spectator push used to reach
+        ``ScoreboardApplication._publish``'s own try/except; now that this
+        runs off that call stack entirely, the same two behaviours (report,
+        and for the spectator mark the display closed) live here instead.
+        """
+
         with self._lock:
             if window_name == "operator":
                 operator = self.operator_window
@@ -999,9 +1139,40 @@ class WindowHost:
                 field_assistant = None
         script = f"window.applyView && window.applyView({_json(view)})"
         if operator is not None and operator.events.loaded.is_set():
-            operator.evaluate_js(script)
+            try:
+                operator.evaluate_js(script)
+            except Exception as exc:  # noqa: BLE001 - the boundary the publisher exists for
+                self.application.diagnostics.unhandled_error(
+                    context="operator_push", error=exc
+                )
         if spectator is not None and spectator.events.loaded.is_set():
-            spectator.evaluate_js(script)
+            try:
+                spectator.evaluate_js(script)
+            except Exception as exc:  # noqa: BLE001
+                # A spectator that cannot render is a display problem, not a
+                # game problem: report it, mark the display, keep the clocks.
+                self.application.diagnostics.unhandled_error(
+                    context="spectator_push", error=exc
+                )
+                # Forget the window *before* reporting, exactly as the test and
+                # helper branches below do. ``spectator_closed`` publishes a
+                # fresh view, and that publish must find no spectator to push
+                # to: pushing again into the same dead window would fail
+                # again, report again, and loop -- recursively while delivery
+                # is inline, and as a spinning drain once the publisher thread
+                # runs. The operator reopens it from the Display drawer.
+                with self._lock:
+                    if self.spectator_window is spectator:
+                        self.spectator_window = None
+                try:
+                    spectator.destroy()
+                except Exception as destroy_exc:  # noqa: BLE001 - best effort only
+                    self.application.diagnostics.unhandled_error(
+                        context="destroy_spectator", error=destroy_exc
+                    )
+                self.application.spectator_closed(
+                    f"The display stopped responding: {exc}"
+                )
         if test_window is not None and test_window.events.loaded.is_set():
             try:
                 test_window.evaluate_js(script)

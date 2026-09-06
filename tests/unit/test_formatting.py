@@ -16,7 +16,9 @@ from scoreboard.domain.formatting import (
     format_down_and_distance,
     format_event_countdown,
     format_game_clock,
+    format_game_status,
     format_play_clock,
+    format_status_clock,
 )
 
 
@@ -117,6 +119,52 @@ class EventCountdownDisplayTests(unittest.TestCase):
         for seconds, expected in cases:
             with self.subTest(seconds=seconds):
                 self.assertEqual(format_event_countdown(seconds), expected)
+
+
+class GameStatusDisplayTests(unittest.TestCase):
+    """F3: the crowd-facing status word is a pass-through, blank when unset."""
+
+    def test_every_label_passes_through_unchanged(self) -> None:
+        for label in ("FLAG", "TIMEOUT", "INJURY", "DELAY"):
+            with self.subTest(label=label):
+                self.assertEqual(format_game_status(label), label)
+
+    def test_none_blanks_the_display(self) -> None:
+        self.assertEqual(format_game_status(None), "")
+
+
+class StatusClockDisplayTests(unittest.TestCase):
+    """F3: rounded-up M:SS, same rounding rule as format_game_clock."""
+
+    def test_documented_boundaries(self) -> None:
+        cases = [
+            (90.0, "1:30"),
+            (60.0, "1:00"),
+            (30.0, "0:30"),
+            (0.01, "0:01"),
+            (0.0, "0:00"),
+        ]
+        for seconds, expected in cases:
+            with self.subTest(seconds=seconds):
+                self.assertEqual(format_status_clock(seconds, blank_at_zero=False), expected)
+
+    def test_rounds_up_like_the_game_clock(self) -> None:
+        # A running countdown must never show a value the operator has not
+        # reached yet: 59.9 still reads "1:00" until it truly reaches 59.
+        self.assertEqual(format_status_clock(59.9, blank_at_zero=False), "1:00")
+        self.assertEqual(format_status_clock(59.0, blank_at_zero=False), "0:59")
+
+    def test_blank_when_cleared(self) -> None:
+        self.assertEqual(format_status_clock(0.0, blank_at_zero=True), "")
+
+    def test_zero_after_natural_expiry_is_not_blank(self) -> None:
+        # A countdown that ran itself down to zero stays visible at "0:00";
+        # only clear_game_status blanks it (blank_at_zero=False here mirrors
+        # status_clock_cleared staying False on natural expiry).
+        self.assertEqual(format_status_clock(0.0, blank_at_zero=False), "0:00")
+
+    def test_blank_at_zero_does_not_blank_a_nonzero_value(self) -> None:
+        self.assertEqual(format_status_clock(0.01, blank_at_zero=True), "0:01")
 
 
 class RoundingPrimitiveTests(unittest.TestCase):

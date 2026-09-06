@@ -1,6 +1,6 @@
 # Field Assistant Rules, Workflow, and Test Matrix
 
-**Status:** Implemented September 5, 2026, with the amendments recorded below (see "Amendments"). Native Windows/WebView2 rendering of the helper window, the 1366×768-at-100%/125% visual check, and a live operator rehearsal remain outstanding; see `PROJECT_ROADMAP.md` "Field Assistant" and `docs/UX_AND_LAYOUT.md` §11.5.
+**Status:** Implemented September 5, 2026, with the amendments recorded below. Native pywebview/WebView2 rendering and the press-by-press flow were verified on the development host. Target-laptop 1366×768-at-100%/125% visual evidence and a live volunteer rehearsal remain outstanding; see `PROJECT_ROADMAP.md` "Field Assistant" and `docs/UX_AND_LAYOUT.md` §11.5.
 
 ## Amendments
 
@@ -233,4 +233,4 @@ The window shows one panel at a time, chosen from the authoritative snapshot (se
 
 ## 9. Definition of done for implementation
 
-The feature is ready for rehearsal only when the pure rule matrix, composite-command/persistence tests, stale-draft tests, existing-manual-control regression tests, UI window tests, recovery tests, and a multi-quarter rehearsal all pass. Native Windows/WebView2 and live operator rehearsal remain required evidence before any game-day use.
+The pure rule matrix, composite-command/persistence tests, stale-draft tests, existing-manual-control regression tests, UI window tests, recovery tests, multi-quarter rehearsal, and development-host WebView2 harness pass. Target-laptop scaling/layout evidence and a live operator rehearsal remain required before game-day use.

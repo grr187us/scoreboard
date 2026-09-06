@@ -11,6 +11,7 @@ from scoreboard.domain.state import (
     MAX_EVENT_COUNTDOWN_SECONDS,
     MAX_GAME_CLOCK_SECONDS,
     MAX_PLAY_CLOCK_SECONDS,
+    MAX_STATUS_CLOCK_SECONDS,
     ClockValue,
     GameState,
     StateValidationError,
@@ -18,6 +19,14 @@ from scoreboard.domain.state import (
 
 DEFAULT_QUARTER_LENGTH_SECONDS: Final[float] = MAX_GAME_CLOCK_SECONDS
 PLAY_CLOCK_PRESETS: Final[tuple[float, ...]] = (25.0, 40.0)
+
+#: F3's crowd-facing status countdown offers a short, medium, and long
+#: stoppage timer -- 30 seconds for a quick administrative pause, 60 for a
+#: standard timeout (the ``TIMEOUT`` crowd button's one-press preset), and 90
+#: for a longer injury/delay stoppage. Deliberately not the play clock's own
+#: 25/40 presets: this is a different, independent clock (see StatusCountdown
+#: below and .scratch/f3-i4/DESIGN.md).
+STATUS_CLOCK_PRESETS: Final[tuple[float, ...]] = (30.0, 60.0, 90.0)
 
 #: The 30:00 `KICKOFF IN` countdown and the 15:00 `UNTIL SECOND HALF`
 #: countdown (F-025). `WARMUP` is not selectable: it is the second part of the
@@ -76,6 +85,25 @@ def _validate_preset(seconds: float) -> float:
     if numeric not in PLAY_CLOCK_PRESETS:
         raise StateValidationError(
             f"play clock preset must be one of {PLAY_CLOCK_PRESETS!r}"
+        )
+    return numeric
+
+
+def _validate_status_preset(seconds: float) -> float:
+    """A sibling of :func:`_validate_preset` for the status clock's own presets.
+
+    Kept separate rather than widening the play clock's validator: the two
+    clocks' accepted values are unrelated facts that happen to both be
+    "seconds," and a future change to one set must never silently affect the
+    other.
+    """
+
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+        raise StateValidationError("status clock preset must be a number")
+    numeric = float(seconds)
+    if numeric not in STATUS_CLOCK_PRESETS:
+        raise StateValidationError(
+            f"status clock preset must be one of {STATUS_CLOCK_PRESETS!r}"
         )
     return numeric
 
@@ -538,6 +566,190 @@ class PlayClock:
 
 
 @dataclass(frozen=True, slots=True)
+class StatusCountdown:
+    """Immutable stoppage-timer engine for F3's crowd-facing status countdown.
+
+    Modelled directly on :class:`PlayClock`: the same frozen dataclass, the
+    same monotonic-deadline math, the same ``revision`` bookkeeping. It is
+    deliberately independent of the game and play clocks -- no method here
+    reads or returns either -- and it deliberately has no ``correct`` and no
+    ``reset``: the operator reloads a preset instead of editing this one's
+    current time or restoring a remembered value (.scratch/f3-i4/DESIGN.md).
+    """
+
+    value: ClockValue = ClockValue(0.0, False, MAX_STATUS_CLOCK_SECONDS)
+    monotonic_clock: Callable[[], float] = field(
+        default_factory=lambda: time.monotonic,
+        repr=False,
+    )
+    revision: int = 0
+
+    def __post_init__(self) -> None:
+        if self.value.maximum_seconds <= 0:
+            raise StateValidationError("clock maximum_seconds must be positive")
+        if not isinstance(self.revision, int) or self.revision < 0:
+            raise StateValidationError("clock revision must be a non-negative integer")
+        if not callable(self.monotonic_clock):
+            raise StateValidationError("monotonic_clock must be callable")
+
+    @classmethod
+    def from_state(
+        cls,
+        state: GameState,
+        *,
+        monotonic_clock: Callable[[], float] | None = None,
+    ) -> "StatusCountdown":
+        if not isinstance(state, GameState):
+            raise TypeError("state must be a GameState")
+        clock = state.status_clock
+        return cls(
+            value=ClockValue(
+                seconds=clock.seconds,
+                running=clock.running,
+                maximum_seconds=clock.maximum_seconds,
+                deadline_monotonic=clock.deadline_monotonic,
+                started_at_monotonic=clock.started_at_monotonic,
+            ),
+            monotonic_clock=(time.monotonic if monotonic_clock is None else monotonic_clock),
+        )
+
+    @property
+    def seconds(self) -> float:
+        return self.remaining_at()
+
+    @property
+    def running(self) -> bool:
+        return self.value.running
+
+    @property
+    def maximum_seconds(self) -> float:
+        return self.value.maximum_seconds
+
+    @property
+    def expired(self) -> bool:
+        return self.remaining_at() <= 0.0
+
+    def current_value(self, now: float | None = None) -> ClockValue:
+        current_now = _coerce_now(now, self.monotonic_clock)
+        if not self.value.running or self.value.deadline_monotonic is None:
+            return ClockValue(
+                seconds=max(0.0, min(self.maximum_seconds, float(self.value.seconds))),
+                running=False if self.value.seconds <= 0.0 else self.value.running,
+                maximum_seconds=self.maximum_seconds,
+                deadline_monotonic=None,
+                started_at_monotonic=None,
+            )
+        remaining = max(0.0, min(self.maximum_seconds, self.value.deadline_monotonic - current_now))
+        if remaining <= 0.0:
+            return ClockValue(
+                seconds=0.0,
+                running=False,
+                maximum_seconds=self.maximum_seconds,
+                deadline_monotonic=None,
+                started_at_monotonic=None,
+            )
+        return ClockValue(
+            seconds=remaining,
+            running=True,
+            maximum_seconds=self.maximum_seconds,
+            deadline_monotonic=self.value.deadline_monotonic,
+            started_at_monotonic=self.value.started_at_monotonic,
+        )
+
+    def remaining_at(self, now: float | None = None) -> float:
+        return self.current_value(now).seconds
+
+    def start(self, *, now: float | None = None) -> "StatusCountdown":
+        current_now = _coerce_now(now, self.monotonic_clock)
+        if self.value.running:
+            return self
+        remaining = self.remaining_at(current_now)
+        next_value = ClockValue(
+            seconds=remaining,
+            running=True,
+            maximum_seconds=self.maximum_seconds,
+            deadline_monotonic=current_now + remaining,
+            started_at_monotonic=current_now,
+        )
+        if remaining <= 0.0:
+            next_value = ClockValue(
+                seconds=0.0,
+                running=False,
+                maximum_seconds=self.maximum_seconds,
+                deadline_monotonic=None,
+                started_at_monotonic=None,
+            )
+        return replace(self, value=next_value, revision=self.revision + 1)
+
+    def stop(self, *, now: float | None = None) -> "StatusCountdown":
+        current_now = _coerce_now(now, self.monotonic_clock)
+        if not self.value.running:
+            return self
+        remaining = self.remaining_at(current_now)
+        next_value = ClockValue(
+            seconds=remaining,
+            running=False,
+            maximum_seconds=self.maximum_seconds,
+            deadline_monotonic=None,
+            started_at_monotonic=None,
+        )
+        return replace(self, value=next_value, revision=self.revision + 1)
+
+    def load_preset(self, seconds: float, *, now: float | None = None) -> "StatusCountdown":
+        """Load a 30/60/90-second preset while stopped; a separate Start counts down."""
+
+        preset = _validate_status_preset(seconds)
+        _coerce_now(now, self.monotonic_clock)
+        next_value = ClockValue(
+            seconds=preset,
+            running=False,
+            maximum_seconds=self.maximum_seconds,
+            deadline_monotonic=None,
+            started_at_monotonic=None,
+        )
+        return replace(self, value=next_value, revision=self.revision + 1)
+
+    def clear(self, *, now: float | None = None) -> "StatusCountdown":
+        """Deliberately stop and blank the countdown (no preset remains loaded)."""
+
+        _coerce_now(now, self.monotonic_clock)
+        next_value = ClockValue(
+            seconds=0.0,
+            running=False,
+            maximum_seconds=self.maximum_seconds,
+            deadline_monotonic=None,
+            started_at_monotonic=None,
+        )
+        return replace(self, value=next_value, revision=self.revision + 1)
+
+    def expire(self, *, now: float | None = None) -> "StatusCountdown":
+        current_now = _coerce_now(now, self.monotonic_clock)
+        if self.remaining_at(current_now) <= 0.0:
+            if self.value.running:
+                return replace(
+                    self,
+                    value=ClockValue(
+                        seconds=0.0,
+                        running=False,
+                        maximum_seconds=self.maximum_seconds,
+                        deadline_monotonic=None,
+                        started_at_monotonic=None,
+                    ),
+                    revision=self.revision + 1,
+                )
+            return self
+        return self.stop(now=current_now)
+
+    def apply_to_state(self, state: GameState) -> GameState:
+        if not isinstance(state, GameState):
+            raise TypeError("state must be a GameState")
+        return state.evolve(status_clock=self.to_clock_value())
+
+    def to_clock_value(self, *, now: float | None = None) -> ClockValue:
+        return self.current_value(now)
+
+
+@dataclass(frozen=True, slots=True)
 class EventCountdown:
     """The pregame and interval countdown engine (F-025, F-027).
 
@@ -976,10 +1188,12 @@ __all__ = [
     "EVENT_COUNTDOWN_LENGTHS",
     "PLAY_CLOCK_PRESETS",
     "SELECTABLE_EVENT_PHASES",
+    "STATUS_CLOCK_PRESETS",
     "WARMUP_THRESHOLD_SECONDS",
     "EventCountdown",
     "GameClock",
     "PlayClock",
+    "StatusCountdown",
     "clear_play_clock",
     "clear_play_clock_on_game_clock_start",
     "clear_play_clock_on_game_clock_stop",

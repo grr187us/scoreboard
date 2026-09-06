@@ -53,7 +53,8 @@
     "game_clock_label", "game_clock_value",
     "quarter", "down", "distance",
     "play_clock_label", "play_clock_value", "ball_on",
-    "home_timeouts", "away_timeouts"
+    "home_timeouts", "away_timeouts",
+    "status_message", "status_clock"
   ];
 
   /* Dotted path into the spectator view model. null means a static label
@@ -73,7 +74,9 @@
     "play_clock_value": "clocks.play.display",
     "ball_on": "football.ball_on_display",
     "home_timeouts": "football.home_timeouts_display",
-    "away_timeouts": "football.away_timeouts_display"
+    "away_timeouts": "football.away_timeouts_display",
+    "status_message": "status.display",
+    "status_clock": "status.clock_display"
   };
 
   /* Application-controlled label text. Operators may style/move/hide these
@@ -88,7 +91,8 @@
    * rather than drawn as an empty box. */
   var OPTIONAL_WIDGET_IDS = [
     "possession", "down", "distance", "ball_on",
-    "home_timeouts", "away_timeouts"
+    "home_timeouts", "away_timeouts",
+    "status_message", "status_clock"
   ];
 
   /* The "event" registry: the pre-game/halftime countdown board (schema v3).
@@ -924,6 +928,54 @@
       "text_align": "right",
       "vertical_align": "middle",
       "font_weight": 400,
+      "z_index": 0,
+      "font_family": "arial",
+      "letter_spacing": 0.0,
+      "text_transform": "none",
+      "text_effect": "none",
+      "background": null,
+      "background_opacity": 1.0,
+      "border_color": null,
+      "border_width": 0.0,
+      "corner_radius": 0.0,
+      "padding": 0.0
+    },
+    "status_message": {
+      "id": "status_message",
+      "visible": true,
+      "x": 0.240,
+      "y": 0.408,
+      "width": 0.160,
+      "height": 0.056,
+      "font_scale": 0.026,
+      "color": "#FFC845",
+      "text_align": "center",
+      "vertical_align": "middle",
+      "font_weight": 800,
+      "z_index": 0,
+      "font_family": "arial",
+      "letter_spacing": 0.0,
+      "text_transform": "none",
+      "text_effect": "none",
+      "background": null,
+      "background_opacity": 1.0,
+      "border_color": null,
+      "border_width": 0.0,
+      "corner_radius": 0.0,
+      "padding": 0.0
+    },
+    "status_clock": {
+      "id": "status_clock",
+      "visible": true,
+      "x": 0.600,
+      "y": 0.408,
+      "width": 0.160,
+      "height": 0.056,
+      "font_scale": 0.026,
+      "color": "#FFC845",
+      "text_align": "center",
+      "vertical_align": "middle",
+      "font_weight": 800,
       "z_index": 0,
       "font_family": "arial",
       "letter_spacing": 0.0,

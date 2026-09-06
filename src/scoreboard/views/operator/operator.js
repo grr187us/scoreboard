@@ -25,6 +25,7 @@
   var dialogTitle = document.getElementById('confirm-title');
   var dialogDetail = document.getElementById('confirm-detail');
   var dialogChange = document.getElementById('confirm-change');
+  var teamsPayload = null; // last api.teams() result, used to prefill Edit
 
   /* --- Rendering -------------------------------------------------------- */
 
@@ -73,9 +74,53 @@
       'The game clock returns to 12:00 and stays stopped.';
 
     renderHealth(model.health);
+    renderCrowdStatus(model);
     renderLastAction(model);
     renderQuarterChoices(model.quarter_labels, model.quarter);
     renderPossession(model.football.possession);
+
+    // Team identity (F4) is carried in every view once the bridge is wired,
+    // but this must never throw against an older view model that does not
+    // have it yet -- both helpers tolerate a missing/undefined identity.
+    var homeIdentity = model.teams.home ? model.teams.home.identity : null;
+    var awayIdentity = model.teams.away ? model.teams.away.identity : null;
+    renderIdentityNow('home', homeIdentity || null);
+    renderIdentityNow('away', awayIdentity || null);
+    renderIdentityStripe('home', homeIdentity || null);
+    renderIdentityStripe('away', awayIdentity || null);
+  }
+
+  /* --- Team identity (F4) ------------------------------------------------ */
+
+  function swatchGradient(identity) {
+    return 'linear-gradient(to right, ' + identity.primary + ' 50%, ' + identity.secondary + ' 50%)';
+  }
+
+  function renderIdentityNow(side, identity) {
+    var swatch = document.getElementById(side + '-identity-swatch');
+    var shortLabel = document.getElementById(side + '-identity-short');
+    if (swatch) {
+      swatch.style.background = identity ? swatchGradient(identity) : '';
+      R.show(swatch, Boolean(identity));
+    }
+    R.setText(shortLabel, identity ? identity.short_name : '');
+  }
+
+  function renderIdentityStripe(side, identity) {
+    var stripe = document.getElementById(side + '-identity-stripe');
+    if (!stripe) {
+      return;
+    }
+    if (identity) {
+      stripe.style.background = identity.primary;
+      stripe.style.borderBottomColor = identity.secondary;
+      R.setText(stripe, identity.short_name);
+    } else {
+      stripe.style.background = '';
+      stripe.style.borderBottomColor = '';
+      R.setText(stripe, '');
+    }
+    R.show(stripe, Boolean(identity));
   }
 
   function renderPossession(possession) {
@@ -95,12 +140,13 @@
 
   function renderHealth(health) {
     var displayChip = document.getElementById('chip-display');
+    var displayDrawer = document.getElementById('display-drawer');
     // Re-read the display list only when the health strip actually changed and
-    // the panel is on screen. Enumerating monitors is a Windows call and this
+    // the drawer is on screen. Enumerating monitors is a Windows call and this
     // function runs four times a second.
     if (health.display.label !== lastDisplayLabel) {
       lastDisplayLabel = health.display.label;
-      if (!document.getElementById('corrections').hidden) {
+      if (displayDrawer && !displayDrawer.hidden) {
         refreshDisplays();
       }
     }
@@ -108,6 +154,16 @@
     R.setFlag(displayChip, 'bad', !health.display.open);
     R.setFlag(displayChip, 'good', health.display.open);
     R.show(document.getElementById('reopen-display'), health.display.can_reopen);
+
+    // The drawer's own status row mirrors the strip exactly, so the display
+    // panel never disagrees with what the health strip already said.
+    var drawerChip = document.getElementById('drawer-display-chip');
+    R.setText(drawerChip, health.display.label);
+    R.setFlag(drawerChip, 'bad', !health.display.open);
+    R.setFlag(drawerChip, 'good', health.display.open);
+    R.setText(document.getElementById('display-detail'),
+      health.display.detail || (health.display.open ? health.display.target : '') || '');
+    R.show(document.getElementById('drawer-reopen-display'), health.display.can_reopen);
 
     var saveChip = document.getElementById('chip-save');
     R.setText(saveChip, health.persistence.label);
@@ -124,7 +180,84 @@
   function renderLastAction(current) {
     R.setText(document.getElementById('last-action'),
       current.last_action ? current.last_action.label : 'nothing yet');
-    document.getElementById('undo').disabled = !current.can_undo;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-command="undo"]'),
+      function (button) { button.disabled = !current.can_undo; });
+
+    // How many further Undos are waiting behind the one named in the strip
+    // (I4). An older view model with no undo_history is treated as depth 0
+    // rather than throwing, exactly like the team-identity fields above.
+    var depth = typeof current.undo_depth === 'number' ? current.undo_depth : 0;
+    var badge = document.getElementById('undo-depth');
+    if (badge) {
+      R.setText(badge, '×' + depth);
+      // At 0 and 1 the badge says nothing the strip has not already said.
+      badge.hidden = depth < 2;
+    }
+    renderHistory(current.undo_history || []);
+  }
+
+  /**
+   * The undo-history list (I4). Every row is a label Python already rendered;
+   * this function chooses no wording and reverses no value. The first row is
+   * the one the next Undo reverses, which is the whole reason the list exists
+   * -- an operator can see what a second Undo would give up before spending
+   * the first (U-009).
+   */
+  function renderHistory(entries) {
+    var host = document.getElementById('history-list');
+    if (!host) {
+      return;
+    }
+    host.replaceChildren();
+    if (!entries.length) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = 'Nothing to undo.';
+      host.appendChild(empty);
+      return;
+    }
+    entries.forEach(function (entry, index) {
+      var row = document.createElement('li');
+      row.textContent = entry.label;
+      if (index === 0) {
+        row.classList.add('next');
+        var mark = document.createElement('span');
+        mark.className = 'next-mark';
+        mark.textContent = ' — next Undo';
+        row.appendChild(mark);
+      }
+      host.appendChild(row);
+    });
+  }
+
+  /**
+   * The crowd-facing message row (F3). Like every other control on this page
+   * it renders what Python sent and computes nothing: the chip text is
+   * `status.display`, the countdown is `status.clock_display`, and which
+   * button is lit comes from `status.label`.
+   */
+  function renderCrowdStatus(current) {
+    var status = current.status;
+    if (!status) {
+      return; // an older view model with no status block; nothing to draw
+    }
+    var chip = document.getElementById('crowd-status');
+    R.setText(chip, status.display || '—');
+    R.setFlag(chip, 'active', !!status.active);
+
+    // The raised message is marked the way an already-true clock action is:
+    // de-emphasised, never hidden, so every message stays one press away.
+    ['FLAG', 'TIMEOUT', 'INJURY', 'DELAY'].forEach(function (label) {
+      var button = document.getElementById('crowd-' + label.toLowerCase());
+      if (button) {
+        button.classList.toggle('is-active', status.label === label);
+      }
+    });
+
+    var running = !!(status.clock && status.clock.running);
+    R.setFlag(document.getElementById('crowd-clock'), 'running-status', running);
+    markState('crowd-start', running);
+    markState('crowd-stop', !running);
   }
 
   function renderQuarterChoices(labels, currentLabel) {
@@ -193,6 +326,13 @@
       args.value = null;
     } else if (button.dataset.value !== undefined) {
       args.value = Number(button.dataset.value);
+    }
+    if (button.dataset.name !== undefined) {
+      // A generated "Use for HOME/AWAY" preset button (F4): the name is a
+      // literal from the saved-team library, never computed from anything
+      // else, so it reaches the same validated set_team_name path as typing
+      // it by hand.
+      args.name = button.dataset.name;
     }
     if (button.dataset.argMinutes && button.dataset.argSeconds) {
       var minutes = Number(fieldValue(button.dataset.argMinutes));
@@ -316,6 +456,13 @@
     }
     var request = pending;
     closeDialog();
+    if (request.perform) {
+      // A host-action confirmation (for example, Delete team): there is no
+      // command, revision, or history row -- just a callback to run now that
+      // the operator has confirmed. Cancel already did nothing at all.
+      request.perform();
+      return;
+    }
     var args = Object.assign({}, request.args, { confirmed: true });
     submit(request.command, args, { title: request.title, source: request.source,
       expectedRevision: request.expectedRevision });
@@ -329,7 +476,7 @@
       return;
     }
     if (button.dataset.action) {
-      handleAction(button.dataset.action);
+      handleAction(button.dataset.action, button);
       return;
     }
     if (button.dataset.side) {
@@ -435,6 +582,126 @@
     }
   }
 
+  /* --- Saved teams (F4) --------------------------------------------------- */
+
+  /**
+   * The saved-team library is a laptop preference, not game state, so it is
+   * read on demand like the display list and the data folder rather than
+   * carried in the four-times-a-second view model. `api.teams` may not exist
+   * in every build; the drawer must say so plainly and never throw.
+   */
+  function refreshTeams() {
+    if (!api || !api.teams) {
+      renderTeamsUnavailable();
+      return;
+    }
+    Promise.resolve(api.teams()).then(function (payload) {
+      teamsPayload = payload;
+      renderTeams(payload);
+    }).catch(function () {
+      renderTeamsUnavailable();
+    });
+  }
+
+  function renderTeamsUnavailable() {
+    var host = document.getElementById('team-list');
+    if (host) {
+      host.replaceChildren();
+      var note = document.createElement('span');
+      note.className = 'hint';
+      note.textContent = 'Saved teams are unavailable in this build.';
+      host.appendChild(note);
+    }
+    setTeamFormDisabled(true);
+  }
+
+  function setTeamFormDisabled(disabled) {
+    ['team-name-input', 'team-short-input', 'team-primary-input', 'team-secondary-input']
+      .forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) {
+          field.disabled = disabled;
+        }
+      });
+    var saveButton = document.querySelector('#team-form [data-action="save_team"]');
+    if (saveButton) {
+      saveButton.disabled = disabled;
+    }
+  }
+
+  function renderTeams(payload) {
+    var host = document.getElementById('team-list');
+    if (host) {
+      host.replaceChildren();
+      var teams = (payload && payload.teams) || [];
+      if (!teams.length) {
+        var empty = document.createElement('span');
+        empty.className = 'hint';
+        empty.textContent = 'No saved teams yet. Save the names below.';
+        host.appendChild(empty);
+      } else {
+        teams.forEach(function (team) {
+          host.appendChild(buildTeamRow(team));
+        });
+      }
+    }
+    setTeamFormDisabled(false);
+    if (payload && payload.current) {
+      renderIdentityNow('home', payload.current.home || null);
+      renderIdentityNow('away', payload.current.away || null);
+    }
+  }
+
+  /** One saved-team row: swatch, name/short, apply/edit/delete controls. */
+  function buildTeamRow(team) {
+    var row = document.createElement('div');
+    row.className = 'team-row';
+
+    var swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = swatchGradient(team);
+    row.appendChild(swatch);
+
+    var nameCell = document.createElement('span');
+    nameCell.className = 'team-name-cell';
+    nameCell.appendChild(document.createTextNode(team.name + ' '));
+    var short = document.createElement('small');
+    short.textContent = '(' + team.short_name + ')';
+    nameCell.appendChild(short);
+    row.appendChild(nameCell);
+
+    ['home', 'away'].forEach(function (side) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Use for ' + side.toUpperCase();
+      // An ordinary command control (F4): the existing local-confirm path,
+      // source detection, and revision check all apply unchanged. The name
+      // is the preset's own name, never computed from anything else.
+      button.setAttribute('data-command', 'set_team_name');
+      button.setAttribute('data-team', side);
+      button.setAttribute('data-name', team.name);
+      button.setAttribute('data-confirm', 'local');
+      button.setAttribute('data-confirm-title', 'Change the ' + side.toUpperCase() + ' team name?');
+      row.appendChild(button);
+    });
+
+    var editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.textContent = 'Edit';
+    editButton.setAttribute('data-action', 'edit_team');
+    editButton.setAttribute('data-name', team.name);
+    row.appendChild(editButton);
+
+    var deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.textContent = 'Delete…';
+    deleteButton.setAttribute('data-action', 'delete_team');
+    deleteButton.setAttribute('data-name', team.name);
+    row.appendChild(deleteButton);
+
+    return row;
+  }
+
   /* --- Where the game is saved ------------------------------------------ */
 
   /**
@@ -473,7 +740,70 @@
     refreshDataFolder();
   }
 
-  function handleAction(action) {
+  function handleAction(action, button) {
+    if (action === 'edit_team') {
+      var editName = button && button.dataset.name;
+      var editTeam = teamsPayload && teamsPayload.teams &&
+        teamsPayload.teams.find(function (team) { return team.name === editName; });
+      if (editTeam) {
+        document.getElementById('team-name-input').value = editTeam.name;
+        document.getElementById('team-short-input').value = editTeam.short_name;
+        document.getElementById('team-primary-input').value = editTeam.primary;
+        document.getElementById('team-secondary-input').value = editTeam.secondary;
+      }
+      return;
+    }
+    if (action === 'delete_team') {
+      var deleteName = button && button.dataset.name;
+      if (!deleteName) {
+        return;
+      }
+      openDialog({
+        title: 'Delete team ' + deleteName + '?',
+        detail: 'This removes it from the saved list. It does not change the board.',
+        perform: function () {
+          if (!api || !api.delete_team) {
+            showAlert('Saved teams are unavailable in this build.');
+            return;
+          }
+          Promise.resolve(api.delete_team(deleteName)).then(function (result) {
+            teamsPayload = result;
+            renderTeams(result);
+            showAlert(result.message);
+          }).catch(function (error) {
+            showAlert('That team could not be deleted: ' + error);
+          });
+        }
+      });
+      return;
+    }
+    if (action === 'prefill_team') {
+      var side = button && button.dataset.team;
+      if (side && model && model.teams && model.teams[side]) {
+        document.getElementById('team-name-input').value = model.teams[side].name;
+      }
+      return;
+    }
+    if (action === 'save_team') {
+      if (!api || !api.save_team) {
+        showAlert('Saved teams are unavailable in this build.');
+        return;
+      }
+      var payload = {
+        name: fieldValue('#team-name-input'),
+        short_name: fieldValue('#team-short-input'),
+        primary: fieldValue('#team-primary-input'),
+        secondary: fieldValue('#team-secondary-input')
+      };
+      Promise.resolve(api.save_team(payload)).then(function (result) {
+        teamsPayload = result;
+        renderTeams(result);
+        showAlert(result.message);
+      }).catch(function (error) {
+        showAlert('That team could not be saved: ' + error);
+      });
+      return;
+    }
     if (action === 'choose_data_folder') {
       Promise.resolve(api.choose_data_folder()).then(applyFolderChoice)
         .catch(function (error) {
@@ -536,14 +866,23 @@
       });
       return;
     }
-    if (action === 'open_corrections') {
+    if (action === 'open_teams') {
+      openDrawer('teams-drawer');
+      refreshTeams();
+    } else if (action === 'open_corrections') {
       openDrawer('corrections');
       refreshDataFolder();
+    } else if (action === 'open_display') {
+      openDrawer('display-drawer');
       refreshDisplays();
     } else if (action === 'open_event') {
       openDrawer('event-drawer');
     } else if (action === 'open_field') {
       openDrawer('field-drawer');
+    } else if (action === 'open_history') {
+      // Read-only: the list is already in the rendered view model, so opening
+      // it asks Python for nothing and changes nothing (I4).
+      openDrawer('history-drawer');
     } else if (action === 'open_help') {
       openDrawer('shortcut-help');
     } else if (action === 'open_advanced') {
@@ -555,17 +894,12 @@
         render(view);
         // One click reopens on the saved display whenever it is there. When it
         // is not, no window is opened over the controls; the operator is shown
-        // the display panel instead, because only they can say which screen
+        // the display drawer instead, because only they can say which screen
         // the board should go to (D-002, UX section 6.8).
         if (view && view.health && view.health.display.needs_selection) {
           showAlert(view.health.display.detail || 'Choose a display.');
-          openDrawer('corrections');
-          refreshDataFolder();
+          openDrawer('display-drawer');
           refreshDisplays();
-          var row = document.getElementById('display-row');
-          if (row && row.scrollIntoView) {
-            row.scrollIntoView({block: 'nearest'});
-          }
         }
       });
     }
@@ -580,7 +914,7 @@
   }
 
   function closeDrawers() {
-    ['corrections', 'event-drawer', 'field-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
+    ['corrections', 'display-drawer', 'teams-drawer', 'event-drawer', 'field-drawer', 'history-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
       var drawer = document.getElementById(id);
       if (drawer) {
         drawer.hidden = true;
@@ -620,5 +954,9 @@
   R.whenReady(function (bridge) {
     api = bridge;
     Promise.resolve(api.get_snapshot()).then(render);
+    // So the "Now" swatches are already right before the drawer is first
+    // opened; identity also arrives in every view, so this is belt and
+    // braces (F4).
+    refreshTeams();
   });
 })();

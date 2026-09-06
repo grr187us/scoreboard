@@ -1,9 +1,11 @@
 # Windows packaging and offline launch
 
-**Status:** Task 11 build path implemented and verified on the development host; the clean-machine and network-disabled checks remain open.
-**Last updated:** September 5, 2026
+**Status:** Task 11 build path was verified on the development host. The recorded September 5 build is historical: `dist/` is currently absent and that build predates the C4/C5/F3/F4/I4 working-tree changes. Rebuild before clean-machine, network-disabled, or target-laptop checks.
+**Last updated:** September 6, 2026
 
 This document covers how the offline package is built, what it contains, what the operator's laptop must already have, and which acceptance checks still need a person.
+
+The versions below describe the last verified package build; they are not a claim that a current artifact exists. The September 6 repository audit used a clean temporary Python 3.11.9 development environment for tests. That does not replace the packaged-build record or waive a fresh PyInstaller build.
 
 ## What the package is
 
@@ -89,7 +91,7 @@ This is why an update is safe mid-season: replacing the whole `Scoreboard` folde
 
 The default above is correct but buried several folders deep. An operator who wants the game and its logs somewhere they can find after a game — a folder on the desktop, a shared drive, a USB stick — can choose one:
 
-- **In the application:** open **Corrections**, and use **Choose folder…** in the *Saved to* row at the bottom. **Use standard folder** puts it back.
+- **In the application:** open **Corrections**, and use **Choose folder…** in the *Saved to* row at the bottom. **Use standard folder** puts it back. Display selection is no longer in Corrections; it lives in the separate **Display…** drawer.
 - **Before a season, without starting a game:** run `Scoreboard.exe --choose-data-folder`, or make a second shortcut with that argument. It opens the same picker, starts no game, takes no instance lock, and opens no database.
 
 The choice takes effect **the next time the scoreboard starts**. The running game keeps saving where it already was, because its database connection, its instance lock, and its log handler are all open on that folder; moving them under a live game is a much larger operation than this feature is, and one no operator should trigger by accident mid-quarter. Every dialog says this.

@@ -1,7 +1,7 @@
 # Operator Workflow and Initial Layouts
 
-**Status:** Phase 1 wireframe baseline; visual design is not implemented
-**Last updated:** September 6, 2026 (added the field-status readout, the Field status drawer, the recovery screen's local-time display, and the presentation layout editor; rebuilt the editor as the v2 canvas editor described in section 10; added pre-game and halftime screens to the editor, section 10.9)
+**Status:** Implemented Phase 2 operator, spectator, recovery, Field Assistant, and layout-editor design baseline. Development-host visual and WebView2 checks exist; physical two-display, 1366×768 at 100%/125% scaling, stadium, and volunteer-rehearsal evidence remain open.
+**Last updated:** September 6, 2026 (reconciled I4's 20-entry Undo history, F3's crowd-facing status message and countdown, C5's Display drawer, and Field Assistant evidence)
 
 ## 1. Design intent
 
@@ -36,13 +36,17 @@ Color is supplemental, not the only state signal. Text labels such as `RUNNING`,
 │                         │       12:00        │  GAME                         │
 │                         └────────────────────┘                               │
 │                                                                              │
+│              TIMEOUT                         1:00                            │
+│                                                                              │
 │            1st Quarter                   PLAY CLOCK 40                         │
 │                                                                              │
 │         3rd & 7            ◀ EAGLES            HOME 35                       │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The bottom row was added on September 5, 2026 with the football-state fields (F-060 to F-066). Its four widgets — `down`, `distance`, `possession`, and `ball_on` — are *optional*: the renderer hides a widget whose value is absent from the snapshot rather than drawing an empty box, so a board with no possession set simply omits that indicator. Three of the fifteen widgets default to hidden entirely — the `GAME CLOCK` label and the two timeout counters — because they are a layout choice rather than a required field (D-001); the editor can turn them on. There is no local-time widget on the spectator board: P-010's Eastern-time formatting is for recovery and history timestamps in the operator and startup surfaces.
+The `TIMEOUT` line and the `1:00` beside it are F3's crowd status message and its countdown (added September 6, 2026, section 4.8a of `docs/MVP_REQUIREMENTS.md`). Both are optional widgets sitting in the free band between the scores and the game clock, and both are blank — and so hidden — whenever no status is raised, which is most of a game. They are the board's answer to a stoppage: without them the wall simply froze, still showing the previous down and distance, with nothing to tell the crowd why.
+
+The bottom row was added on September 5, 2026 with the football-state fields (F-060 to F-066). Its four widgets — `down`, `distance`, `possession`, and `ball_on` — are *optional*: the renderer hides a widget whose value is absent from the snapshot rather than drawing an empty box, so a board with no possession set simply omits that indicator. Three of the original fifteen widgets default to hidden entirely — the `GAME CLOCK` label and the two timeout counters — because they are a layout choice rather than a required field (D-001); the editor can turn them on. Two later Status widgets also hide on absent values and are not yet backed by authoritative F3 state. There is no local-time widget on the spectator board: P-010's Eastern-time formatting is for recovery and history timestamps in the operator and startup surfaces.
 
 Visual priorities are scores first, game clock second, team names third, then quarter and play clock. The exact proportions, safe area, font, and color contrast must be tested on a normal monitor and revisited after the stadium HDMI test identifies the real canvas and viewing conditions.
 
@@ -56,14 +60,14 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Test at 1280×720, 1366×768, 1920×1080, and one portrait/narrow mode before stadium dimensions are known.
 - After the HDMI test, add the confirmed resolution/refresh/overscan mode to the test matrix rather than hard-coding a new layout.
 
-**Widget-rendered board (added September 5, 2026).** The board above is now drawn from fifteen individually positioned, sized, and colored widgets (`views/shared/board.js`) rather than a fixed CSS grid, so the arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) was a separate fixed markup until September 6, 2026; it is now drawn from the active layout's **Pre-game** and **Halftime** screens (eight event widgets: both names and scores, phase label, countdown title, countdown, warmup line), whose built-in defaults reproduce the earlier centred arrangement — including the score beneath the countdown, so the wall is never scoreless during an intermission — and which the editor can rearrange like the game board (section 10.9).
+**Widget-rendered board (added September 5, 2026).** The board above is now drawn from seventeen individually positioned, sized, and colored game widgets (`views/shared/board.js`) rather than a fixed CSS grid. Fifteen are the original scoreboard fields; the two Status widgets carry F3's crowd message and its countdown, and render nothing until an operator raises one (section 4.8a). The arrangement shown here is the *built-in default* layout, not a hard-coded one — see section 10 for the editor that changes it. The pregame/halftime event-countdown presentation (`KICKOFF IN…` / `UNTIL SECOND HALF…`) was a separate fixed markup until September 6, 2026; it is now drawn from the active layout's **Pre-game** and **Halftime** screens (eight event widgets: both names and scores, phase label, countdown title, countdown, warmup line), whose built-in defaults reproduce the earlier centred arrangement — including the score beneath the countdown, so the wall is never scoreless during an intermission — and which the editor can rearrange like the game board (section 10.9).
 
 ## 4. Operator-screen wireframe
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ SCOREBOARD CONTROL   GAME: 1st 12:00 STOPPED   PLAY: 40 STOPPED              │
-│ Display: OPEN ✓   State: SAVED ✓   Rev 184                 [Shortcut Help]   │
+│ Display: OPEN ✓  [Reopen Display] [Display…]   State: SAVED ✓   Rev 184     │
 ├──────────────────────────┬──────────────────────────┬────────────────────────┤
 │ HOME                     │ CLOCKS                   │ AWAY                   │
 │ EAGLES              14   │                          │ TIGERS              7  │
@@ -76,9 +80,11 @@ Visual priorities are scores first, game clock second, team names third, then qu
 │                          │ [ 25 LOAD ]   [40 LOAD]│                        │
 │                          │ [ START ]      [ STOP ]  │                        │
 ├──────────────────────────┴──────────────────────────┴────────────────────────┤
-│ QUARTER [◀] 1st [▶]  3rd & 7 · EAGLES 35 · TO 3/2   LAST: Away +6 (7) [UNDO] │
+│ CROWD  [TIMEOUT]  [FLAG][TIMEOUT][INJURY][DELAY][CLEAR]  1:00 [START][STOP]  │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ [ Corrections ▸ ] [ Halftime ▸ ] [ Field ▸ ] [ Field Assistant ]             │
+│ QUARTER [◀] 1st [▶] 3rd & 7 · EAGLES 35 · TO 3/2 LAST: Away +6 (7) ×3 [UNDO] │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ [ Teams ▸ ] [ Corrections ▸ ] [ Halftime ▸ ] [ Field ▸ ] [ Field Assistant ] │
 │ [ Shortcut Help ] [ Advanced ▸ ]                                             │
 │                                              [ End Game… ] [ New Game… ]     │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -92,7 +98,20 @@ Visual priorities are scores first, game clock second, team names third, then qu
 - Show running/stopped text next to each clock; do not rely on color alone. A
   running game clock is green and a running play clock is red as rapid
   supplementary cues.
-- Show the last reversible action and Undo without opening a menu.
+- Show the last reversible action and Undo without opening a menu. The `LAST:`
+  strip is also the button that opens the Undo history (U-009, audit item I4);
+  a small `×N` badge beside it counts the further Undos waiting behind the one
+  named, and is hidden at 0 and 1 where it would say nothing new.
+- **Added September 6, 2026 (audit item F3).** The crowd row sits directly
+  above the quarter bar and is always visible: a chip showing what the wall is
+  currently saying, one button per status message, `CLEAR`, and the status
+  countdown with its own Start/Stop. It is deliberately not a drawer — a
+  message an operator must open a menu to raise is a message that does not get
+  raised during a live game. `TIMEOUT` raises the word and starts 1:00 in one
+  press; it does **not** charge the timeout, which stays with the separate,
+  undoable `timeout_used` control in the Field drawer (section 5a). Like the
+  quarter bar it is a fixed-height grid row, so only the board flexes and the
+  U-001 no-scrolling measurement still holds; see section 8 for the numbers.
 - A display-health failure must take over the health strip but must not obscure clocks or controls.
 - Down/distance, field position, and timeouts remaining (added September 5,
   2026) read compactly in the quarter bar, next to the existing quarter
@@ -100,6 +119,14 @@ Visual priorities are scores first, game clock second, team names third, then qu
   unaffected. Possession is a short text flag (`◀ BALL` / `BALL ▶`) next to the
   team name it belongs to, not color alone (U-002's principle applied to a new
   field). See section 5a for the controls that set these.
+- **Added September 6, 2026 (audit item C5).** `Reopen Display` meets the
+  44px accessibility floor and only appears when a display can actually be
+  reopened one click (`can_reopen`). A second, always-visible `Display…`
+  button sits next to it and opens the Display drawer (section 5b) whether or
+  not a reopen is currently possible; it is deliberately quieter (`--edge`
+  border) so `Reopen Display`'s warm border stays the one to reach for when
+  the wall has gone dark. Both are 44px targets; measured heights and
+  overflow results are recorded in section 8.
 
 ## 5. Corrections drawer
 
@@ -152,6 +179,80 @@ between plays before the next down is confirmed. Distance `0` is offered as a
 dedicated **Goal** button, since "4th & 0" reads as a typo rather than a
 goal-to-go situation; the board displays it as `4th & Goal` either way
 (F-061).
+
+## 5b. Teams drawer (added September 6, 2026, audit item F4)
+
+```text
+┌───────────────────────────────── TEAMS ───────────────────────────────────────┐
+│ Pick a saved team for each side. Team names can change only before kickoff,   │
+│ and each change asks you to confirm. Colours and short names are saved for    │
+│ the board; they never change scores or clocks.                                │
+│ Now   [▮▮] EAGLES (EAG)                    [▮▮] TIGERS (TIG)                  │
+│ ─────────────────────────────────────────────────────────────────────────────│
+│ [▮▮] EAGLES (EAG)     [Use for HOME] [Use for AWAY] [Edit] [Delete…]          │
+│ [▮▮] TIGERS (TIG)     [Use for HOME] [Use for AWAY] [Edit] [Delete…]          │
+│ ─────────────────────────────────────────────────────────────────────────────│
+│ Save a team  [name____] [short_] [primary] [secondary] [Save team]           │
+│              [Use HOME name] [Use AWAY name]                                  │
+│                                                                Close           │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Opened by the new `Teams ▸` tool-bar button (section 4), the first button in
+the bar. F4's scope is the S–M "presets" half of the deep-dive finding: a
+saved team library with one-click apply, a short name, and two colours. Visual
+identity on the spectator board (colour-bound widgets, logos) is explicitly
+out of scope for this pass; only the data needed for that later work is
+carried in the view model today (see below).
+
+Team identity is **not** game state. `GameState` still keeps only
+`home_name`/`away_name`; applying a saved team submits the same, existing,
+validated `set_team_name` command an operator could type by hand --
+pregame-only (F-010), undoable, and recorded in the action history exactly
+like a manual retype. The **library** of saved teams is a laptop preference,
+like the presentation layout or the saved display: its own file
+(`teams.json`), never the game database, and never able to stop the
+scoreboard.
+
+- **Now** mirrors the two live team names with a small swatch (left half the
+  saved primary colour, right half secondary) and the saved short name, when
+  the current name matches something saved; the swatch and short name are
+  hidden when it does not.
+- The **list** is built from `api.teams()`, one row per saved team: swatch,
+  name and short name, then `Use for HOME` / `Use for AWAY`. These are
+  ordinary controls -- the same `set_team_name` command, the same local
+  confirmation showing `OLD → NEW`, the same source and revision handling as
+  every other correction in this document. Applying a preset after kickoff is
+  refused by the bridge exactly like a manual retype would be, and the
+  refusal is shown the same way. `Edit` copies a saved team into the form
+  below without submitting anything; `Delete…` opens the same confirmation
+  dialog used everywhere else in this page, with Cancel doing nothing at all.
+  An empty library shows a plain sentence instead of an empty list.
+- The **form** saves a name (24 characters, matching the existing team-name
+  limit), an optional short name (up to 6 characters, derived from the name
+  when left blank), and two colour pickers (defaulting to white and near-black
+  the first time). `Use HOME name` / `Use AWAY name` only copy the current
+  name into the field -- nothing is submitted until `Save team` is clicked.
+  Saving or deleting shows Python's plain-language result (`Saved team
+  EAGLES.`, `Updated team EAGLES.`, `Deleted team EAGLES.`, or a refusal such
+  as a name already 24 characters over the limit) the same way every other
+  host action reports its result.
+- On the live board, each team name grows a thin **identity stripe**
+  (primary-coloured background, secondary-coloured underline, the short name
+  centred in it) directly under the team name, when the current name matches
+  a saved team; it is hidden otherwise. It is deliberately thin -- height plus
+  border stays under 18px -- because the board's height budget was already
+  spent meeting U-001, and this must never be the thing that pushes a live
+  control off screen. Measured against a real bridge-produced view model at
+  1093×614 (the tightest U-001 viewport): `documentElement.scrollHeight`
+  equalled `clientHeight` with the stripe visible on both sides, exactly as it
+  did before this feature existed.
+- If a build's bridge does not expose `api.teams`/`api.save_team`/
+  `api.delete_team` (an older build, or one where the host wiring is not yet
+  present), the drawer says "Saved teams are unavailable in this build." and
+  the form is disabled. The rest of the operator page is completely unaffected
+  -- this is a convenience layer over an existing command, never a dependency
+  of it.
 
 ## 6. Workflows
 
@@ -207,6 +308,32 @@ goal-to-go situation; the board displays it as `4th & Goal` either way
 3. Direct set displays the team, old value, and proposed value before confirmation.
 4. A correction is appended to history; the original event is never erased.
 
+The `LAST:` area opens the current Undo history: newest first, at most 20
+reversible entries. Each press of Undo reverses the newest entry and records a
+new action. A non-reversible barrier clears the available stack, and recovery
+starts with an empty stack even though the durable action history remains.
+
+### 6.5a Tell the crowd why play stopped (added September 6, 2026, audit item F3)
+
+1. Press `FLAG`, `TIMEOUT`, `INJURY`, or `DELAY` in the always-visible crowd
+   row. The word appears on the wall immediately; the operator board's chip
+   shows what the wall is currently saying, and the button that is raised stays
+   lit.
+2. `TIMEOUT` also loads and starts a 1:00 countdown in the same press. The
+   other three raise the word with no countdown.
+3. `START`/`STOP` control the countdown without changing the message. A
+   countdown that runs out stops at `0:00` and stays there — the message does
+   not clear itself, because only the operator knows when play has resumed.
+4. Press `CLEAR` when play resumes. The message and the countdown both go, and
+   the wall's two Status widgets hide rather than drawing empty boxes.
+
+None of these touch the score, the clocks, the quarter, or field status, and
+none of them consumes an Undo (F-081): a crowd toggle must never push a
+scoring mistake out of Undo's reach. Charging the timeout against a team is
+still the separate, undoable `timeout_used` control in the Field drawer
+(section 5a) — the crowd row says *what the wall shows*, not *what the game
+records*.
+
 ### 6.6 Change quarters
 
 - Use next/back on the main screen or direct selection in Corrections.
@@ -238,7 +365,10 @@ click and the other is not:
 
 `Reopen Display` stays in the health strip and stays one click, because a dark
 wall is not the moment to go looking through a drawer. The panel it falls back
-to is **Corrections → Spectator display**.
+to is **Display… → Available now** (its own drawer since September 6, 2026;
+previously **Corrections → Spectator display**, one panel away from
+destructive Apply buttons -- see audit item C5 and the closing section of this
+document).
 
 ### 6.8a Practice with a small spectator preview
 
@@ -302,7 +432,23 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 
 ## 8. Accessibility and rehearsal checklist
 
-- Minimum 44×44 CSS-pixel hit targets; clock and preset controls substantially larger. **`Reopen Display` does not meet this.** It is 32 px tall, raised from 28 px in Task 10, which is the most the health strip can hold without pushing a live control off a 1366×768 screen. Reaching 44 px needs the operator layout re-flowed, not a taller strip, so it belongs with the Settings-surface revisit below.
+- Minimum 44×44 CSS-pixel hit targets; clock and preset controls substantially larger. **`Reopen Display` meets this as of September 6, 2026 (audit item C5).** The health strip's `.chip-button` rule (`operator.css`) is `min-height: var(--touch)` (44px), matching the base button rule instead of the 32px concession recorded here through Task 10. The strip is allowed to grow a few pixels rather than the button being squeezed, and at the narrowest supported width the brand text and chip padding shrink first (never the strip wrapping). Measured in the real Chromium engine (Playwright/Edge, headless) against a real bridge-produced view model with `health.display.can_reopen: true`, at both U-001 viewports:
+
+  | Viewport (CSS px) | `#reopen-display` height | `#open-display` height | `documentElement.scrollHeight` vs `clientHeight` | `.clocks button` bottoms | `.health` `scrollWidth` vs `clientWidth` |
+  |---|---|---|---|---|---|
+  | 1093×614 | 44px | 44px | 614 = 614 (no vertical overflow) | all ≤ viewport height | 1075 ≤ 1075 (no horizontal overflow) |
+  | 1180×720 | 44px | 44px | 720 = 720 (no vertical overflow) | all ≤ viewport height | 1162 ≤ 1162 (no horizontal overflow) |
+
+  Clicking the new always-visible `Display…` button opens the Display drawer with the display buttons rendered, at both viewports. This does not replace the recorded HDMI/stadium-hardware verification gap noted elsewhere in this document -- it proves the layout fit and the target size, not the physical display behaviour.
+- **The crowd row keeps the no-scrolling measurement (added September 6, 2026, audit item F3).** Adding a whole new always-visible row to a page that already had to earn U-001 is exactly the kind of change that needs measuring rather than assuming, so it was measured in the real Chromium engine (Playwright/Edge, headless) against a bridge-produced view model at its widest: both team names at F-010's 24-character maximum, a nine-entry Undo history behind the `LAST:` strip, and `TIMEOUT` raised with a running countdown.
+
+  | Viewport (CSS px) | `scrollHeight` vs `clientHeight` | `scrollWidth` vs `clientWidth` | `.crowd-bar` overflow | `.crowd-bar button` heights | `#reopen-display` / `#open-display` | Board row |
+  |---|---|---|---|---|---|---|
+  | 1093×614 | 614 = 614 | 1093 = 1093 | 1075 ≤ 1075 (none) | all 36px | 44px / 44px | 356px |
+  | 1180×720 | 720 = 720 | 1180 = 1180 | 1162 ≤ 1162 (none) | all 36px | 44px / 44px | 462px |
+  | 1366×768 | 768 = 768 | 1366 = 1366 | 1348 ≤ 1348 (none) | all 36px | 44px / 44px | 510px |
+
+  The new row costs the board its height and nothing else, because `.board` is the only `minmax(0, 1fr)` row in the page grid; every clock button stayed inside the viewport and the page reported no script errors at any of the three. The crowd buttons sit at the quarter bar's 36px floor rather than the 44px floor, which is the same trade the quarter bar's own controls already make — the 44px floor is held for the display-recovery path (C5) and the large scoring and clock controls. Windows 125% scaling remains a manual rehearsal check, as it is for every other row.
 - Keyboard focus ring always visible; logical tab order; labels connected to inputs.
 - Contrast target of at least WCAG AA for operator text where practical.
 - Do not encode home/away or running/stopped solely by red/green.
@@ -337,7 +483,7 @@ The window is a toolbar across the top, a layers rail on the left, the canvas in
 
 1. Open the editor from Advanced. It loads the active layout and a live read-only snapshot of the current game for its preview.
 2. **Toolbar.** The layout name is a menu button listing every stored layout (click to switch) and, below a divider, `Save`, `Save as…`, `Duplicate…`, `Rename…`, `Delete…`, and `Reset to built-in…`. Each of the last five opens a small inline popover with a text field and Confirm/Cancel — there are no browser `alert`/`confirm` dialogs anywhere in the editor. `Default` shows `Rename`/`Delete` disabled with the tooltip "The Default layout is always available," but `Default` **can** be duplicated. Undo/redo icon buttons (`Ctrl+Z`, `Ctrl+Y`/`Ctrl+Shift+Z`) step through the last 100 drafts; a gesture, a nudge, a restack, an add/duplicate/delete, a preset, a clamp, a reset, and every committed property change push one history entry, while a control still being dragged or typed into updates the draft live without spamming history. `+ Text`, `+ Image`, `+ Box` add a free element at the canvas centre and select it; dropping an image file onto the canvas does the same as `+ Image`. A `Presets` menu offers the four built-in starting points (10.4a); choosing one asks to replace the current draft first if it is dirty. Zoom (`50/75/100/150/200%`, `Fit`) scales the canvas without changing anything about the layout itself. `Save` is the one accent-filled primary button, disabled while any validation error is outstanding; `Ctrl+S` saves.
-3. **Layers rail.** A `Board` row selects the board itself (its inspector shows background color and safe-area insets — see below). Directly below it, an **Elements** group lists every free text/image/box element the operator has added, most recently stacked first — it comes first so the operator's own additions never scroll out of sight; under it the fifteen widgets are grouped **Teams**, **Clocks**, and **Field** (10.4). Each row shows a small type icon, a label (an element shows its text, its image file name, or its id), an eye toggle that hides it without changing the selection, and — for elements — a trash button. A hidden row is dimmed and says so in its tooltip, not just by dimming. Shift+click a row to add it to the selection.
+3. **Layers rail.** A `Board` row selects the board itself (its inspector shows background color and safe-area insets — see below). Directly below it, an **Elements** group lists every free text/image/box element the operator has added, most recently stacked first — it comes first so the operator's own additions never scroll out of sight; under it the seventeen game widgets are grouped **Teams**, **Clocks**, **Field**, and **Status** (10.4). `status_message` and `status_clock` preview like every other widget: empty, and so hidden, whenever no crowd status is raised. Each row shows a small type icon, a label (an element shows its text, its image file name, or its id), an eye toggle that hides it without changing the selection, and — for elements — a trash button. A hidden row is dimmed and says so in its tooltip, not just by dimming. Shift+click a row to add it to the selection.
 4. **Canvas.** Click a widget or element directly to select it — on the rail or on the canvas — or drag it to move it; drag one of the eight grips on a single selection to resize it. The safe area is a dashed outline labeled at its corner. Snapping to the grid, to other visible items, to the safe area, and to the board edges works exactly as in v1, with a guide line while a snap holds and a small readout chip (`X 24.0% Y 12.0%` or `W 38.0% H 11.8%`) near the pointer while dragging or resizing. Shift+click or a marquee drag over empty canvas selects several items at once; dragging any selected item moves the whole group by one delta, clamped so no member leaves its own boundary (safe area for widgets and text, the canvas itself for images and boxes). Arrow keys nudge the selection one step, Shift+arrow nudges four steps, and `Delete`/`Backspace` removes selected elements (a widget in a mixed selection is left alone — a widget can be hidden but never deleted). `Escape` clears the selection. Right-click opens a small context menu: bring to front/forward, send backward/to back, duplicate and delete (elements), hide/show, and reset (widgets). A hidden item still renders at reduced opacity with a dotted border so it stays selectable.
 5. **Inspector.** Its header names the current selection ("Home score", `Text "HOMECOMING"`, "3 items", or "Board"). Sections: *Position & size* (X/Y/W/H as percent, an align/distribute strip, and the four nudge arrows kept from v1); *Layer* (front/forward/backward/back, the numeric stacking order, and the visible checkbox); *Text*, for widgets and text elements (font family, weight, size as a percent of board width, letter spacing, an "Aa/AA" case toggle, a shadow/outline effect control, color, and horizontal/vertical alignment — static widget labels keep the v1 note that their wording is fixed); *Fill & border* (an optional background fill with its own opacity, an optional border with width and corner radius, inner padding for text, and opacity for elements); *Image*, for image elements (a thumbnail, "Replace image…", the fit mode, and a size readout); and *Actions* (`Reset this widget`, `Duplicate`, `Delete`, and `Fit to safe area…` for the whole layout). Selecting `Board` shows the background color, the four safe-area insets as percentages, and a gallery of the built-in presets with an Apply button on each.
 6. **Status bar.** The left side reads `✓ No problems` or names the error/warning count; clicking it opens a drawer listing each issue, and clicking an issue selects the affected item. The right side keeps the fixed scope note: "Changes how the board looks. It never changes scores, clocks, or any other game value."
@@ -362,7 +508,7 @@ Arrow keys and `Delete` never fire while a text field has focus, so typing a hyp
 
 ### 10.4 Widget inventory
 
-Fifteen widgets cover the spectator board, organized in the layers rail into three groups — **Teams** (home/away name and score, possession), **Clocks** (game clock label/value, play clock label/value, quarter), and **Field** (down, distance, ball on, home/away timeouts). `game_clock_label`, `home_timeouts`, and `away_timeouts` are positionable but ship **hidden by default**, so the default layout keeps drawing exactly the fields today's board draws; the operator turns them on as a deliberate presentation choice.
+Seventeen widgets cover the spectator board, organized in the layers rail into four groups — **Teams** (home/away name and score, possession), **Clocks** (game clock label/value, play clock label/value, quarter), **Field** (down, distance, ball on, home/away timeouts), and **Status** (crowd message, status countdown; added September 6, 2026 with F3). `game_clock_label`, `home_timeouts`, and `away_timeouts` are positionable but ship **hidden by default**, so the default layout keeps drawing exactly the fields today's board draws; the operator turns them on as a deliberate presentation choice.
 
 **What the default changed, and why.** The arrangement, the reading order, and the visual weight are preserved, but the default is a faithful re-expression rather than a pixel copy, in two respects worth recording:
 
@@ -388,6 +534,8 @@ Both are presentation defaults, not rules: an operator can restore any size thro
 | `ball_on` | Ball on | Field position, blank when not set | Yes |
 | `home_timeouts` | Home timeouts | Home timeouts remaining, blank when not set | **No** |
 | `away_timeouts` | Away timeouts | Away timeouts remaining, blank when not set | **No** |
+| `status_message` | Crowd message | The raised crowd status (`FLAG`, `TIMEOUT`, `INJURY`, `DELAY`), blank when none | Yes |
+| `status_clock` | Status countdown | The status countdown (`1:00`), blank when cleared | Yes |
 
 **Possession moves from an inline mark beside the home or away team name (owner request 2) to its own widget**, centered between the two names. Its text is still produced in Python; only its placement changed.
 
@@ -395,13 +543,13 @@ Both are presentation defaults, not rules: an operator can restore any size thro
 
 - A widget's text is always produced in Python. The editor changes size, position, color, visibility, and stacking order — never wording.
 - Static labels (`game_clock_label`, `play_clock_label`) may be styled, moved, resized, or hidden; their text is owned by the application and there is no free-text editor for them.
-- A widget whose value can legitimately be absent from a snapshot (`possession`, `down`, `distance`, `ball_on`, `home_timeouts`, `away_timeouts`) is hidden by the renderer — not drawn as an empty box — whenever its rendered text is blank. Whether the widget is turned on at all is still the operator's choice; the rendering gap for a missing value is automatic and graceful.
+- A widget whose value can legitimately be absent from a snapshot (`possession`, `down`, `distance`, `ball_on`, `home_timeouts`, `away_timeouts`, `status_message`, `status_clock`) is hidden by the renderer — not drawn as an empty box — whenever its rendered text is blank. Whether the widget is turned on at all is still the operator's choice; the rendering gap for a missing value is automatic and graceful.
 - Every widget carries a numeric stacking order so overlap between adjacent widgets (for example a label beside its value) is resolved deterministically rather than by markup order.
 - **New in v2**, every widget can additionally carry a font family, letter spacing, an uppercase/normal text-transform, a shadow or outline text effect, a background fill with its own opacity, a border color/width, a corner radius, and inner padding — all optional, all defaulted so the built-in default layout still renders pixel-identical to v1 (same geometry, Arial, no backgrounds, no effects).
 
 ### 10.4a Free elements, fonts, and presets (added in v2)
 
-**Free elements.** Alongside the fifteen fixed widgets, a layout may now hold up to 24 **elements** — `text`, `image`, or `box` — added from the toolbar or the canvas context menu and positioned, resized, restacked, and styled exactly like a widget. An element's `id` is generated (`text_1`, `image_1`, `box_1`, …) and never collides with a widget id. A text element carries its own operator-typed wording (1–120 characters, up to 4 lines) and the full text style set (font, weight, size, spacing, transform, effect, color, alignment); a box is nothing but its background/border/radius, useful as a backdrop panel; an image holds a picture the operator supplies. **Elements never take part in widget-overlap validation** — a panel placed behind the scores is the point, not a defect. A text element must still fit inside the safe area like a widget, but an image or box only has to stay inside the canvas and is allowed to cross the safe area, which is how a full-bleed backdrop or a bottom bar is built.
+**Free elements.** Alongside the seventeen fixed widget slots, a layout may now hold up to 24 **elements** — `text`, `image`, or `box` — added from the toolbar or the canvas context menu and positioned, resized, restacked, and styled exactly like a widget. An element's `id` is generated (`text_1`, `image_1`, `box_1`, …) and never collides with a widget id. A text element carries its own operator-typed wording (1–120 characters, up to 4 lines) and the full text style set (font, weight, size, spacing, transform, effect, color, alignment); a box is nothing but its background/border/radius, useful as a backdrop panel; an image holds a picture the operator supplies. **Elements never take part in widget-overlap validation** — a panel placed behind the scores is the point, not a defect. A text element must still fit inside the safe area like a widget, but an image or box only has to stay inside the canvas and is allowed to cross the safe area, which is how a full-bleed backdrop or a bottom bar is built.
 
 **Images.** `+ Image` opens a file picker restricted to PNG, JPEG, GIF, and WebP; the file is read locally and embedded in the layout as a `data:` URI — nothing is referenced from disk or a network location. Each image is capped at 2 MB decoded, and every image in a layout together is capped at 6 MB decoded; a file over the limit, or of an unsupported type, is refused inline with a plain message, never a browser alert. Dropping an image file directly onto the canvas does the same thing as the toolbar button. An image element's aspect ratio is preserved when it is added, and its **fit** (contain/cover/fill) is adjustable afterward. SVG is not accepted (10.8) because an SVG file can itself contain a script.
 
@@ -449,7 +597,7 @@ Validation is strict: a value out of range, an unrecognized color format, a widg
 
 #### 10.9a Event widget inventory
 
-The pregame and halftime screens are built from a different widget set than the fifteen game widgets in 10.4 — eight **event widgets**, grouped **Teams** and **Countdown**:
+The pregame and halftime screens are built from a different widget set than the seventeen game widget slots in 10.4 — eight **event widgets**, grouped **Teams** and **Countdown**:
 
 | id | Label | What it shows |
 |---|---|---|
@@ -511,8 +659,9 @@ other owned windows; reopening reads the latest snapshot.
 - Line to gain and direction are shown with text labels, not color alone.
 - Controls for the active workflow (series start, normal play/incomplete,
   penalty, or a scoring/kickoff transition) appear below the field.
-- One **Preview** step calculates the proposed result; a single, large
-  **Confirm Play** / **Confirm Transition** button finalizes it. There is no
+- Pressing a play/transition action asks Python for a preview immediately; the
+  proposed result becomes the single large Confirm button's label. The old
+  separate **Preview result** step no longer exists. There is no
   drag-distance-implies-confirm behavior.
 - **Re-sync** and **Discard draft** are always available.
 - No clock controls appear in the helper window; finalizing an action never
@@ -529,10 +678,9 @@ snapshot) or discards it.
 ### 11.5 Target layout, not yet visually verified
 
 - [ ] 1366×768 at 100% and 125% Windows scaling, without page scrolling
-  during ordinary finalization — not yet checked on a physical display or
-  under WebView2; only a static browser render has been observed on this
-  development host.
-- [ ] Native WebView2 rendering of the helper window.
+  during ordinary finalization — not yet checked on a physical target display.
+- [x] Native pywebview/WebView2 rendering and the press-by-press helper flow on
+  the development host; this is not target-laptop evidence.
 - [ ] A live operator rehearsal of the workflows above.
 
 ### 11.6 Deliberately manual
@@ -546,10 +694,39 @@ anything the helper does not cover.
 
 ## Where the game is saved, and which display it is on
 
-The corrections drawer carries two rows that are not game corrections: **Spectator display**, listing the displays Windows is reporting with the saved one named, and **Saved to**, showing the current data folder with **Choose folder…** and **Use standard folder**.
+**Updated September 6, 2026 (audit item C5).** Which display the spectator
+board goes on moved out of the corrections drawer and into its own **Display**
+drawer (`#display-drawer`, opened by the always-visible `Display…` button in
+the health strip, or by `Reopen Display` itself when there is no display left
+to reopen onto). It carries a status row mirroring the health strip
+(`DISPLAY OPEN`/`DISPLAY CLOSED`/`DISPLAY NOT FOUND`, the detail text, and a
+second `Reopen Display` button), the saved-display summary with **Forget
+saved display**, and the list of displays Windows is currently reporting. The
+health-strip's one-click `Reopen Display` is unaffected: it still recovers a
+closed display without opening anything, per section 6.8. This was the
+"revisit" that section 8 previously deferred: the display-recovery path was
+the hardest thing on screen to hit -- `Reopen Display` was 32px against the
+44px floor, one panel away from destructive corrections. Both problems are
+fixed together because they were the same layout problem: the health strip
+had no room for a 44px button, and the drawer holding the fallback had no
+separation from Corrections.
 
-It lives there rather than on the board for a layout reason and a safety reason. The drawer overlays the page and scrolls inside itself, so adding to it cannot push a live control off a 1366x768 screen and does not invalidate the U-001 measurement. And a control that changes where a game is written does not belong beside the scoring buttons.
+The corrections drawer keeps one row that is not a game correction: **Saved
+to**, showing the current data folder with **Choose folder…** and **Use
+standard folder**. It stays there -- it is still the revisit noted below, not
+resolved by this pass. It lives there rather than on the board for a layout
+reason and a safety reason: the drawer overlays the page and scrolls inside
+itself, so adding to it cannot push a live control off a 1366x768 screen and
+does not invalidate the U-001 measurement, and a control that changes where a
+game is written does not belong beside the scoring buttons.
 
-The placement is the least-bad option available today, not a considered information architecture: the drawer is titled CORRECTIONS, and neither of these is a correction. Task 10 put the display panel in the same place for the same reason and made the problem twice as large; that is an argument for the revisit, not for the drawer. If the operator layout is ever revisited, an explicit Settings surface is the better home for both, along with the 44 px `Reopen Display` target noted in section 8. Raised here so it is reviewed with the rest of the layout rather than settling by default.
+The placement is the least-bad option available today, not a considered
+information architecture: the drawer is titled CORRECTIONS, and this is not a
+correction. If the operator layout is ever revisited, an explicit Settings
+surface is the better home for it, alongside the Display drawer this pass
+already gave its own home. Raised here so it is reviewed with the rest of the
+layout rather than settling by default.
 
-The row states that the running game keeps saving where it is and that a new folder applies at the next start. That sentence is the whole safety story for this control and must not be dropped in a redesign.
+The row states that the running game keeps saving where it is and that a new
+folder applies at the next start. That sentence is the whole safety story for
+this control and must not be dropped in a redesign.

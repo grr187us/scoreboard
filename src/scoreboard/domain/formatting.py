@@ -134,6 +134,35 @@ def format_event_countdown(seconds: float) -> str:
     return _minutes_display(ceil_seconds(seconds))
 
 
+def format_game_status(label: str | None) -> str:
+    """The crowd-facing status word (F3), or blank when nothing is raised.
+
+    The wall shows the word only -- never a team name, see
+    .scratch/f3-i4/DESIGN.md -- so this is a pass-through, not a composition;
+    it never raises for an in-range label, matching every other formatter in
+    this module.
+    """
+
+    return BLANK_DISPLAY if label is None else label
+
+
+def format_status_clock(seconds: float, *, blank_at_zero: bool) -> str:
+    """Format F3's status countdown as rounded-up ``M:SS``.
+
+    Rounds the same way :func:`format_game_clock` does -- through
+    :func:`ceil_tenths` -- so a running countdown never displays a value the
+    operator has not reached yet. ``blank_at_zero`` renders a cleared
+    countdown as an empty area; a countdown that expired naturally stays
+    visible at ``0:00`` (the wall keeps showing the message and the clock
+    together until the operator clears them, see the design's deliberate
+    limits) and must not pass this as ``True``.
+    """
+
+    if blank_at_zero and ceil_tenths(seconds) == 0:
+        return BLANK_DISPLAY
+    return _minutes_display(ceil_seconds(seconds))
+
+
 #: Ordinal words for downs 1-4. There is no NFHS-style "5th down" to format.
 _DOWN_ORDINALS: Final[dict[int, str]] = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
 
@@ -245,7 +274,9 @@ __all__ = [
     "format_down_and_distance",
     "format_event_countdown",
     "format_game_clock",
+    "format_game_status",
     "format_play_clock",
     "format_possession",
+    "format_status_clock",
     "format_timeouts",
 ]

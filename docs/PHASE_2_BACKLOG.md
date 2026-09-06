@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, and as of September 6, 2026 the full discovered suite is green — **750 tests, 0 failures, 0 errors, 3 skipped** on the rebuilt `.venv` with Node.js and a repo-local Playwright installed, itemized under "Automated suite failure inventory" in `../PROJECT_ROADMAP.md` (now a historical record of the rewrite, not a list of expected failures). The 3 skips are tests blocked on question A-1 and are not a pass. The three `tests/ui/` Playwright suites now run and, on their first run since the v2/v3 editor, found and fixed two real product defects (a pregame/halftime team-name overflow and a layout-editor layers-rail click-loss bug). Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started. The owner-requested local-time presentation, expanded scoreboard fields, presentation layout editor, and Field Assistant (all below) were implemented or delivered for rehearsal on September 5, 2026; none of them touches Task 12 or the hardware/stadium evidence gap. The presentation layout editor was rebuilt as a v2 canvas editor the same day, then extended with pregame/halftime screens as v3 on September 6, 2026 (see below). Historical discovery-run counts, kept for lineage: 597 tests / 15 failures / 3 errors before the September 5 deep-dive fixes; 703 tests / 16 failures / 3 errors after the v2 rebuild (the same inventory as the pre-v2 baseline; the one new failure the run surfaced, `test_the_build_script_requires_every_view_file`, was fixed by adding the editor's three new script files to `tools/build_package.py` before this was recorded); 750 tests / 15 failures / 3 errors after v3, before the September 6 suite rewrite.
+**Status:** Tasks 1-11 are substantially implemented; after the September 6, 2026 F3/I4 work the full discovered suite is green — **913 tests, 0 failures, 0 errors, 3 skipped** from a clean temporary Python 3.11.9 environment with Node.js on `PATH` and isolated operator data. The 3 skips are blocked on question A-1 and are not a pass. Task 10's two-display and stadium acceptance is outstanding; Task 12 is not started. Current working-tree work also implements I4's 20-entry Undo stack, F3's crowd-facing status message and countdown end to end, and the presets half of F4, while C4 is reopened for a cross-thread delivery-ordering gap. See `../PROJECT_ROADMAP.md` and `CURRENT_PROJECT_AUDIT_2026-09-06.md`. Historical discovery counts remain in the roadmap for lineage.
 **Last updated:** September 6, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
@@ -92,7 +92,7 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 **Components/files:** `domain/commands.py`; `application/service.py`; state updates; `tests/unit/test_commands.py`; command-order integration tests.
 
-**Boundaries:** No UI. Implement +1/+2/+3/+6, corrections/direct set, quarter transitions, New/End Game, clock commands, and one-level undo. Do not add down/distance, timeouts, possession, or statistics.
+**Boundaries:** No UI. Implement +1/+2/+3/+6, corrections/direct set, quarter transitions, New/End Game, clock commands, and the original one-level Undo. Do not add down/distance, timeouts, possession, or statistics. **Later expansion:** audit I4 now keeps up to 20 reversible entries in memory; the Task 5 boundary remains historical, not the current Undo limit.
 
 **Dependencies:** Tasks 2–4.
 
@@ -153,7 +153,7 @@ Each task is intended for one focused Codex session. Before starting, read the r
 
 **Components/files:** `views/spectator/`; shared snapshot renderer; viewport tests/screenshots.
 
-**Boundaries:** During game play show team names/scores, quarter, game clock, and play clock. During pregame/interval presentation show only the documented countdown and phase information. No logos, animations, sponsor/media content, OBS, or control elements.
+**Historical Task 8 boundary:** During game play show team names/scores, quarter, game clock, and play clock. The original pregame/interval screen showed only countdown and phase information. Audit C3 later corrected that release-level omission: current schema-v3 pregame/halftime screens also retain both team names and scores. No controls, OBS, or authoritative logic belong in the spectator page.
 
 **Dependencies:** Tasks 1–7.
 
@@ -381,7 +381,7 @@ practice spectator window received the push with elements, background, and
 text). Full discovery run after v2 (September 5, 2026, `SCOREBOARD_DATA_DIR` isolated): **703 tests, 16 failures, 3 errors** — the same inventory as the pre-v2 baseline; the one new failure the run surfaced (`test_the_build_script_requires_every_view_file`, because the editor gained three script files) was fixed by adding them to `tools/build_package.py` before this was recorded. Not verified at the time: the
 `tests/ui/` Playwright browser suites (no Node.js on this machine), any
 hardware/LED/two-display evidence, and WebView2 file-picker behavior for the
-Image button on the operator laptop. **Update, September 6, 2026:** Node.js and a repo-local Playwright are now installed, and the `tests/ui/` suites ran for the first time against this editor — see the Improvements table (I1/I2) and the "Automated suite failure inventory" resolution in `../PROJECT_ROADMAP.md` for the two real defects (a spectator name-overflow and a layers-rail click-loss bug) that run found and fixed. The full discovered suite is now green: 750 tests, 0 failures, 0 errors, 3 skipped. Hardware/LED/two-display evidence and the WebView2 file-picker check remain open.
+Image button on the operator laptop. **Update, September 6, 2026:** Node.js and a repo-local Playwright are now installed, and the `tests/ui/` suites ran for the first time against this editor — see the Improvements table (I1/I2) and the "Automated suite failure inventory" resolution in `../PROJECT_ROADMAP.md` for the two real defects (a spectator name-overflow and a layers-rail click-loss bug) that run found and fixed. The current full discovered suite is green: 853 tests, 0 failures, 0 errors, 3 skipped. Hardware/LED/two-display evidence and the WebView2 file-picker check remain open.
 
 ### Presentation layout editor v3 — pre-game and halftime screens — ✅ delivered September 6, 2026
 
@@ -404,7 +404,9 @@ test keeps working), and two new screens, `screens.pregame` and
 area, background, widgets, and elements — but built from a different,
 smaller widget registry of eight **event widgets** (home/away team name and
 score, phase label, countdown title, countdown, warmup line) rather than the
-fifteen game widgets. A v1 or v2 file upgrades on read with the existing
+current seventeen game widget slots. The last two carry F3's crowd status
+message and its countdown, and are empty (and therefore hidden) until an
+operator raises one. A v1 or v2 file upgrades on read with the existing
 `SCHEMA_UPGRADED` warning; a v3 file missing `screens` fills both from
 default with `MISSING_SCREENS`. The editor gains a Game / Pre-game /
 Halftime toolbar switcher (`Ctrl+1/2/3`), a per-screen presets gallery (four
@@ -422,11 +424,10 @@ Game/Pre-game/Halftime, binding free text to a game field, SVG images, a
 per-resolution layout, and editing the operator panel's own layout all
 remain out of scope, exactly as they were for v1/v2.
 
-**Verification.** Not run by this docs pass. The verification plan
-(focused per-agent suites, the full discovery run compared against the
-15-failure/3-error baseline recorded in `PROJECT_ROADMAP.md`, the
-preview-browser stub run, and the real pywebview run) is the orchestrator's
-responsibility; nothing here should be read as a passing test result.
+**Verification.** Focused schema/editor/renderer/bridge suites, the full
+discovery run, the preview-browser stub, and a real pywebview/WebView2
+development-host run were completed and are recorded in `PROJECT_ROADMAP.md`.
+This remains development evidence, not hardware or stadium acceptance.
 
 ## Field Assistant — delivered for rehearsal, September 5, 2026
 
@@ -457,10 +458,10 @@ recovery, a simulated persistence failure, and a multi-quarter rehearsal),
 and `tests/integration/test_field_assistant_window.py` (host window
 lifecycle against pywebview-shaped fakes).
 
-**"Delivered for rehearsal," not stadium-ready.** No native WebView2
-rendering of the helper window, no physical 1366×768-at-100%/125% check, and
-no live operator rehearsal have been performed — only fake-window host tests
-and a static browser render exist (`docs/UX_AND_LAYOUT.md` §11.5). This work
+**"Delivered for rehearsal," not stadium-ready.** Native pywebview/WebView2
+rendering and the full helper flow were exercised on the development host.
+No physical target-laptop 1366×768-at-100%/125% check and no live operator
+rehearsal have been performed (`docs/UX_AND_LAYOUT.md` §11.5). This work
 does not advance Task 12, the Phase 0 HDMI gate, or any other
 stadium-readiness item above.
 

@@ -18,6 +18,12 @@ MAX_SCORE: Final[int] = 199
 MAX_GAME_CLOCK_SECONDS: Final[float] = 12 * 60
 MAX_PLAY_CLOCK_SECONDS: Final[float] = 40
 MAX_EVENT_COUNTDOWN_SECONDS: Final[float] = 30 * 60
+#: F3: the crowd-facing status word and its optional countdown. The wall shows
+#: the label only -- see docs/UX_AND_LAYOUT.md / .scratch/f3-i4/DESIGN.md for
+#: why a team name never joins it -- and the countdown is a plain 5-minute-max
+#: stoppage timer, independent of the game and play clocks.
+GAME_STATUS_LABELS: Final[tuple[str, ...]] = ("FLAG", "TIMEOUT", "INJURY", "DELAY")
+MAX_STATUS_CLOCK_SECONDS: Final[float] = 300.0
 #: In ``PRE`` the single authoritative game-clock engine is a kickoff
 #: countdown.  The interval engine remains separate for halftime.
 MAX_PREGAME_CLOCK_SECONDS: Final[float] = 30 * 60
@@ -269,6 +275,15 @@ class GameState:
     assistant_first_quarter_home_direction: int | None = None
     assistant_line_to_gain: int | None = None
 
+    #: F3: the crowd-facing status word and its countdown. Deliberately not
+    #: part of Undo (see UndoEntry's callers in application/service.py and
+    #: .scratch/f3-i4/DESIGN.md): this is presentation, not a scoring or
+    #: lifecycle fact, and consuming an undo slot with a crowd toggle would
+    #: push a real scoring mistake out of reach.
+    game_status: str | None = None
+    status_clock: ClockValue = ClockValue(0.0, False, MAX_STATUS_CLOCK_SECONDS)
+    status_clock_cleared: bool = True
+
     def __post_init__(self) -> None:
         if not isinstance(self.play_clock_cleared, bool):
             raise StateValidationError("play_clock_cleared must be boolean")
@@ -343,6 +358,14 @@ class GameState:
                 MAX_ABSOLUTE_YARD,
             ),
         )
+        if self.game_status is not None and self.game_status not in GAME_STATUS_LABELS:
+            raise StateValidationError(f"invalid game_status label: {self.game_status!r}")
+        if not isinstance(self.status_clock, ClockValue):
+            raise StateValidationError("status_clock must be a ClockValue")
+        if self.status_clock.maximum_seconds != MAX_STATUS_CLOCK_SECONDS:
+            raise StateValidationError("status_clock has an invalid maximum")
+        if not isinstance(self.status_clock_cleared, bool):
+            raise StateValidationError("status_clock_cleared must be boolean")
 
     @property
     def state_revision(self) -> int:

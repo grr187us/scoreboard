@@ -266,13 +266,70 @@ class DefaultLayoutTests(unittest.TestCase):
             "text_effect": "none", "background": None, "background_opacity": 1.0,
             "border_color": None, "border_width": 0.0, "corner_radius": 0.0, "padding": 0.0,
         }
-        self.assertEqual(set(expected_v1), set(WIDGET_IDS))
+        # F3 (crowd-facing game-state messages) adds status_message/
+        # status_clock at the end of WIDGET_IDS -- new v3 widgets, not part
+        # of the "renders pixel-identical to v1" claim this test pins, so
+        # they are the only ids expected to be outside expected_v1's set.
+        self.assertEqual(set(WIDGET_IDS) - set(expected_v1), {"status_message", "status_clock"})
         for widget_id, geometry in expected_v1.items():
             widget = widgets[widget_id]
             for key, value in geometry.items():
                 self.assertEqual(widget[key], value, f"{widget_id}.{key}")
             for key, value in expected_style_defaults.items():
                 self.assertEqual(widget[key], value, f"{widget_id}.{key}")
+
+
+class StatusWidgetDefaultGeometryTests(unittest.TestCase):
+    """F3 (crowd-facing game-state messages): status_message/status_clock's
+    default rectangles must be visible out of the box, and disjoint -- not
+    merely under the serious-overlap threshold, but truly zero-intersection
+    -- from every other default widget's rectangle, including the three
+    ``visible: False`` ones (home_timeouts, game_clock_label, away_timeouts)
+    that share their y-band, so an operator who later turns those three on
+    never gets a surprise overlap error. This is the arithmetic proof behind
+    `.scratch/f3-i4/DESIGN.md`'s Part 1 presentation section, pinned as a
+    test rather than left as a comment someone could invalidate by editing
+    one number.
+    """
+
+    @staticmethod
+    def _rect(widget: dict) -> tuple[float, float, float, float]:
+        return (widget["x"], widget["y"], widget["x"] + widget["width"], widget["y"] + widget["height"])
+
+    def test_both_are_visible_and_bound_to_the_status_block(self) -> None:
+        widgets = default_layout()["widgets"]
+        for widget_id in ("status_message", "status_clock"):
+            self.assertTrue(widgets[widget_id]["visible"], widget_id)
+        self.assertEqual(WIDGET_FIELDS["status_message"], "status.display")
+        self.assertEqual(WIDGET_FIELDS["status_clock"], "status.clock_display")
+
+    def test_rectangles_are_disjoint_from_every_other_default_widget(self) -> None:
+        widgets = default_layout()["widgets"]
+        new_ids = ("status_message", "status_clock")
+        for new_id in new_ids:
+            new_x0, new_y0, new_x1, new_y1 = self._rect(widgets[new_id])
+            for other_id, other in widgets.items():
+                if other_id in new_ids:
+                    continue
+                ox0, oy0, ox1, oy1 = self._rect(other)
+                overlap_width = min(new_x1, ox1) - max(new_x0, ox0)
+                overlap_height = min(new_y1, oy1) - max(new_y0, oy0)
+                # A merely *touching* edge (zero-width or zero-height
+                # intersection) is fine and expected -- both new widgets sit
+                # in the free gaps beside game_clock_label -- only a positive
+                # area on both axes is a real overlap.
+                self.assertFalse(
+                    overlap_width > 1e-9 and overlap_height > 1e-9,
+                    f"{new_id} overlaps {other_id}",
+                )
+
+    def test_the_default_layout_validates_clean_with_both_status_widgets_visible(self) -> None:
+        validation = validate_layout(default_layout())
+
+        self.assertTrue(validation.ok, [issue.message for issue in validation.errors])
+        self.assertEqual(validation.warnings, ())
+        self.assertTrue(validation.layout["widgets"]["status_message"]["visible"])
+        self.assertTrue(validation.layout["widgets"]["status_clock"]["visible"])
 
 
 class WidgetMetadataTests(unittest.TestCase):
@@ -290,12 +347,18 @@ class WidgetMetadataTests(unittest.TestCase):
     def test_every_widget_belongs_to_exactly_one_known_group(self) -> None:
         self.assertEqual(set(WIDGET_GROUPS), set(WIDGET_IDS))
         self.assertEqual(set(WIDGET_GROUPS.values()), set(WIDGET_GROUP_ORDER))
-        self.assertEqual(list(WIDGET_GROUP_ORDER), ["Teams", "Clocks", "Field"])
+        self.assertEqual(list(WIDGET_GROUP_ORDER), ["Teams", "Clocks", "Field", "Status"])
         expected = {
             "Teams": {"home_name", "home_score", "possession", "away_name", "away_score"},
             "Clocks": {"game_clock_label", "game_clock_value", "play_clock_label",
                        "play_clock_value", "quarter"},
             "Field": {"down", "distance", "ball_on", "home_timeouts", "away_timeouts"},
+            # F3 (crowd-facing game-state messages): the crowd message and
+            # its countdown get their own rail group rather than joining
+            # "Field" or "Clocks" -- neither is a football-field concept or a
+            # game clock, and lumping them in would bury the two controls an
+            # operator is most likely to reach for mid-stoppage.
+            "Status": {"status_message", "status_clock"},
         }
         for group, widget_ids in expected.items():
             actual = {wid for wid, g in WIDGET_GROUPS.items() if g == group}
@@ -319,6 +382,21 @@ class WidgetMetadataTests(unittest.TestCase):
                     "max_total_image_bytes", "font_families", "text_transforms",
                     "text_effects", "image_fits", "element_types", "widget_groups"):
             self.assertIn(key, limits())
+
+    def test_status_widgets_are_exposed_under_the_status_group(self) -> None:
+        """F3: the layout editor's rail is built entirely from
+        widget_descriptors() (spec section 8) -- no hard-coded widget list --
+        so simply appearing here, tagged "Status", is what makes both new
+        widgets show up in the editor with no editor-side change at all.
+        """
+
+        by_id = {d["id"]: d for d in widget_descriptors()}
+        for widget_id in ("status_message", "status_clock"):
+            self.assertIn(widget_id, by_id)
+            self.assertEqual(by_id[widget_id]["group"], "Status")
+            self.assertTrue(by_id[widget_id]["optional"])
+            self.assertIsNone(by_id[widget_id]["static_text"])
+        self.assertIn("Status", limits()["widget_groups"])
 
     def test_font_family_labels_cover_exactly_the_declared_families(self) -> None:
         self.assertEqual(set(FONT_FAMILY_LABELS), set(FONT_FAMILIES))
@@ -958,6 +1036,31 @@ class MergeAndFallbackTests(unittest.TestCase):
         self.assertIn("MISSING_WIDGET", {issue.code for issue in validation.warnings})
         self.assertEqual(validation.layout["widgets"]["ball_on"], default_widget("ball_on"))
 
+    def test_a_pre_f3_v3_layout_missing_both_status_widgets_loads_with_warnings_not_errors(self) -> None:
+        """F3 (crowd-facing game-state messages) is an additive registry
+        change (spec/DESIGN.md Part 1): LAYOUT_SCHEMA_VERSION stays 3, and a
+        v3 layout saved before status_message/status_clock existed is simply
+        "missing two widgets", which MISSING_WIDGET already treats as a
+        warning to fill from the default -- never an error that would reject
+        an operator's whole saved layout over a field that did not exist yet.
+        """
+
+        document = default_layout()
+        del document["widgets"]["status_message"]
+        del document["widgets"]["status_clock"]
+
+        validation = validate_layout(document)
+
+        self.assertTrue(validation.ok, [issue.message for issue in validation.errors])
+        warning_codes_by_widget = {
+            issue.widget_id for issue in validation.warnings if issue.code == "MISSING_WIDGET"
+        }
+        self.assertEqual(warning_codes_by_widget, {"status_message", "status_clock"})
+        self.assertEqual(validation.layout["widgets"]["status_message"], default_widget("status_message"))
+        self.assertEqual(validation.layout["widgets"]["status_clock"], default_widget("status_clock"))
+        self.assertTrue(validation.layout["widgets"]["status_message"]["visible"])
+        self.assertTrue(validation.layout["widgets"]["status_clock"]["visible"])
+
     def test_load_never_raises_and_falls_back_to_the_built_in_default(self) -> None:
         broken = with_widget(widget_id="quarter", x="nonsense")
         for payload in (None, [], "text", 3, {}, {"schema_version": 9}, broken):
@@ -1076,6 +1179,34 @@ class SupportedWidgetTests(unittest.TestCase):
         self.assertIn("distance", supported)
         self.assertIn("home_score", supported)
         self.assertIn("play_clock_label", supported)
+
+    def test_the_status_widgets_hide_on_an_absent_or_empty_value_and_show_otherwise(self) -> None:
+        """F3 (crowd-facing game-state messages): status_message/status_clock
+        are optional (OPTIONAL_WIDGET_IDS) precisely so the renderer hides
+        them the instant their bound value is missing or empty -- which is
+        the only thing keeping a crowd message off the wall before an
+        operator ever raises one (see DESIGN.md's "Deliberate limits").
+        `format_game_status`/`format_status_clock` return "" for "nothing to
+        say", never raise, so the "field absent entirely" and "field present
+        but empty" cases both have to hide -- this proves both.
+        """
+
+        # No "status" block at all -- the state before the other half of F3
+        # adds it, and also a stored view model from before this feature.
+        self.assertNotIn("status_message", set(supported_widget_ids({})))
+        self.assertNotIn("status_clock", set(supported_widget_ids({})))
+
+        # A "status" block present, but with nothing to show right now.
+        cleared_model = {"status": {"label": None, "display": "", "clock_display": ""}}
+        supported = set(supported_widget_ids(cleared_model))
+        self.assertNotIn("status_message", supported)
+        self.assertNotIn("status_clock", supported)
+
+        # A raised message with its countdown running: both show.
+        active_model = {"status": {"label": "TIMEOUT", "display": "TIMEOUT", "clock_display": "0:45"}}
+        supported = set(supported_widget_ids(active_model))
+        self.assertIn("status_message", supported)
+        self.assertIn("status_clock", supported)
 
 
 class LayoutNameTests(unittest.TestCase):

@@ -1,8 +1,8 @@
 # Pre-game and halftime screens in the layout designer — spec (schema v3)
 
-Status: in progress (September 6, 2026). Single source of truth for this
-feature. Five Sonnet agents build against it in parallel, each owning a
-disjoint file set (section 8). Where this spec is silent, keep the v2
+Status: completed historical implementation spec (September 6, 2026). Five
+agents built the schema-v3 screens against disjoint ownership. Where this spec
+is silent, keep the v2
 behaviour and the v2 house rules (`.scratch/layout-editor-v2/spec.md`).
 
 ## 0. Goal

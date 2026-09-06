@@ -65,6 +65,12 @@ WIDGET_IDS: Final[tuple[str, ...]] = (
     "quarter", "down", "distance",
     "play_clock_label", "play_clock_value", "ball_on",
     "home_timeouts", "away_timeouts",
+    # F3 (crowd-facing game-state messages): a crowd message ("FLAG",
+    # "TIMEOUT", "INJURY", "DELAY", or nothing) and its countdown, added at
+    # the end so every stored v3 layout that predates them is simply
+    # "missing two widgets" -- MISSING_WIDGET already treats that as a
+    # warning to fill from the default, never an error (see validate_layout).
+    "status_message", "status_clock",
 )
 
 # --- Screens (spec v3 section 1.1) ------------------------------------------
@@ -186,6 +192,8 @@ WIDGET_LABELS: Final[dict[str, str]] = {
     "ball_on": "Ball on",
     "home_timeouts": "Home timeouts",
     "away_timeouts": "Away timeouts",
+    "status_message": "Crowd message",
+    "status_clock": "Status countdown",
 }
 
 #: Dotted path into the spectator view model. ``None`` means a static label.
@@ -205,6 +213,12 @@ WIDGET_FIELDS: Final[dict[str, str | None]] = {
     "ball_on": "football.ball_on_display",
     "home_timeouts": "football.home_timeouts_display",
     "away_timeouts": "football.away_timeouts_display",
+    # F3: another worker adds this "status" block to the spectator view model
+    # in parallel -- this module only ever names the dotted path, never
+    # builds the block itself, so the two stay decoupled and buildable in
+    # either order.
+    "status_message": "status.display",
+    "status_clock": "status.clock_display",
 }
 
 #: Application-controlled label text. Operators may style/move/hide it, never
@@ -220,6 +234,13 @@ WIDGET_TEXTS: Final[dict[str, str]] = {
 OPTIONAL_WIDGET_IDS: Final[frozenset[str]] = frozenset({
     "possession", "down", "distance", "ball_on",
     "home_timeouts", "away_timeouts",
+    # F3: both are optional so the renderer hides them the instant their text
+    # is empty -- which is the *only* thing keeping a crowd message off the
+    # wall before an operator ever raises one, since "status.display"/
+    # "status.clock_display" resolve to "" rather than being absent outright
+    # once the other half of F3 adds the "status" block (format_game_status/
+    # format_status_clock never raise; they return "" for "nothing to say").
+    "status_message", "status_clock",
 })
 
 #: Which rail group each widget belongs to in the editor (spec section 1.3).
@@ -230,8 +251,9 @@ WIDGET_GROUPS: Final[dict[str, str]] = {
     "play_clock_label": "Clocks", "play_clock_value": "Clocks", "quarter": "Clocks",
     "down": "Field", "distance": "Field", "ball_on": "Field",
     "home_timeouts": "Field", "away_timeouts": "Field",
+    "status_message": "Status", "status_clock": "Status",
 }
-WIDGET_GROUP_ORDER: Final[tuple[str, ...]] = ("Teams", "Clocks", "Field")
+WIDGET_GROUP_ORDER: Final[tuple[str, ...]] = ("Teams", "Clocks", "Field", "Status")
 
 # --- Event widget metadata (spec v3 section 1.1): the pre-game/halftime -----
 # registry. Same shape as the game metadata above, one "event" widget set
@@ -463,6 +485,30 @@ _DEFAULT_WIDGETS: Final[dict[str, dict[str, Any]]] = {
         "font_scale": 0.024, "color": "#CFCFCF",
         "text_align": "right", "vertical_align": "middle",
         "font_weight": 400, "z_index": 0,
+    },
+    # F3 (crowd-facing game-state messages): the two free gaps of the band
+    # between the score block (ends y=0.406) and the game clock (starts
+    # y=0.470) -- one on either side of the three visible:False defaults that
+    # already live in that band (home_timeouts x 0.040-0.240, game_clock_label
+    # x 0.400-0.600, away_timeouts x 0.760-0.960). status_message sits in the
+    # left gap (x 0.240-0.400), status_clock in the right gap (x 0.600-0.760),
+    # both y 0.408-0.464 -- verified disjoint (zero intersection area, not
+    # merely under the serious-overlap ratio) from every other default
+    # widget's rectangle, visible or not, so an operator who later turns the
+    # timeouts or the clock label on never gets a surprise overlap error.
+    "status_message": {
+        "id": "status_message", "visible": True,
+        "x": 0.240, "y": 0.408, "width": 0.160, "height": 0.056,
+        "font_scale": 0.026, "color": "#FFC845",
+        "text_align": "center", "vertical_align": "middle",
+        "font_weight": 800, "z_index": 0,
+    },
+    "status_clock": {
+        "id": "status_clock", "visible": True,
+        "x": 0.600, "y": 0.408, "width": 0.160, "height": 0.056,
+        "font_scale": 0.026, "color": "#FFC845",
+        "text_align": "center", "vertical_align": "middle",
+        "font_weight": 800, "z_index": 0,
     },
 }
 
@@ -2589,6 +2635,16 @@ def _big_score_preset_layout() -> dict[str, Any]:
         "down": {"x": 0.10, "y": 0.87, "width": 0.15, "height": 0.06, "font_scale": 0.025, "text_align": "right"},
         "distance": {"x": 0.27, "y": 0.87, "width": 0.15, "height": 0.06, "font_scale": 0.025, "text_align": "left"},
         "ball_on": {"x": 0.45, "y": 0.87, "width": 0.40, "height": 0.06, "font_scale": 0.022},
+        # F3: the built-in default's status_message/status_clock rectangles
+        # (x 0.240-0.400 / 0.600-0.760, y 0.408-0.464) sit squarely under this
+        # preset's enlarged home_score/away_score panels (y 0.16-0.48), which
+        # would be a serious (error-level) overlap -- so, exactly like every
+        # other repositioned widget above, only these two are moved, into the
+        # gap between the enlarged game_clock_value (ends x=0.36) and
+        # play_clock_label (starts x=0.70), both at y 0.55-0.606 with margins
+        # on every side, disjoint from every other widget in this preset.
+        "status_message": {"x": 0.370, "y": 0.550, "width": 0.150, "height": 0.056},
+        "status_clock": {"x": 0.540, "y": 0.550, "width": 0.150, "height": 0.056},
     }
     for widget_id, changes in overrides.items():
         layout["widgets"][widget_id].update(changes)

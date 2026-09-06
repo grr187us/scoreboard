@@ -74,6 +74,10 @@ COMMAND_PAYLOADS: dict[str, dict] = {
     "timeout_used": {"team": "home"},
     "timeout_correct": {"team": "home", "points": -1},
     "set_timeouts": {"team": "away", "value": 1},
+    "set_game_status": {"label": "FLAG"},
+    "clear_game_status": {},
+    "status_clock_start": {},
+    "status_clock_stop": {},
 }
 
 #: A few commands need the board to be somewhere first: there is nothing to
@@ -591,6 +595,64 @@ class UndoVisibilityTests(BridgeTestCase):
         self.assertIn('id="undo"', OPERATOR_HTML)
 
 
+class UndoHistoryViewTests(BridgeTestCase):
+    """I4: the operator view carries the whole reversible stack, not one slot.
+
+    ``last_action`` and ``can_undo`` keep exactly the meaning
+    ``UndoVisibilityTests`` above already pins -- the newest entry, and
+    whether there is one. ``undo_history``/``undo_depth`` are additive.
+    """
+
+    def test_an_empty_stack_reports_an_empty_history_and_zero_depth(self) -> None:
+        view = self.bridge.get_snapshot()
+
+        self.assertEqual(view["undo_history"], [])
+        self.assertEqual(view["undo_depth"], 0)
+        # Unchanged meaning, pinned again here alongside the new fields.
+        self.assertIsNone(view["last_action"])
+        self.assertFalse(view["can_undo"])
+
+    def test_the_history_lists_already_rendered_labels_newest_first(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        result = self.send("add_score", {"team": "away", "points": 3})
+
+        view = result["view"]
+        self.assertEqual(view["undo_depth"], 2)
+        self.assertEqual(len(view["undo_history"]), 2)
+        # Newest first: the away +3 the operator just entered leads, the
+        # earlier home +6 follows -- the same order Undo will reverse them in.
+        self.assertEqual(view["undo_history"][0]["label"], "AWAY score 0 → 3")
+        self.assertEqual(view["undo_history"][1]["label"], "HOME score 0 → 6")
+        # The top of the history is exactly what last_action already reports;
+        # the page must not have to reconcile two different sources.
+        self.assertEqual(view["undo_history"][0], view["last_action"])
+        self.assertTrue(view["can_undo"])
+
+    def test_undoing_pops_the_top_of_the_history_and_leaves_the_rest(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        self.send("add_score", {"team": "away", "points": 3})
+
+        result = self.send("undo", {})
+
+        view = result["view"]
+        self.assertEqual(view["undo_depth"], 1)
+        self.assertEqual(len(view["undo_history"]), 1)
+        self.assertEqual(view["undo_history"][0]["label"], "HOME score 0 → 6")
+        self.assertEqual(view["last_action"], view["undo_history"][0])
+
+    def test_a_barrier_command_empties_the_history_the_view_reports(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        self.send("add_score", {"team": "away", "points": 3})
+
+        result = self.send("new_game", {"confirmed": True})
+
+        view = result["view"]
+        self.assertEqual(view["undo_history"], [])
+        self.assertEqual(view["undo_depth"], 0)
+        self.assertIsNone(view["last_action"])
+        self.assertFalse(view["can_undo"])
+
+
 class RunningStateTests(BridgeTestCase):
     """U-002, U-003: separate Start/Stop with visible state; presets on top."""
 
@@ -745,6 +807,75 @@ class FootballStateViewTests(BridgeTestCase):
 
         self.assertFalse(result["accepted"])
         self.assertEqual(result["error"]["code"], "INVALID_ARGUMENTS")
+
+
+class StatusViewModelTests(BridgeTestCase):
+    """F3: the crowd-facing status block reaches both view models correctly."""
+
+    def test_spectator_view_carries_the_status_block_with_the_right_shape(self) -> None:
+        view = self.bridge.spectator_snapshot()
+
+        self.assertEqual(
+            view["status"],
+            {
+                "label": None,
+                "active": False,
+                "display": "",
+                "clock_display": "",
+                "clock": {"seconds": 0.0, "running": False, "display": "", "status": "STOPPED"},
+            },
+        )
+
+    def test_a_raised_status_with_a_countdown_populates_every_field(self) -> None:
+        result = self.send("set_game_status", {"label": "TIMEOUT", "seconds": 60})
+
+        status = result["view"]["status"]
+        self.assertEqual(status["label"], "TIMEOUT")
+        self.assertTrue(status["active"])
+        self.assertEqual(status["display"], "TIMEOUT")
+        self.assertEqual(status["clock_display"], "1:00")
+        self.assertTrue(status["clock"]["running"])
+        self.assertEqual(status["clock"]["display"], "1:00")
+        self.assertEqual(status["clock"]["status"], "RUNNING")
+
+        spectator = self.bridge.spectator_snapshot()
+        self.assertEqual(spectator["status"], status)
+
+    def test_the_operator_view_carries_status_labels_and_presets(self) -> None:
+        view = self.bridge.get_snapshot()
+
+        self.assertEqual(view["status_labels"], ["FLAG", "TIMEOUT", "INJURY", "DELAY"])
+        self.assertEqual(view["status_clock_presets"], [30, 60, 90])
+
+    def test_clearing_the_status_blanks_both_display_fields(self) -> None:
+        self.send("set_game_status", {"label": "FLAG"})
+
+        result = self.send("clear_game_status")
+
+        status = result["view"]["status"]
+        self.assertIsNone(status["label"])
+        self.assertFalse(status["active"])
+        self.assertEqual(status["display"], "")
+        self.assertEqual(status["clock_display"], "")
+
+    def test_status_commands_leave_the_undo_stack_untouched(self) -> None:
+        self.send("add_score", {"team": "home", "points": 6})
+        before = self.bridge.get_snapshot()
+
+        self.send("set_game_status", {"label": "TIMEOUT", "seconds": 60})
+        self.send("status_clock_stop")
+        self.send("status_clock_start")
+        self.send("clear_game_status")
+
+        after = self.bridge.get_snapshot()
+        self.assertEqual(after["undo_history"], before["undo_history"])
+        self.assertEqual(after["undo_depth"], before["undo_depth"])
+        self.assertEqual(after["last_action"], before["last_action"])
+        self.assertTrue(after["can_undo"])
+
+        undone = self.send("undo")
+        self.assertTrue(undone["accepted"], undone["error"])
+        self.assertEqual(undone["view"]["teams"]["home"]["score"], 0)
 
 
 class SpectatorBridgeTests(BridgeTestCase):
