@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cutscenes</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="cutscenes.css">
+</head>
+<body>
+  <!--
+    A small persistent trigger panel, like the Field Assistant: it sits beside
+    the operator window all game and does one thing -- play a cutscene on the
+    wall. There is no Command here and no revision; the bridge is the small
+    CutscenesBridge (get_snapshot/state/trigger/cancel/rescan/select_pack/
+    open_folder) described in .scratch/cutscenes/spec.md section 4.
+  -->
+  <header class="topbar">
+    <strong>CUTSCENES</strong>
+    <span id="status" class="status">Ready</span>
+    <button type="button" id="cancel" class="cancel" disabled>CANCEL</button>
+  </header>
+
+  <p id="notice" class="notice" role="status" aria-live="polite"></p>
+
+  <section class="team-row" role="group" aria-label="Team for the next cutscene">
+    <span class="row-label">TEAM</span>
+    <button type="button" id="team-home" class="team-toggle" data-team="home" aria-pressed="true">HOME</button>
+    <button type="button" id="team-away" class="team-toggle" data-team="away" aria-pressed="false">AWAY</button>
+  </section>
+
+  <main class="triggers">
+    <button type="button" id="trigger-first-down" class="trigger trigger-first-down" data-event="first_down">FIRST DOWN</button>
+    <button type="button" id="trigger-touchdown" class="trigger trigger-touchdown" data-event="touchdown">TOUCHDOWN</button>
+  </main>
+
+  <details class="packs" id="packs">
+    <summary>Packs</summary>
+    <label class="pack-row">First down
+      <select data-pack-for="first_down" aria-label="First down pack"></select>
+    </label>
+    <label class="pack-row">Touchdown
+      <select data-pack-for="touchdown" aria-label="Touchdown pack"></select>
+    </label>
+    <div class="pack-actions">
+      <button type="button" id="rescan">Rescan</button>
+      <button type="button" id="open-folder">Open folder</button>
+    </div>
+    <ul id="issues" class="issues" hidden></ul>
+  </details>
+
+  <script src="cutscenes.js"></script>
+</body>
+</html>

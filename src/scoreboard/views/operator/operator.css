@@ -101,6 +101,22 @@ body {
   border-color: var(--edge);
 }
 
+/* The cutscenes badge lives in the health strip (row 1, U-001) rather than a
+ * row of its own: it is a status readout, not a live control, so it costs no
+ * extra fixed-height row and the board keeps every pixel it has. Gold on
+ * navy for a quick glance without reading; the text itself, not colour
+ * alone, is the source of truth. */
+.cutscene-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Every control on the display-recovery path meets the 44px floor, not only
  * the two in the strip: the display buttons in the drawer are what a
  * volunteer hits when the wall has gone dark and the saved display is gone. */

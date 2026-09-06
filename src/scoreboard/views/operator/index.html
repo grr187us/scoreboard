@@ -22,6 +22,10 @@
     <button type="button" id="open-display" class="chip-button secondary" data-action="open_display">Display&hellip;</button>
     <span class="chip" id="chip-save">SAVED</span>
     <span class="chip" id="chip-revision">Rev 0</span>
+    <!-- Cutscenes are a host concern (no revision, no command): the badge is
+         a plain status readout, placed in the already-existing health strip
+         so it costs no new fixed grid row (U-001). -->
+    <span id="cutscene-badge" class="cutscene-badge" hidden></span>
   </header>
 
   <p class="alert" id="alert" hidden role="alert" aria-live="assertive"></p>
@@ -143,6 +147,7 @@
     <button type="button" id="open-event" data-action="open_event">Halftime &#9656;</button>
     <button type="button" id="open-field" data-action="open_field">Field &#9656;</button>
     <button type="button" id="open-field-assistant" data-action="open_field_assistant">Field Assistant</button>
+    <button type="button" id="open-cutscenes" data-action="open_cutscenes">Cutscenes</button>
     <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
     <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
     <span class="spacer"></span>

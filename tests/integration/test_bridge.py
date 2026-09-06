@@ -888,7 +888,7 @@ class SpectatorBridgeTests(BridgeTestCase):
 
         # get_layout was added alongside the presentation layout editor
         # (spec section 6.1); it is read-only in exactly the same way.
-        self.assertEqual(public, {"get_snapshot", "get_layout"})
+        self.assertEqual(public, {"get_snapshot", "get_layout", "get_cutscene"})
 
     def test_it_returns_a_complete_json_snapshot(self) -> None:
         self.send("add_score", {"team": "home", "points": 6})

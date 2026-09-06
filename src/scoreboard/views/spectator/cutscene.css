@@ -1,0 +1,433 @@
+/* The cutscene stage, the board morph, and every built-in scene's styling.
+ *
+ * All of it lives in this one file on purpose: a scene never loads a
+ * stylesheet of its own, so nothing about a cutscene can ever reach the
+ * network or arrive after the animation has already started.
+ *
+ * Two custom-property contracts:
+ *
+ * - `--stage-w` / `--stage-h` are the stage's own size in px, published by
+ *   `cutscene.js` when it places the stage and re-published on a window
+ *   resize. Every scene sizes its type and artwork from these, so the same
+ *   markup reads correctly on a 1920x1080 wall and in the 640-wide practice
+ *   window. Nothing here is sized from the viewport.
+ * - `--cs-navy`, `--cs-navy-elevated`, `--cs-blue`, `--cs-red`,
+ *   `--cs-blue-light`, `--cs-white`, `--cs-mist`, `--cs-ink`, `--cs-gold` are
+ *   the program's theme, copied onto the stage element by the player. The
+ *   fallbacks in the var() calls below are only there so an incomplete theme
+ *   still draws something; the real palette always arrives from Python.
+ */
+
+#cutscene-stage {
+  position: absolute;
+  overflow: hidden;
+  z-index: 50;
+  pointer-events: none;
+  /* Geometry is set inline by cutscene.js from the program's stage rect
+   * (the full canvas during the intro, program.stage for the scene). */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  --stage-w: 1920px;
+  --stage-h: 1080px;
+  --cs-outro-ms: 600ms;
+}
+
+/* The intro moment: the stage covers the whole wall and dims the board just
+ * enough for a white claw core to read against a bright scoreboard. */
+#cutscene-stage.intro {
+  background: rgba(3, 7, 17, .28);
+}
+
+#cutscene-stage.outro {
+  opacity: 0;
+  transition: opacity var(--cs-outro-ms, 600ms) ease-in;
+}
+
+.cs-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------- */
+/* The morph                                                              */
+/* ---------------------------------------------------------------------- */
+
+/* board.js places every widget and every free element with left/top/width/
+ * height percentages and a font-size derived from --fs. With this class on
+ * #canvas those four properties (and the type size with them) glide instead
+ * of jumping, which is what turns "apply a different layout" into the board
+ * morphing to the Broadcast bar. cutscene.js adds the class, applies the
+ * layout, and removes the class 700 ms later; board.css itself stays free of
+ * any cutscene knowledge. */
+#canvas.morphing .widget,
+#canvas.morphing .element {
+  transition: left .6s ease, top .6s ease, width .6s ease, height .6s ease,
+              font-size .6s ease, opacity .6s ease;
+}
+
+/* A short shake under the claw slashes. Small amplitude on purpose: the LED
+ * wall is enormous, and anything larger reads as a fault rather than a hit. */
+#canvas.shake {
+  animation: cs-shake 480ms cubic-bezier(.36, .07, .19, .97) both;
+}
+
+@keyframes cs-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  12% { transform: translate3d(-0.7%, 0.5%, 0); }
+  26% { transform: translate3d(0.8%, -0.4%, 0); }
+  40% { transform: translate3d(-0.6%, -0.5%, 0); }
+  56% { transform: translate3d(0.5%, 0.4%, 0); }
+  74% { transform: translate3d(-0.3%, 0.2%, 0); }
+  88% { transform: translate3d(0.2%, -0.1%, 0); }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Pack media                                                             */
+/* ---------------------------------------------------------------------- */
+
+.cutscene-media { position: absolute; inset: 0; background: var(--cs-ink, #030711); }
+
+.cutscene-media video,
+.cutscene-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: var(--cs-fit, cover);
+  display: block;
+}
+
+/* ---------------------------------------------------------------------- */
+/* claw_scratch                                                           */
+/* ---------------------------------------------------------------------- */
+
+/* The whole group holds at full strength for most of the intro and then
+ * fades as the board finishes morphing underneath it. --cs-intro-ms is the
+ * intro's duration from the program, set inline by the scene. */
+.cs-claw {
+  animation: cs-claw-fade var(--cs-intro-ms, 1400ms) linear forwards;
+}
+
+@keyframes cs-claw-fade {
+  0%, 62% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.cs-claw-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.cs-claw-glow path,
+.cs-claw-core path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: cs-slash-draw 240ms cubic-bezier(.2, .7, .3, 1) forwards;
+}
+
+/* The red halo behind each slash: soft, and unmistakably Tigers. */
+.cs-claw-glow path {
+  stroke: var(--cs-red, #C8242B);
+  stroke-width: 2.1;
+  opacity: .95;
+  /* A CSS filter's lengths are device pixels, not SVG units, so both are
+   * scaled from the stage's own width: the same halo on the wall and in the
+   * practice window. */
+  filter: blur(calc(var(--stage-w) * .0018))
+          drop-shadow(0 0 calc(var(--stage-w) * .007) var(--cs-red, #C8242B));
+}
+
+/* The bright core that makes the slash read as a *cut* rather than a smear. */
+.cs-claw-core path {
+  stroke: var(--cs-white, #FFFFFF);
+  stroke-width: .42;
+  filter: drop-shadow(0 0 calc(var(--stage-w) * .0015) var(--cs-white, #FFFFFF));
+}
+
+/* Four slashes in quick succession, not four at once. */
+.cs-claw-glow path:nth-child(1), .cs-claw-core path:nth-child(1) { animation-delay: 0ms; }
+.cs-claw-glow path:nth-child(2), .cs-claw-core path:nth-child(2) { animation-delay: 90ms; }
+.cs-claw-glow path:nth-child(3), .cs-claw-core path:nth-child(3) { animation-delay: 175ms; }
+.cs-claw-glow path:nth-child(4), .cs-claw-core path:nth-child(4) { animation-delay: 255ms; }
+
+@keyframes cs-slash-draw {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* first_down                                                             */
+/* ---------------------------------------------------------------------- */
+
+.cs-firstdown {
+  background: linear-gradient(160deg, var(--cs-navy, #071B3A) 0%, var(--cs-navy-elevated, #0D2B5A) 100%);
+}
+
+/* Yard lines sliding steadily sideways. One repeating gradient, twice as wide
+ * as the stage, translated by exactly one stripe period so the loop is
+ * seamless and nothing ever pops. */
+.cs-fd-field {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  opacity: .22;
+  background-image: repeating-linear-gradient(
+    100deg,
+    transparent 0,
+    transparent calc(var(--stage-w) * .055),
+    var(--cs-mist, #DDE7F4) calc(var(--stage-w) * .055),
+    var(--cs-mist, #DDE7F4) calc(var(--stage-w) * .0585)
+  );
+  animation: cs-fd-slide 5.2s linear infinite;
+}
+
+@keyframes cs-fd-slide {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(calc(var(--stage-w) * -.117), 0, 0); }
+}
+
+/* A soft blue wash under the type so the headline never fights the stripes. */
+.cs-fd-glow {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: calc(var(--stage-w) * .9);
+  height: calc(var(--stage-h) * .8);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at center, var(--cs-blue, #17468C) 0%, transparent 68%);
+  opacity: .55;
+}
+
+/* The red chevron sweeping left to right, once, behind the words. */
+.cs-fd-chevron {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: calc(var(--stage-w) * .34);
+  height: calc(var(--stage-h) * .62);
+  margin-top: calc(var(--stage-h) * -.31);
+  background: linear-gradient(90deg, transparent 0%, var(--cs-red, #C8242B) 55%, var(--cs-red, #C8242B) 100%);
+  clip-path: polygon(0 0, 62% 0, 100% 50%, 62% 100%, 0 100%, 38% 50%);
+  opacity: .85;
+  animation: cs-fd-sweep 1.15s cubic-bezier(.25, .6, .2, 1) .18s both;
+}
+
+@keyframes cs-fd-sweep {
+  from { transform: translate3d(calc(var(--stage-w) * -.4), 0, 0); opacity: 0; }
+  35% { opacity: .9; }
+  to { transform: translate3d(calc(var(--stage-w) * 1.05), 0, 0); opacity: 0; }
+}
+
+/* A thin gold rule the headline sits on. */
+.cs-fd-bar {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 64%;
+  height: calc(var(--stage-h) * .012);
+  background: var(--cs-gold, #FFB703);
+  transform-origin: left center;
+  animation: cs-fd-rule .5s cubic-bezier(.2, .8, .3, 1) .42s both;
+}
+
+@keyframes cs-fd-rule {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.cs-fd-headline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: Impact, 'Arial Black', Arial, sans-serif;
+  font-size: calc(var(--stage-h) * .30);
+  line-height: 1;
+  letter-spacing: .02em;
+  color: var(--cs-white, #FFFFFF);
+  -webkit-text-stroke: calc(var(--stage-h) * .008) var(--cs-gold, #FFB703);
+  paint-order: stroke fill;
+  text-shadow: 0 calc(var(--stage-h) * .012) calc(var(--stage-h) * .03) rgba(3, 7, 17, .65);
+  white-space: nowrap;
+  animation: cs-fd-slam .38s cubic-bezier(.16, 1.1, .3, 1) .3s both;
+}
+
+@keyframes cs-fd-slam {
+  from { transform: scale(2.1) translate3d(0, calc(var(--stage-h) * -.04), 0); opacity: 0; }
+  70% { opacity: 1; }
+  to { transform: scale(1) translate3d(0, 0, 0); opacity: 1; }
+}
+
+.cs-fd-subline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 68%;
+  display: flex;
+  justify-content: center;
+  font-family: 'Arial Black', Arial, sans-serif;
+  font-size: calc(var(--stage-h) * .105);
+  line-height: 1.1;
+  letter-spacing: .16em;
+  color: var(--cs-mist, #DDE7F4);
+  white-space: nowrap;
+  animation: cs-fd-rise .5s ease-out .62s both;
+}
+
+@keyframes cs-fd-rise {
+  from { transform: translate3d(0, calc(var(--stage-h) * .09), 0); opacity: 0; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* touchdown                                                              */
+/* ---------------------------------------------------------------------- */
+
+.cs-touchdown { background: var(--cs-navy, #071B3A); }
+
+/* The slow navy-to-blue drift. 14 seconds for one pass: longer than the
+ * cutscene itself, so the crowd sees movement and never a loop point. */
+.cs-td-drift {
+  position: absolute;
+  inset: -20%;
+  background: linear-gradient(115deg,
+    var(--cs-navy, #071B3A) 0%,
+    var(--cs-blue, #17468C) 38%,
+    var(--cs-navy-elevated, #0D2B5A) 62%,
+    var(--cs-blue-light, #2C62AB) 100%);
+  background-size: 220% 220%;
+  animation: cs-td-drift 14s ease-in-out infinite alternate;
+}
+
+@keyframes cs-td-drift {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+/* The burst: rays fan out from the centre once and then hold. Each ray is a
+ * tapered sliver rotated into place by builtin.js; the animation only opens
+ * it, so there is no flashing and no fast alternation. */
+.cs-td-rays {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 0;
+  height: 0;
+}
+
+.cs-td-ray {
+  position: absolute;
+  left: calc(var(--stage-h) * -.06);
+  top: 0;
+  width: calc(var(--stage-h) * .12);
+  height: calc(var(--stage-h) * 1.15);
+  transform-origin: 50% 0;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  opacity: 0;
+  animation: cs-td-ray-open 1.1s cubic-bezier(.15, .8, .25, 1) both;
+}
+
+/* Each ray fades out along its own length, so the burst reads as light
+ * leaving the centre rather than as sixteen hard wedges. */
+.cs-td-ray-gold { background: linear-gradient(to bottom, var(--cs-gold, #FFB703) 0%, transparent 78%); }
+.cs-td-ray-red { background: linear-gradient(to bottom, var(--cs-red, #C8242B) 0%, transparent 72%); }
+
+/* --cs-ray-angle is set inline per ray by builtin.js. It is carried through
+ * every keyframe rather than being an inline `transform`, because a running
+ * animation's transform would otherwise replace the inline one and collapse
+ * all sixteen rays onto the same angle. */
+@keyframes cs-td-ray-open {
+  from { transform: rotate(var(--cs-ray-angle, 0deg)) scaleY(.05); opacity: 0; }
+  40% { transform: rotate(var(--cs-ray-angle, 0deg)) scaleY(1); opacity: .62; }
+  to { transform: rotate(var(--cs-ray-angle, 0deg)) scaleY(1); opacity: .38; }
+}
+
+/* A warm core behind the type so the headline sits on light, not on rays. */
+.cs-td-burst {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: calc(var(--stage-h) * 1.5);
+  height: calc(var(--stage-h) * 1.5);
+  margin-left: calc(var(--stage-h) * -.75);
+  margin-top: calc(var(--stage-h) * -.75);
+  background: radial-gradient(circle at center,
+    rgba(255, 183, 3, .55) 0%, rgba(200, 36, 43, .28) 34%, transparent 62%);
+  animation: cs-td-core .9s ease-out both;
+}
+
+@keyframes cs-td-core {
+  from { transform: scale(.2); opacity: 0; }
+  55% { opacity: 1; }
+  to { transform: scale(1); opacity: .8; }
+}
+
+.cs-td-headline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 22%;
+  display: flex;
+  justify-content: center;
+  font-family: Impact, 'Arial Black', Arial, sans-serif;
+  font-size: calc(var(--stage-h) * .30);
+  line-height: 1;
+  letter-spacing: .01em;
+  color: var(--cs-white, #FFFFFF);
+  -webkit-text-stroke: calc(var(--stage-h) * .009) var(--cs-gold, #FFB703);
+  paint-order: stroke fill;
+  text-shadow: 0 calc(var(--stage-h) * .015) calc(var(--stage-h) * .04) rgba(3, 7, 17, .7);
+  white-space: nowrap;
+  animation: cs-td-bounce .72s cubic-bezier(.2, 1.35, .35, 1) .22s both;
+}
+
+@keyframes cs-td-bounce {
+  from { transform: scale(.3); opacity: 0; }
+  45% { transform: scale(1.12); opacity: 1; }
+  70% { transform: scale(.96); }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* The team name and the current score, side by side under the headline. Both
+ * strings arrive in program.texts; nothing here formats either one. */
+.cs-td-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 62%;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: calc(var(--stage-h) * .06);
+  animation: cs-td-rise .6s ease-out .66s both;
+}
+
+@keyframes cs-td-rise {
+  from { transform: translate3d(0, calc(var(--stage-h) * .1), 0); opacity: 0; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+/* Both sit over the burst, so both carry their own shadow: the rays must
+ * never cost the score its legibility from the far end of the stands. */
+.cs-td-team {
+  font-family: 'Arial Black', Arial, sans-serif;
+  font-size: calc(var(--stage-h) * .12);
+  letter-spacing: .1em;
+  color: var(--cs-mist, #DDE7F4);
+  text-shadow: 0 calc(var(--stage-h) * .008) calc(var(--stage-h) * .028) rgba(3, 7, 17, .9);
+  white-space: nowrap;
+}
+
+.cs-td-score {
+  font-family: 'Arial Black', Arial, sans-serif;
+  font-size: calc(var(--stage-h) * .17);
+  color: var(--cs-gold, #FFB703);
+  text-shadow: 0 calc(var(--stage-h) * .008) calc(var(--stage-h) * .028) rgba(3, 7, 17, .9);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

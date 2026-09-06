@@ -1,7 +1,7 @@
 # Operator Workflow and Initial Layouts
 
 **Status:** Implemented Phase 2 operator, spectator, recovery, Field Assistant, and layout-editor design baseline. Development-host visual and WebView2 checks exist; physical two-display, 1366×768 at 100%/125% scaling, stadium, and volunteer-rehearsal evidence remain open.
-**Last updated:** September 6, 2026 (reconciled I4's 20-entry Undo history, F3's crowd-facing status message and countdown, C5's Display drawer, and Field Assistant evidence)
+**Last updated:** September 6, 2026 (reconciled I4's 20-entry Undo history, F3's crowd-facing status message and countdown, C5's Display drawer, Field Assistant evidence, and the new Cutscenes window)
 
 ## 1. Design intent
 
@@ -691,6 +691,142 @@ possession flips, any clock change, live ball tracking, networking, OBS, LED,
 and physical controllers all remain outside the helper; the existing Field
 Status drawer and score/quarter controls (sections 5a, 5) are the fallback for
 anything the helper does not cover.
+
+## 12. Cutscenes window (added September 6, 2026)
+
+Implements the owner's "cutscenes" request: press a button in a small
+persistent window and the LED wall plays a branded animation, then returns
+to exactly what it was showing. Built against `.scratch/cutscenes/spec.md`.
+
+### 12.1 What it is and is not
+
+A cutscene is a manually-triggered ~10-second interruption of the spectator
+board: a claw-scratch intro rips across whatever is currently on screen, the
+board morphs into the built-in **Broadcast bar** layout (score and clock
+along the bottom), a FIRST DOWN or TOUCHDOWN scene plays on the freed-up
+upper stage, and the board morphs back to exactly what it was showing before
+— same layout, same screen (game, pre-game, or halftime). It is a host/
+presentation concern, exactly like the presentation layout and the saved
+teams: triggering, cancelling, selecting a pack, and rescanning the packs
+folder advance no state revision, submit no `Command`, and write nothing to
+`scoreboard.db` or its backup. It is **not** automatic — nothing in this
+feature fires from a score, a down, or any other game event; the operator
+always presses a button or a key. It is **not** an editor: there is no way
+to change what a scene draws from inside the app, only which pack plays for
+each event. The operator window and the Cutscenes window never show the
+animation itself, only a Python-computed status badge and countdown; only
+the spectator (and the practice test window) plays it.
+
+### 12.2 Opening it
+
+**Cutscenes** on the operator toolbar, right after **Field Assistant**,
+opens a separate, persistent `pywebview` window — the same ownership
+pattern as the Field Assistant helper (section 11.2): it opens, closes, and
+reopens independently of the operator and spectator windows, reopening
+while one is already open replaces the previous window, and closing it
+changes nothing about the game or a cutscene already playing. It is meant
+to sit beside the operator window for the whole game, since a volunteer
+reaches for it at every scoring play.
+
+### 12.3 Layout and keys
+
+The Cutscenes window (`views/cutscenes/`) is a small, dark, high-contrast
+panel built for a volunteer under time pressure:
+
+- A header reading `CUTSCENES`, a status line (`Ready`, or
+  `PLAYING: TOUCHDOWN · 6.2s` with Python's own countdown), and an
+  always-visible **CANCEL** button, disabled only while nothing is playing.
+- A team row — **HOME**/**AWAY** toggle buttons showing the current team
+  names — that decides who a **touchdown** is for; a **first down**
+  defaults to the side with possession unless the operator has explicitly
+  pressed a team button since the last trigger.
+- Two large (88 px+, full-width) trigger buttons: **FIRST DOWN** and
+  **TOUCHDOWN**. Pressing one calls the same small bridge the window's own
+  keys use and shows Python's plain-language result.
+- A collapsible **Packs** section: one pack picker per event (built-in
+  first), **Rescan** (no restart needed after adding or editing a pack
+  folder), **Open folder**, and a list of any pack problems found on the
+  last scan.
+
+Keyboard, in both the operator window and the Cutscenes window: `D` plays
+First down, `T` plays Touchdown for the home team, `Shift+T` plays Touchdown
+for the away team, and `Shift+C` cancels whatever is playing. These are
+letter keys rather than function keys because F-keys are browser
+accelerators inside WebView2 and would not reach the page reliably. They
+appear in the operator's Shortcut Help table alongside every other binding.
+The operator toolbar also carries a `CUTSCENE: TOUCHDOWN 6.2s`-style badge,
+in the existing health strip rather than a new fixed row, so triggering a
+cutscene from the main screen is visible without opening the Cutscenes
+window at all.
+
+### 12.4 What the wall shows
+
+One JSON *program*, built once in Python per trigger, drives the entire
+sequence; the spectator page only interprets it against its own clock. All
+times below are relative to the moment the program is applied:
+
+| When | What happens |
+|---|---|
+| t = 0 | The stage covers the full canvas; the claw-scratch intro plays over whatever board is currently showing (skipped entirely if the pack's intro is `none`). |
+| ≈ 40% of the intro | The board morphs into the Broadcast bar layout under a 600 ms transition, underneath the still-playing intro. |
+| End of the intro | The intro unmounts; the stage shrinks to the upper ~70% of the canvas (above the bar's status row); the main scene — FIRST DOWN or TOUCHDOWN, built-in or a dropped-in video/image — mounts. |
+| Duration − outro (600 ms, or 300 ms on a cancel) | The stage fades. |
+| Full duration | The scene unmounts, the stage hides, the board morphs back to the operator's own layout, and the window is idle again. |
+| Duration + 1.5 s | A safety net: if the host somehow never sent the "end" signal, the spectator page ends the cutscene itself. The board always comes back, even if the host process were to vanish mid-cutscene. |
+
+The bar's clock and score keep updating the whole time — a cutscene never
+pauses the authoritative game. Triggering a second cutscene while one is
+already playing replaces it immediately rather than queuing; the Cancel
+button/hotkey ends one early and restores the board at once.
+
+### 12.5 Packs and the manifest
+
+Cutscenes ship with two code-authored built-in animations (one per event),
+so the feature works with no files dropped in at all. To replace one, an
+operator or volunteer creates a folder under the `cutscenes` folder inside
+the Scoreboard data directory (**Open folder** in the Packs section goes
+straight there) containing a `manifest.json`:
+
+```json
+{
+  "schema_version": 1,
+  "name": "Touchdown — roar",
+  "event": "touchdown",
+  "duration_seconds": 10,
+  "intro": "claw_scratch",
+  "scene": {"type": "video", "src": "touchdown.webm", "fit": "cover", "loop": false}
+}
+```
+
+The folder name becomes the pack's id. `event` is `first_down` or
+`touchdown`; `duration_seconds` is optional (2–30 seconds, clamped rather
+than rejected if out of range, defaulting per event if left out); `intro`
+is optional (`claw_scratch`, the default, or `none`); `scene` is required
+and is either a built-in animation (`{"type": "builtin", "id": "first_down"}`
+or `"touchdown"`) or a media file sitting right beside the manifest
+(`video`: `.webm`/`.mp4`; `image`: `.png`/`.gif`/`.jpg`/`.jpeg`/`.webp`/
+`.apng`; `fit` is `cover` or `contain`). A media file must be named
+directly — no subfolders, no `..` — and must actually be present in the
+folder. A manifest with a real problem (an unknown event, a media file that
+is not there, a bad schema version) causes the whole pack to be skipped,
+with a plain-language reason shown in the Packs section's issues list; nothing
+here can crash a trigger or take down the game. Restart is never needed
+after adding or editing a pack folder — press **Rescan**. A `README.txt`
+explaining all of this is written into the `cutscenes` folder automatically
+the first time it is created.
+
+### 12.6 Not yet visually verified on the LED wall
+
+The three built-in scenes (`claw_scratch`, `first_down`, `touchdown`) are a
+first pass in code-authored DOM/CSS/SVG that the owner will iterate on —
+the claw intro in particular currently reads as glowing streaks rather than
+jagged claw marks. Sound is out of scope for v1 (video plays muted), and
+nothing auto-fires a cutscene from a score, a down, or any other game
+event — every trigger is a deliberate operator action. The feature has been
+verified against a stub bridge in a browser and, separately, in the real
+pywebview/WebView2 runtime on the development host (see
+`PROJECT_ROADMAP.md`, "Cutscenes — delivered for rehearsal"); it has not yet
+been seen playing on the physical LED wall.
 
 ## Where the game is saved, and which display it is on
 

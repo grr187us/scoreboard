@@ -1092,7 +1092,7 @@ cleans it up with the other owned windows.
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
 | Implementation status | Phase 2 Tasks 1-11 are substantially implemented; Task 12 remains. Task 10's policy is verified only against injected screen lists, not real two-display hardware. Current working-tree additions include C5, the presets half of F4, I4's bounded undo history, and F3's crowd-facing status message and countdown end to end. **C4 is reopened as partially implemented:** webview calls no longer hold the command lock, but the September 6 reconciliation found a cross-thread stale-offer race and one shared publisher worker can delay otherwise healthy windows. See [the current-project audit](docs/CURRENT_PROJECT_AUDIT_2026-09-06.md). |
-| Automated suite | **Green at 913 tests, 0 failures, 0 errors, 3 skipped** (September 6, 2026, after F3 and I4), in 50.8 s from the repository `.venv` with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`; `compileall` passed and the link checker found 0 broken relative links across 24 Markdown files. The 3 skips explicitly name open question A-1 and are not a pass on it. The earlier reconciliation run is kept below for lineage. **Green.** The September 6 reconciliation run from a clean temporary Python 3.11.9 environment, with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`, reported **853 tests, 0 failures, 0 errors, 3 skipped** in 48.448 seconds. `compileall` passed, `uv pip check` found all 17 installed packages compatible, the repository checker found 0 broken relative links across 24 Markdown files, and `git diff --check` passed (line-ending notices only). The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier 750- and 837-test runs remain historical milestones below. The repository-local `.venv` is currently broken because its configured base-interpreter path is stale; it was not used as evidence for this result. |
+| Automated suite | **Green at 1084 tests, 0 failures, 0 errors, 3 skipped** (September 6, 2026, after the Cutscenes feature), in ~57 s from the repository `.venv` with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`. The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier runs are kept below for lineage. **Green.** The F3/I4 run the same day reported **913 tests, 0 failures, 0 errors, 3 skipped** in 50.8 s, with `compileall` passed and 0 broken relative links across 24 Markdown files. **Green.** The September 6 reconciliation run from a clean temporary Python 3.11.9 environment, with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`, reported **853 tests, 0 failures, 0 errors, 3 skipped** in 48.448 seconds. `compileall` passed, `uv pip check` found all 17 installed packages compatible, the repository checker found 0 broken relative links across 24 Markdown files, and `git diff --check` passed (line-ending notices only). The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier 750- and 837-test runs remain historical milestones below. The repository-local `.venv` is currently broken because its configured base-interpreter path is stale; it was not used as evidence for this result. |
 | Repository status | Work is on `feature/field-status` at `e1e3b04`, tracking `origin/feature/field-status`. The C4/C5/F4 pass and partial F3/implemented I4 pass are uncommitted working-tree work, including their new modules, tests, and active `.scratch/` specifications. The audit preserved every unrelated and in-progress change. |
 | Testing follow-ups | All five findings under [`.scratch/testing-followups`](.scratch/testing-followups/spec.md) are resolved and retained as historical issue evidence. The approved pregame-to-first-quarter confirmation workflow is implemented; question A-1 is separate and still open. |
 | Deep-dive audit | The September 5 fifteen-finding audit remains the original inventory. As reconciled September 6: C1-C3, C5, F3, I1-I3, and I4 are implemented; C4 is partial/reopened; F4's presets half is implemented while spectator visual identity remains open; F1, F2, F5, and I5 remain open. The point-in-time evidence and safe-removal review are in [the current-project audit](docs/CURRENT_PROJECT_AUDIT_2026-09-06.md). |
@@ -1417,6 +1417,86 @@ described above, not on the target laptop. This is separate
 from, and does not advance, Task 12, the Phase 0 HDMI gate, or any other
 stadium-readiness item in this document.
 
+### 5. Cutscenes — delivered for rehearsal, September 6, 2026
+
+The owner asked for a "cutscene": press a button in a small persistent
+window and the LED wall plays a ~10-second branded animation — claw marks
+across whatever is on screen, a morph into the built-in **Broadcast bar**
+layout, a FIRST DOWN or TOUCHDOWN scene on the freed-up upper stage, then a
+restore to exactly what was showing before. Built against
+`.scratch/cutscenes/spec.md` by five agents against disjoint file ownership.
+
+**What was built.** Cutscenes are a **host concern**, exactly like the
+presentation layout and the saved teams: no `Command`, no revision, no
+history row, nothing in `scoreboard.db`. `presentation/cutscenes.py` is a
+pure module defining the two-event registry (`first_down`, `touchdown`),
+pack-manifest validation with a plain-language fallback, and `build_program`,
+which assembles the one JSON document (duration, stage rectangle, a deep
+copy of the Broadcast bar layout renamed `"Cutscene"`, theme colours, and
+text pulled from the live spectator view) that tells the spectator page
+everything it needs. `infrastructure/cutscene_packs.py` scans
+`<data root>/cutscenes/<folder>/manifest.json` for pack folders (ships with
+no files at all — two code-authored built-in scenes cover both events) and
+persists the per-event selection in `<data root>/cutscenes.json`, writing an
+explanatory `README.txt` into the packs folder the first time. `host/cutscenes.py`'s
+`CutsceneDirector` owns playback state, publishes the program to the boards
+through a `CutsceneLink` seam, and schedules the end on an injectable timer;
+its `CutscenesBridge` is the new window's deliberately small JSON API
+(`state`, `trigger`, `cancel`, `rescan`, `select_pack`, `open_folder` — no
+`command`). `ScoreboardBridge` gained three host actions (`open_cutscenes`,
+`trigger_cutscene`, `cancel_cutscene`) and every operator view now carries
+`cutscenes: {available, playing}`, so the existing 10 Hz refresh tick
+delivers the countdown to the operator badge and the new window with no
+extra plumbing. On the spectator page, `cutscene.js` (loaded with the new
+`cutscenes/builtin.js` scene registry) implements `window.applyCutscene(program)`
+and `window.endCutscene(play_id)`, runs the intro → morph → scene → outro →
+restore timeline, and hosts either a built-in scene or a `<video>`/`<img>`
+from a pack, falling back to the built-in scene if the media fails to load.
+A new **Cutscenes** window (`views/cutscenes/`) mirrors the Field
+Assistant's pattern — a small, persistent, independently opened/closed
+helper with big trigger buttons, a team toggle, a Packs section
+(select/rescan/open folder/issues), and an always-visible Cancel. The
+operator toolbar gained a **Cutscenes** button and a `CUTSCENE: TOUCHDOWN
+6.2s`-style badge; the operator window gained four hotkeys — `D` first
+down, `T` touchdown (home), `Shift+T` touchdown (away), `Shift+C` cancel,
+chosen over F-keys because those are WebView2 browser accelerators.
+
+**Design facts worth remembering.** The director reads the spectator view
+*before* taking its own lock, deliberately avoiding a lock-ordering
+collision with the 10 Hz tick (see the comment in `CutsceneDirector.trigger()`);
+the spectator page restores the operator's layout on its own safety-net
+timer even if the host never sends `endCutscene`; and a spectator window
+opened mid-cutscene resumes it through `get_cutscene()` rather than missing
+the animation entirely.
+
+**Provisional, not yet done.** The look of the three built-in scenes
+(`claw_scratch`, `first_down`, `touchdown`) is a first pass the owner will
+iterate on — the claw intro in particular currently reads as glowing
+streaks rather than jagged claw marks. There is no sound (out of scope for
+v1 by design), nothing auto-fires from game state (manual trigger only, by
+design), and the wall has not yet shown a cutscene on the physical LED
+display.
+
+**Verification performed.** Full suite after the feature: **1084 tests, 0
+failures, 0 errors, 3 skipped (A-1)** in ~57 s. Stub-bridge browser
+verification (the `views-static` preview plus Playwright, 1920×1080) drove
+`applyCutscene` with a real Python-built program against the spectator page
+and confirmed the full sequence by screenshot: pre-game board → claw intro
+→ morph to the Broadcast bar → the FIRST DOWN and TOUCHDOWN built-in scenes
+→ restore to the previous layout, plus a media scene whose file was
+deliberately missing falling back to the built-in scene. Those screenshots
+exist only in the session scratchpad, not committed to the repository.
+
+**Real-runtime evidence (pywebview/WebView2, September 6, 2026, scratch data folder, `realrun_cutscenes.py` in the session scratchpad):**
+
+- Operator window, practice spectator window, and the Cutscenes window all opened; the Cutscenes window attached its bridge (`hasApi: true`), showed `Ready`, both pack selects, and Cancel disabled.
+- Touchdown from the Cutscenes window: within 0.4 s the practice board carried the full-canvas `claw_scratch` intro with `#canvas.shake`; at 2 s the stage was `program.stage` (571x225 px in the 640-wide practice window), the board's `data-layout` read `Cutscene`, the `broadcast_bar` element was present, `[data-scene="touchdown"]` was mounted, and the event clock kept reading `30:00`. Python's status read `remaining_display: "8.0s"`; the Cutscenes window showed `PLAYING: TOUCHDOWN · 8.0s` and the operator badge `CUTSCENE: TOUCHDOWN 8.0s` with no vertical overflow (scrollHeight equal to clientHeight). At 12 s the stage was hidden, `data-layout` was back to `Default`, and status was `null`.
+- First down from the operator keyboard (`d` dispatched on the document): `[data-scene="first_down"]` mounted, status `5.0s` at 2 s. `Shift+T` while it played replaced it with an away touchdown (log `CUTSCENE_REPLACED play_id=2` then `CUTSCENE_STARTED play_id=3 ... team=away`). `Shift+C` cancelled it; the board restored within 1.2 s.
+- The state revision stayed at 0 through every trigger, replace, and cancel.
+- An image pack (`cutscenes/td-image/manifest.json` + a generated 64x36 PNG) was picked up by Rescan, selected with `Pack selection saved.`, and played: the stage held a `[data-scene="media"]` `<img>` whose `naturalWidth` was 64, proving a `file:///` subresource loads inside WebView2. No `ffmpeg` on the development machine, so a real `.webm` pack was not exercised; the missing-file → built-in fallback is covered by `tests/ui/cutscene_player.cjs`.
+- The diagnostics log carried `CUTSCENE_STARTED` / `CUTSCENE_ENDED` / `CUTSCENE_REPLACED` / `CUTSCENE_CANCELLED` lines and no `UNHANDLED_ERROR`.
+- Two review fixes landed after the agents finished, each with a regression test: the director now reads the spectator view before taking its own lock (`LockOrderingTests`), and the operator bridge calls the director outside the command lock so a stalled wall never holds up a score command (`OffCommandLockTests`, C4).
+
 ## Next Action
 
 **On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed.
@@ -1429,12 +1509,13 @@ Then, in order:
 4. **Rebuild the package from the reconciled working tree, then work `docs/PACKAGING.md` on the target laptop** — clean machine, network disabled, SmartScreen, startup time. The documented September 5 build predates C4/C5/F3/F4/I4 and `dist/` is absent.
 5. **Task 12 — sustained rehearsal and recovery acceptance**, which closes Phase 2 together with the stadium display rehearsal.
 
-All four owner-requested items below are delivered: the local-time
+All five owner-requested items below are delivered: the local-time
 presentation and the expanded football fields (items 1 and 2) are implemented
 and tested, the presentation layout editor (item 3) shipped v1 on
-September 5, 2026, and the Field Assistant (item 4) is delivered for
-rehearsal. None of the four advances Task 12 or the hardware and stadium
-evidence above, which remain the only ordered work left in this list.
+September 5, 2026, the Field Assistant (item 4) is delivered for
+rehearsal, and Cutscenes (item 5) is delivered for rehearsal on
+September 6, 2026. None of the five advances Task 12 or the hardware and
+stadium evidence above, which remain the only ordered work left in this list.
 
 Carried forward as open items, none of which may be treated as completed on the strength of a passing automated suite:
 

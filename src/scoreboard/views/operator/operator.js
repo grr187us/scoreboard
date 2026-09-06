@@ -76,6 +76,7 @@
     renderHealth(model.health);
     renderCrowdStatus(model);
     renderLastAction(model);
+    renderCutsceneBadge(model.cutscenes);
     renderQuarterChoices(model.quarter_labels, model.quarter);
     renderPossession(model.football.possession);
 
@@ -228,6 +229,26 @@
       }
       host.appendChild(row);
     });
+  }
+
+  /**
+   * The cutscenes status badge. Like the crowd row, this renders exactly
+   * what Python sent -- `label` and `remaining_display` -- and computes no
+   * countdown of its own; when nothing is playing (`cutscenes` absent, or
+   * `playing` null for an older view model, or no director at all) the
+   * badge stays hidden rather than showing a stale or empty word.
+   */
+  function renderCutsceneBadge(cutscenes) {
+    var badge = document.getElementById('cutscene-badge');
+    if (!badge) {
+      return;
+    }
+    var playing = cutscenes && cutscenes.playing;
+    if (playing) {
+      R.setText(badge, 'CUTSCENE: ' + String(playing.label || '').toUpperCase() +
+        ' ' + playing.remaining_display);
+    }
+    R.show(badge, Boolean(playing));
   }
 
   /**
@@ -866,6 +887,21 @@
       });
       return;
     }
+    if (action === 'open_cutscenes') {
+      // A host action, like the Field Assistant: it opens a small persistent
+      // trigger window and cannot itself reach the game. Both outcomes are
+      // reported plainly because this is a button an operator may press
+      // during a game.
+      Promise.resolve(api.open_cutscenes()).then(function (result) {
+        showAlert((result && result.message) || 'Cutscenes opened.');
+      }).catch(function (error) {
+        // Optional surface: an unavailable window leaves every other control
+        // usable, including triggering nothing (there is nothing to trigger
+        // without this window open).
+        showAlert('The Cutscenes window could not be opened: ' + error);
+      });
+      return;
+    }
     if (action === 'open_teams') {
       openDrawer('teams-drawer');
       refreshTeams();
@@ -922,10 +958,30 @@
     });
   }
 
+  /**
+   * A `host` keyboard binding (cutscenes trigger/cancel) has no Command, no
+   * revision, and no history row -- it calls the named host action on the
+   * bridge directly, the same way the Cutscenes window's own buttons do, and
+   * shows whatever plain-language message comes back.
+   */
+  function callHost(name, args) {
+    if (!api || typeof api[name] !== 'function') {
+      showAlert('The control bridge is not connected. Restart the application.');
+      return;
+    }
+    Promise.resolve(api[name].apply(api, args || [])).then(function (result) {
+      if (result && result.view) render(result.view);
+      showAlert((result && result.message) || '');
+    }).catch(function (error) {
+      showAlert('That control could not be sent: ' + error);
+    });
+  }
+
   window.ScoreboardKeyboard.install({
     snapshot: function () { return model; },
     blocked: function () { return !api || !dialog.hidden || !document.getElementById('shortcut-help').hidden; },
     submit: submit,
+    host: callHost,
     close: function () {
       if (!dialog.hidden) closeDialog();
       else closeDrawers();

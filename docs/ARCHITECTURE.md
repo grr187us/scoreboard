@@ -272,6 +272,20 @@ Startup recovery uses a separate `StartupBridge` with report/resume/new methods.
   separate lifecycle. Opening, closing, or failing that practice aid neither
   reads nor writes the saved-display preference and never changes the
   production spectator health strip.
+- **Two new host→spectator globals for cutscenes (added September 6, 2026).**
+  `window.applyCutscene(program)` and `window.endCutscene(play_id)` are
+  pushed to the spectator and test windows the same way `window.applyLayout`
+  is: `WindowHost.publish_cutscene`/`end_cutscene` call `evaluate_js` outside
+  both the command lock and `_command_lock`'s batch delivery, wrapped in
+  try/except so a cutscene push can never stop the game — a failed push is
+  logged and the window survives, the same contract `publish_layout` already
+  keeps. `SpectatorBridge` gained a third, read-only method, `get_cutscene()`,
+  so a spectator window opened mid-cutscene (a reopened display, a freshly
+  opened practice window) asks the host directly for the program in
+  progress rather than missing it until the next trigger. Like the layout
+  push, neither global is part of the 10 Hz view model; the operator and
+  Cutscenes windows get their countdown from the ordinary view instead
+  (`view["cutscenes"]`, below), never from these two globals.
 
 This is an in-process transport, not a claim that multi-operator networking exists. A future transport implements the same command/snapshot contracts.
 
@@ -285,6 +299,8 @@ Scoreboard/
   data-location.json               # stored in the platform-default root only
   scoreboard.db
   scoreboard.backup.db
+  cutscenes.json                   # which pack is selected per cutscene event (added September 6, 2026)
+  cutscenes/                       # cutscene pack folders, one manifest.json each (added September 6, 2026)
   logs/
     application.log
 ```
@@ -327,6 +343,65 @@ One stored layout — one entry in `layouts.json` — always carries all three s
 The layout library lives in its own file, `layouts.json`, in the same per-user Scoreboard data folder as `config.json` and `scoreboard.db` — **never as a section inside either of them**. A library can hold several named layouts and carries its own schema version; keeping it a separate file means a damaged layout library cannot cost the operator a saved game, and a damaged game cannot cost the operator a saved layout. It follows the same "a preference file may never stop the scoreboard" contract as `config.py`: an atomic temp-file-plus-`os.replace` write, and a read failure of any kind — a missing file, invalid JSON, a wrong or newer schema version, or an individually unrecoverable stored layout — falls back first to the last valid stored layout and then to the built-in default, never raising and never stopping launch.
 
 The active layout is deliberately not part of the 10 Hz view model. It changes rarely, so the host pushes it to the spectator, practice, and editor windows only when it actually changes (`window.applyLayout(...)`), the same push-on-change pattern already used for the display and data-folder preferences, rather than carrying it on every refresh tick.
+
+### Cutscene packs (`cutscenes/`, `cutscenes.json`), added September 6, 2026
+
+Cutscenes are a host concern, exactly like the presentation layout and the
+saved teams above: `host/cutscenes.py`'s `CutsceneDirector` owns playback
+state and advances no state revision, submits no `Command`, and writes
+nothing to `scoreboard.db` or its backup. `presentation/cutscenes.py` is the
+pure schema module (event registry, pack-manifest validation, and the
+program builder — see below); `infrastructure/cutscene_packs.py` is its I/O
+half, mirroring `layouts.py`'s and `teams.py`'s "never touch `config.json`
+/ `layouts.json` / `teams.json` / `scoreboard.db`" boundary and their
+atomic-write, never-raise, never-stop-the-scoreboard contract.
+
+A **pack** is a folder under `cutscenes/` holding a `manifest.json` and,
+optionally, one media file (`.webm`/`.mp4` video or `.png`/`.gif`/`.jpg`/
+`.jpeg`/`.webp`/`.apng` image); the folder name is the pack's id. Two
+code-authored **built-in** packs (`builtin:first_down`, `builtin:touchdown`)
+ship with no files at all, so the feature works before an operator ever
+drops anything in. `ensure_packs_directory` creates the folder and writes a
+`README.txt` into it the first time, explaining the manifest shape in plain
+words; `scan_packs` reads every immediate subfolder's `manifest.json`,
+validates it through `presentation.cutscenes.validate_manifest` (strict,
+with a plain-language fallback exactly like a layout: an unusable pack is
+skipped with a reported issue rather than crashing a trigger), and returns
+every usable pack plus every issue found. Which pack is selected per event
+is stored separately, in **`cutscenes.json`** at the data root — not inside
+the `cutscenes/` folder itself, so an operator who empties that folder to
+start over cannot also lose the selection file — with its own schema
+version, read tolerantly (a missing file, bad JSON, wrong schema version, or
+a non-string value yields "nothing selected" for that event, never an
+exception) and written atomically (temp file plus `os.replace`).
+`CutsceneLibrary.resolve(event)` returns the selected pack, or the built-in
+with a recorded fallback when the selection names a pack that is missing or
+belongs to a different event.
+
+Triggering a cutscene builds one JSON **program** — `build_program()` in
+`presentation/cutscenes.py` — carrying everything the spectator page needs:
+the duration, the stage rectangle, a deep copy of the resolved Broadcast bar
+layout (renamed `"Cutscene"`) that becomes a temporary override, the intro
+and scene descriptors, theme colours, and text pulled from the live
+spectator snapshot. `CutsceneDirector.trigger()` reads that snapshot
+*before* taking its own lock, deliberately avoiding a lock-ordering
+collision with the 10 Hz tick, which already holds that lock when it calls
+`status()` to fill every operator view (see the comment in `trigger()`).
+Publishing the program to the spectator/test windows happens outside the
+lock through a `CutsceneLink` seam (mirroring `LayoutLink`), wrapped in
+try/except so a publish failure can never stop the timer that ends the
+cutscene — the wall may simply not show it, exactly like a layout push
+failure. The end of a cutscene is scheduled on an injectable timer
+(`threading.Timer` in production) rather than the 10 Hz tick, so the
+countdown shown to the operator and the Cutscenes window (`view["cutscenes"]`)
+is computed once in Python and only copied by JavaScript, the same rule
+every other clock in this document follows.
+
+`CutscenesBridge` is the new **Cutscenes** window's deliberately small JSON
+API (`get_snapshot`, `state`, `trigger`, `cancel`, `rescan`, `select_pack`,
+`open_folder`) — no `command` method, following the same isolation contract
+as `FieldAssistantBridge` and `LayoutEditorBridge` above. `WindowHost.open_cutscenes`
+follows the identical open/replace/close pattern as `open_field_assistant`.
 
 ## 10. Windows startup and display selection
 
@@ -387,7 +462,38 @@ Initial operation is expected to involve two people, but Phase 2 has one laptop 
 
 ### Media and animation
 
-Spectator HTML can add transitions without changing state. Long-running media/OBS actions react to logged domain events and must be cancelable; they never delay score/clock commands.
+Spectator HTML can add transitions without changing state; long-running
+media/OBS actions react to logged domain events and must be cancelable and
+never delay score/clock commands. **Cutscenes (added September 6, 2026)
+are the first realization of this boundary**, and its shape is the pattern
+any future media feature should follow:
+
+- **Manual trigger only.** Nothing here reacts to a score, a down, or any
+  other domain event automatically — v1 is deliberately a button/hotkey the
+  operator presses, not an OBS-style automatic cue. A future automatic
+  trigger would still have to satisfy the "never delay score/clock
+  commands" rule above.
+- **A pack, not a hard-coded animation.** The unit of media is a folder
+  (`cutscenes/<folder>/manifest.json` plus an optional video or image) that
+  an operator can drop in and select without a restart; the app ships
+  entirely code-authored built-in scenes so it works with zero media files.
+  This is the extension point for "swap the animation for a video file"
+  without touching Python.
+- **One program, built once, interpreted, not computed, by JavaScript.**
+  `presentation/cutscenes.py`'s `build_program()` is the single place that
+  decides duration, stage geometry, the temporary layout, colours, and text;
+  `cutscene.js` only runs a timeline against that document and manipulates
+  the DOM. This is the same "Python owns every value, JavaScript copies"
+  rule the presentation layout and the event-widget screens already follow.
+- **Cancelable and self-healing.** `CutsceneDirector.cancel()` ends a
+  cutscene immediately on request; a media file that fails to load falls
+  back to the built-in scene for the rest of the cutscene rather than
+  leaving the stage blank; and the spectator page runs its own safety-net
+  timer that restores the board even if the host process never sends the
+  end signal. The clock and score under the stage never stop updating.
+- **Cutscenes are decoration, not a state owner.** No `Command`, no
+  revision, no history row, nothing in `scoreboard.db` — see the "Cutscene
+  packs" subsection of §9 for the full read/write contract this rests on.
 
 ## 13. Testing strategy
 

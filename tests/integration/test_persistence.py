@@ -111,7 +111,8 @@ class DataLocationTests(TemporaryDataDirectoryTest):
 
         self.assertEqual(
             sorted(path.name for path in self.paths.root.iterdir()),
-            ["logs", "scoreboard.backup.db", "scoreboard.db"],
+            # `cutscenes/` is the operator's pack folder; ensure() makes it like `logs/`.
+            ["cutscenes", "logs", "scoreboard.backup.db", "scoreboard.db"],
         )
 
 

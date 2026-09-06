@@ -18,7 +18,14 @@
     {key: ',', label: ',', action: 'Away +3', command: 'add_score', args: {team: 'away', points: 3}},
     {key: '.', label: '.', action: 'Away +6', command: 'add_score', args: {team: 'away', points: 6}},
     {key: 'z', ctrl: true, label: 'Ctrl+Z', action: 'Undo last reversible command', command: 'undo'},
-    {key: 'escape', label: 'Esc', action: 'Close dialog / drawer', close: true}
+    {key: 'escape', label: 'Esc', action: 'Close dialog / drawer', close: true},
+    // Cutscenes are a host concern, not a Command: these route through
+    // `options.host(name, args)` instead of `options.submit`, but otherwise
+    // pass through the exact same editable/repeat/held guards below.
+    {key: 'd', label: 'D', action: 'Cutscene: First down', host: 'trigger_cutscene', args: ['first_down', null]},
+    {key: 't', label: 'T', action: 'Cutscene: Touchdown (home)', host: 'trigger_cutscene', args: ['touchdown', 'home']},
+    {key: 't', shift: true, label: 'Shift+T', action: 'Cutscene: Touchdown (away)', host: 'trigger_cutscene', args: ['touchdown', 'away']},
+    {key: 'c', shift: true, label: 'Shift+C', action: 'Cancel cutscene', host: 'cancel_cutscene'}
   ];
 
   function editable(target) {
@@ -55,6 +62,10 @@
       if (event.repeat || alreadyHeld || options.blocked()) return;
       var snapshot = options.snapshot();
       if (!snapshot) return;
+      if (binding.host) {
+        options.host(binding.host, binding.args || []);
+        return;
+      }
       var command = binding.clock ?
         (snapshot.clocks.game.running ? 'game_clock_stop' : 'game_clock_start') : binding.command;
       options.submit(command, Object.assign({}, binding.args), {source: 'operator-keyboard'});

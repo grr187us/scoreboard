@@ -58,6 +58,7 @@ from scoreboard.host.bridge import (
     SpectatorBridge,
     spectator_view_model,
 )
+from scoreboard.host.cutscenes import CutsceneDirector, CutscenesBridge
 from scoreboard.host.layout_bridge import LayoutEditorBridge, PresentationLayouts
 from scoreboard.host.publisher import WindowPublisher
 from scoreboard.host.startup import StartupBridge
@@ -211,11 +212,23 @@ class ScoreboardApplication:
         # its own file, never game state. Applying one is an ordinary
         # ``set_team_name`` command through the bridge.
         self.teams = TeamPresets(self.paths, diagnostics=self.diagnostics)
+        # Cutscenes are a host concern too (spec section 1): no command, no
+        # revision, no history row. Created before any game exists, exactly
+        # like ``self.layouts``/``self.teams``, so it survives a
+        # recovered/new-game choice untouched.
+        self.cutscenes = CutsceneDirector(
+            self.paths,
+            diagnostics=self.diagnostics,
+            monotonic=self._monotonic,
+            read_spectator_view=self._read_spectator_view,
+        )
         self._push: Callable[[str, dict[str, Any]], None] | None = None
         # WindowHost owns this optional surface.  Keeping the predicate here
         # means normal two-window application tests do not receive a third
         # publication, while an open helper sees every complete revision.
         self._field_assistant_active: Callable[[], bool] | None = None
+        # Same idea for the Cutscenes window (spec section 5.2).
+        self._cutscenes_active: Callable[[], bool] | None = None
         self._display_watch: Callable[[], None] | None = None
         self._command_lock = threading.RLock()
         self._stopping = threading.Event()
@@ -273,8 +286,19 @@ class ScoreboardApplication:
             on_accepted=self._publish,
             layouts=self.layouts,
             teams=self.teams,
+            cutscenes=self.cutscenes,
         )
         return self.bridge
+
+    def _read_spectator_view(self) -> dict[str, Any]:
+        """The live spectator snapshot the director builds a program's text
+        from. ``{}`` before a game exists -- the director then falls back to
+        ``"home"`` and empty text rather than raising (spec section 5.2).
+        """
+
+        if self.bridge is None:
+            return {}
+        return self.bridge.spectator_snapshot()
 
     # --- Refresh loop -------------------------------------------------------
 
@@ -358,6 +382,11 @@ class ScoreboardApplication:
 
         self._field_assistant_active = active
 
+    def set_cutscenes_active(self, active: Callable[[], bool] | None) -> None:
+        """Tell publishing whether the optional Cutscenes window is open."""
+
+        self._cutscenes_active = active
+
     def _publish(self, operator_view: dict[str, Any]) -> None:
         """Publish one operator view, e.g. from the bridge's ``on_accepted``.
 
@@ -430,6 +459,13 @@ class ScoreboardApplication:
                 self._push("field_assistant", batch.operator_view)
             except Exception as exc:  # noqa: BLE001 - optional window only
                 self.diagnostics.unhandled_error(context="field_assistant_push", error=exc)
+        if self._cutscenes_active is not None and self._cutscenes_active():
+            try:
+                # Same complete operator snapshot; the Cutscenes window reads
+                # only ``teams`` and ``cutscenes`` out of it (spec section 7.1).
+                self._push("cutscenes", batch.operator_view)
+            except Exception as exc:  # noqa: BLE001 - optional window only
+                self.diagnostics.unhandled_error(context="cutscenes_push", error=exc)
 
     # --- Spectator health ---------------------------------------------------
 
@@ -465,6 +501,10 @@ class ScoreboardApplication:
                 self.bridge.shutdown()
             except Exception as exc:  # noqa: BLE001
                 self.diagnostics.unhandled_error(context="shutdown_save", error=exc)
+        try:
+            self.cutscenes.shutdown()
+        except Exception as exc:  # noqa: BLE001 - shutdown must never raise
+            self.diagnostics.unhandled_error(context="cutscenes_shutdown", error=exc)
         if self.store is not None:
             self.store.close()
         self.diagnostics.shutdown(reason=reason)
@@ -518,6 +558,10 @@ class WindowHost:
         # A similarly sized, deliberately opened operational aid.  It has no
         # display-selection role and no authority over the game.
         self.field_assistant_window: webview.Window | None = None
+        # The persistent Cutscenes window (spec section 5.3). Same kind of
+        # optional, deliberately opened surface as the Field Assistant: no
+        # display-selection role and no path to a game command.
+        self.cutscenes_window: webview.Window | None = None
         self.status = "STARTING"
         self._lock = threading.RLock()
         # Injected so every display behaviour below can be exercised without a
@@ -554,6 +598,12 @@ class WindowHost:
         application.set_field_assistant_active(
             lambda: self.field_assistant_window is not None
         )
+        application.cutscenes.link.open_window = self.open_cutscenes  # type: ignore[method-assign]
+        application.cutscenes.link.publish = self.publish_cutscene  # type: ignore[method-assign]
+        application.cutscenes.link.end = self.end_cutscene  # type: ignore[method-assign]
+        application.set_cutscenes_active(
+            lambda: self.cutscenes_window is not None
+        )
 
     # --- Lifecycle ----------------------------------------------------------
 
@@ -586,6 +636,7 @@ class WindowHost:
                 raise ValueError("Choose Resume recovered game or Start new game")
             bridge = self.application.resume() if choice == "resume" else self.application.start_new()
             bridge.set_field_assistant_opener(self.open_field_assistant)
+            bridge.set_cutscenes_opener(self.open_cutscenes)
             self.operator_window = webview.create_window(
                 "Scoreboard control", url=view_url("operator"), js_api=bridge,
                 width=1180, height=720, min_size=(1024, 600),
@@ -638,10 +689,12 @@ class WindowHost:
             test_window = self.test_window
             layout_window = self.layout_window
             field_assistant_window = self.field_assistant_window
+            cutscenes_window = self.cutscenes_window
             self.spectator_window = None
             self.test_window = None
             self.layout_window = None
             self.field_assistant_window = None
+            self.cutscenes_window = None
         self.application.stop_refresh()
         # Bounded: never lets a stalled window keep this shutdown waiting past
         # its timeout (WindowPublisher.stop() never raises either).
@@ -654,6 +707,8 @@ class WindowHost:
             layout_window.destroy()
         if field_assistant_window is not None:
             field_assistant_window.destroy()
+        if cutscenes_window is not None:
+            cutscenes_window.destroy()
 
     # --- Windows ------------------------------------------------------------
 
@@ -804,7 +859,9 @@ class WindowHost:
             "Scoreboard display",
             url=view_url("spectator"),
             js_api=SpectatorBridge(
-                self._spectator_snapshot, read_layout=self.application.layouts.current_layout
+                self._spectator_snapshot,
+                read_layout=self.application.layouts.current_layout,
+                read_cutscene=self.application.cutscenes.current_program,
             ),
             screen=screen,
             fullscreen=True,
@@ -868,7 +925,9 @@ class WindowHost:
             "Scoreboard display (test)",
             url=view_url("spectator"),
             js_api=SpectatorBridge(
-                self._spectator_snapshot, read_layout=self.application.layouts.current_layout
+                self._spectator_snapshot,
+                read_layout=self.application.layouts.current_layout,
+                read_cutscene=self.application.cutscenes.current_program,
             ),
             width=TEST_SPECTATOR_WIDTH,
             height=TEST_SPECTATOR_HEIGHT,
@@ -953,6 +1012,90 @@ class WindowHost:
         with self._lock:
             if self.field_assistant_window is window:
                 self.field_assistant_window = None
+
+    def open_cutscenes(self) -> dict[str, str]:
+        """Open (or deliberately replace) the persistent Cutscenes window.
+
+        Mirrors :meth:`open_field_assistant` exactly: a helper close/failure
+        must never stop clocks, close the operator, or change persistence.
+        Replacing the window reads from the same director, so its load
+        request always receives the latest complete state.
+        """
+
+        bridge = self.application.bridge
+        if bridge is None:
+            return {"message": "Start or recover a game before opening Cutscenes."}
+        with self._lock:
+            previous, self.cutscenes_window = self.cutscenes_window, None
+        if previous is not None:
+            try:
+                previous.destroy()
+            except Exception as exc:  # noqa: BLE001 - prior window is optional
+                self.application.diagnostics.unhandled_error(
+                    context="destroy_cutscenes", error=exc
+                )
+        window = webview.create_window(
+            "Cutscenes",
+            url=view_url("cutscenes"),
+            js_api=CutscenesBridge(self.application.cutscenes, bridge),
+            width=520,
+            height=640,
+            min_size=(420, 520),
+            on_top=True,
+        )
+        if window is None:
+            return {"message": "The Cutscenes window could not be created."}
+        window.events.closed += self._cutscenes_closed
+        with self._lock:
+            self.cutscenes_window = window
+        return {"message": "Cutscenes opened."}
+
+    def _cutscenes_closed(self, window: webview.Window) -> None:
+        """Forget a manually closed Cutscenes window without disturbing the game."""
+
+        with self._lock:
+            if self.cutscenes_window is window:
+                self.cutscenes_window = None
+
+    def publish_cutscene(self, program: dict[str, Any]) -> None:
+        """Push a new cutscene program to every board that plays it.
+
+        Mirrors :meth:`publish_layout`: only the spectator and the practice
+        test window play a cutscene (spec section 4); the layout editor does
+        not. A push failure is logged and the window survives -- a cutscene
+        is decoration, never a path to the game (R-002).
+        """
+
+        with self._lock:
+            spectator = self.spectator_window
+            test_window = self.test_window
+        script = f"window.applyCutscene && window.applyCutscene({_json(program)})"
+        for window, context in (
+            (spectator, "spectator_cutscene_push"),
+            (test_window, "test_spectator_cutscene_push"),
+        ):
+            if window is not None and window.events.loaded.is_set():
+                try:
+                    window.evaluate_js(script)
+                except Exception as exc:  # noqa: BLE001 - a cutscene push must not stop the game
+                    self.application.diagnostics.unhandled_error(context=context, error=exc)
+
+    def end_cutscene(self, play_id: int) -> None:
+        """Tell every board to end the cutscene now, exactly like :meth:`publish_cutscene`."""
+
+        with self._lock:
+            spectator = self.spectator_window
+            test_window = self.test_window
+        script = f"window.endCutscene && window.endCutscene({int(play_id)})"
+        for window, context in (
+            (spectator, "spectator_cutscene_end"),
+            (test_window, "test_spectator_cutscene_end"),
+        ):
+            if window is not None and window.events.loaded.is_set():
+                try:
+                    window.evaluate_js(script)
+                except Exception as exc:  # noqa: BLE001 - a cutscene push must not stop the game
+                    self.application.diagnostics.unhandled_error(context=context, error=exc)
 
     def publish_layout(self, layout: dict[str, Any]) -> None:
         """Push a changed presentation layout to every open board.
@@ -1127,16 +1270,25 @@ class WindowHost:
                 spectator = None
                 test_window = None
                 field_assistant = None
+                cutscenes = None
             elif window_name == "field_assistant":
                 operator = None
                 spectator = None
                 test_window = None
                 field_assistant = self.field_assistant_window
+                cutscenes = None
+            elif window_name == "cutscenes":
+                operator = None
+                spectator = None
+                test_window = None
+                field_assistant = None
+                cutscenes = self.cutscenes_window
             else:
                 operator = None
                 spectator = self.spectator_window
                 test_window = self.test_window
                 field_assistant = None
+                cutscenes = None
         script = f"window.applyView && window.applyView({_json(view)})"
         if operator is not None and operator.events.loaded.is_set():
             try:
@@ -1204,6 +1356,22 @@ class WindowHost:
                 except Exception as destroy_exc:  # noqa: BLE001
                     self.application.diagnostics.unhandled_error(
                         context="destroy_field_assistant", error=destroy_exc
+                    )
+        if cutscenes is not None and cutscenes.events.loaded.is_set():
+            try:
+                cutscenes.evaluate_js(script)
+            except Exception as exc:  # noqa: BLE001 - helper failure is isolated
+                self.application.diagnostics.unhandled_error(
+                    context="cutscenes_push", error=exc
+                )
+                with self._lock:
+                    if self.cutscenes_window is cutscenes:
+                        self.cutscenes_window = None
+                try:
+                    cutscenes.destroy()
+                except Exception as destroy_exc:  # noqa: BLE001
+                    self.application.diagnostics.unhandled_error(
+                        context="destroy_cutscenes", error=destroy_exc
                     )
 
     def _set_status(self, message: str) -> dict[str, str]:

@@ -36,6 +36,16 @@ LAYOUTS_FILENAME: Final[str] = "layouts.json"
 #: reason ``layouts.json`` is separate from ``config.json`` -- see
 #: ``scoreboard.infrastructure.teams`` for why.
 TEAMS_FILENAME: Final[str] = "teams.json"
+#: The cutscene packs folder (spec section 3): a directory, not a file, so an
+#: operator can drop a pack's media in beside its manifest. Same "never touch
+#: the game database" boundary as ``layouts.json``/``teams.json`` -- see
+#: ``scoreboard.infrastructure.cutscene_packs`` for why.
+CUTSCENES_DIRECTORY_NAME: Final[str] = "cutscenes"
+#: Which pack is selected per event (spec section 3), living beside the
+#: ``cutscenes`` folder rather than inside it -- an operator who empties the
+#: folder to start over should not also lose their selection file by
+#: accident.
+CUTSCENE_SELECTION_FILENAME: Final[str] = "cutscenes.json"
 LOCK_FILENAME: Final[str] = "scoreboard.lock"
 LOG_DIRECTORY_NAME: Final[str] = "logs"
 LOG_FILENAME: Final[str] = "application.log"
@@ -171,6 +181,14 @@ class ScoreboardPaths:
         return self.root / TEAMS_FILENAME
 
     @property
+    def cutscenes(self) -> Path:
+        return self.root / CUTSCENES_DIRECTORY_NAME
+
+    @property
+    def cutscene_selection(self) -> Path:
+        return self.root / CUTSCENE_SELECTION_FILENAME
+
+    @property
     def lock(self) -> Path:
         return self.root / LOCK_FILENAME
 
@@ -196,6 +214,7 @@ class ScoreboardPaths:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.log_directory.mkdir(parents=True, exist_ok=True)
+            self.cutscenes.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise PathResolutionError(
                 f"could not create the runtime data directory {self.root}: {exc}"
@@ -211,6 +230,7 @@ class ScoreboardPaths:
             "backup": str(self.backup),
             "log_file": str(self.log_file),
             "teams": str(self.teams),
+            "cutscenes": str(self.cutscenes),
         }
 
 
@@ -391,6 +411,8 @@ __all__ = [
     "APPLICATION_DIRECTORY_NAME",
     "BACKUP_FILENAME",
     "CONFIG_FILENAME",
+    "CUTSCENES_DIRECTORY_NAME",
+    "CUTSCENE_SELECTION_FILENAME",
     "DATABASE_FILENAME",
     "DATA_DIRECTORY_ENVIRONMENT_VARIABLE",
     "LAYOUTS_FILENAME",

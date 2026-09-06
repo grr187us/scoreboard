@@ -83,6 +83,7 @@ from scoreboard.domain.state import (
     QUARTER_LABELS,
     SCHEMA_VERSION,
 )
+from scoreboard.host.cutscenes import CutsceneDirector
 from scoreboard.host.folders import (
     FolderChoice,
     choose_data_folder,
@@ -730,9 +731,11 @@ class SpectatorBridge:
         self,
         read_snapshot: Callable[[], dict[str, Any]],
         read_layout: Callable[[], dict[str, Any]] | None = None,
+        read_cutscene: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self._read_snapshot = read_snapshot
         self._read_layout = read_layout
+        self._read_cutscene = read_cutscene
 
     def get_snapshot(self) -> dict[str, Any]:
         return self._read_snapshot()
@@ -748,6 +751,19 @@ class SpectatorBridge:
         if self._read_layout is not None:
             return self._read_layout()
         return default_layout()
+
+    def get_cutscene(self) -> dict[str, Any] | None:
+        """The program currently playing, or ``None``. Read-only.
+
+        ``read_cutscene`` is optional so a build with no cutscenes director --
+        most bridge tests -- answers ``None`` rather than raising. A reopened
+        spectator calls this once on load to join a cutscene already in
+        progress (spec section 6.1).
+        """
+
+        if self._read_cutscene is None:
+            return None
+        return self._read_cutscene()
 
 
 class FieldAssistantBridge:
@@ -802,6 +818,7 @@ class ScoreboardBridge:
         teams: TeamPresets | None = None,
         field_assistant_opener: Callable[[], dict[str, str]] | None = None,
         logs_opener: Callable[[Path], None] | None = None,
+        cutscenes: CutsceneDirector | None = None,
     ) -> None:
         self._service = service
         self._store = store
@@ -816,6 +833,12 @@ class ScoreboardBridge:
         # current team name; the lookup is an in-memory dict read (F4).
         self._teams = teams
         self._field_assistant_opener = field_assistant_opener
+        # Optional, exactly like the layout library and the team presets:
+        # many tests build a bridge with no director at all, and the three
+        # host actions below answer plainly rather than raising when it is
+        # absent (spec section 5.1).
+        self._cutscenes = cutscenes
+        self._cutscenes_opener: Callable[[], dict[str, str]] | None = None
         # Explorer by default; tests inject a recorder. `os.startfile` is
         # Windows-only, which is the only platform this application targets.
         self._logs_opener = logs_opener or _open_in_explorer
@@ -1179,6 +1202,21 @@ class ScoreboardBridge:
         teams["away"]["identity"] = identities["away"]
         return view
 
+    def _with_cutscenes(self, view: dict[str, Any]) -> dict[str, Any]:
+        """Attach the cutscenes badge to a view model (spec section 5.1).
+
+        The 10 Hz refresh tick already delivers this to every window, so the
+        Cutscenes window and the operator badge never compute a countdown
+        themselves -- ``director.status()`` (or ``None``, idle or absent) is
+        simply copied.
+        """
+
+        view["cutscenes"] = {
+            "available": self._cutscenes is not None,
+            "playing": None if self._cutscenes is None else self._cutscenes.status(),
+        }
+        return view
+
     def open_layout_editor(self) -> dict[str, str]:
         """Open the presentation layout editor window.
 
@@ -1216,6 +1254,79 @@ class ScoreboardBridge:
             except Exception as exc:  # noqa: BLE001 - helper failure is contained
                 self._diagnostics.unhandled_error(context="open_field_assistant", error=exc)
                 return {"message": f"The Field Assistant could not be opened: {exc}"}
+
+    def set_cutscenes_opener(
+        self, opener: Callable[[], dict[str, str]] | None
+    ) -> None:
+        """Install the optional host-window hook after WindowHost is wired."""
+
+        self._cutscenes_opener = opener
+
+    def open_cutscenes(self) -> dict[str, str]:
+        """Open the optional Cutscenes window without touching game state.
+
+        A host action like :meth:`open_field_assistant`: it advances no
+        revision, submits no command, and writes no history row.
+        """
+
+        with self._lock:
+            if self._cutscenes_opener is None:
+                return {"message": "The Cutscenes window is unavailable."}
+            try:
+                return self._cutscenes_opener()
+            except Exception as exc:  # noqa: BLE001 - helper failure is contained
+                self._diagnostics.unhandled_error(context="open_cutscenes", error=exc)
+                return {"message": f"The Cutscenes window could not be opened: {exc}"}
+
+    def trigger_cutscene(self, event: Any, team: Any = None) -> dict[str, Any]:
+        """Play one cutscene, or report unavailable. No revision, no history.
+
+        Like every host action in this group, a failure is contained and
+        reported rather than raised; the returned dict also carries the
+        complete operator view so the badge re-renders at once, whichever
+        window called this.
+        """
+
+        if self._cutscenes is None:
+            with self._lock:
+                return {
+                    "ok": False,
+                    "message": "Cutscenes are unavailable.",
+                    "view": self._view(),
+                }
+        # The director is called *outside* the command lock on purpose: its
+        # publish reaches a window's ``evaluate_js``, the one call that can
+        # block without bound when WebView2 stalls (C4). Holding the lock
+        # across it would put a stalled wall back in the path of every clock
+        # and score command. The director is thread-safe on its own.
+        try:
+            result = dict(self._cutscenes.trigger(event, team))
+        except Exception as exc:  # noqa: BLE001 - a cutscene must never stop the game
+            self._diagnostics.unhandled_error(context="trigger_cutscene", error=exc)
+            result = {"ok": False, "message": f"The cutscene could not be triggered: {exc}"}
+        with self._lock:
+            result["view"] = self._view()
+        return result
+
+    def cancel_cutscene(self) -> dict[str, Any]:
+        """End whatever cutscene is playing. No revision, no history."""
+
+        if self._cutscenes is None:
+            with self._lock:
+                return {
+                    "ok": False,
+                    "message": "Cutscenes are unavailable.",
+                    "view": self._view(),
+                }
+        # Outside the command lock for the same C4 reason as trigger_cutscene.
+        try:
+            result = dict(self._cutscenes.cancel())
+        except Exception as exc:  # noqa: BLE001
+            self._diagnostics.unhandled_error(context="cancel_cutscene", error=exc)
+            result = {"ok": False, "message": f"The cutscene could not be cancelled: {exc}"}
+        with self._lock:
+            result["view"] = self._view()
+        return result
 
     def reopen_display(self) -> dict[str, Any]:
         """Recreate the spectator window. This changes no game state (D-005)."""
@@ -1420,12 +1531,14 @@ class ScoreboardBridge:
     # --- Internals ----------------------------------------------------------
 
     def _view(self, now: float | None = None) -> dict[str, Any]:
-        return self._with_identity(
-            operator_view_model(
-                self._service,
-                persistence=self._store.status,
-                display=self._display.status,
-                now=now,
+        return self._with_cutscenes(
+            self._with_identity(
+                operator_view_model(
+                    self._service,
+                    persistence=self._store.status,
+                    display=self._display.status,
+                    now=now,
+                )
             )
         )
 

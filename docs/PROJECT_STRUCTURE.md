@@ -1,7 +1,7 @@
 # Proposed Phase 2 Project Structure
 
 **Status:** Approved structure; implementation now fills the Phase 2 boundaries
-**Last updated:** September 6, 2026 (reconciled publisher, saved-team, layout-editor split, CI/tooling, and data-location ownership)
+**Last updated:** September 6, 2026 (reconciled publisher, saved-team, layout-editor split, CI/tooling, data-location ownership, and the new Cutscenes modules/view)
 
 ## 1. Principle
 
@@ -60,7 +60,8 @@ scoreboard/
 │  │  └─ field_assistant.py        # pure Field Assistant rules: coordinates, series/line-to-gain, penalties, transitions; no I/O, no clocks (added September 5, 2026)
 │  ├─ presentation/                # added September 5, 2026
 │  │  ├─ __init__.py
-│  │  └─ layout.py                 # pure spectator-layout schema, defaults, and validation (no I/O)
+│  │  ├─ layout.py                 # pure spectator-layout schema, defaults, and validation (no I/O)
+│  │  └─ cutscenes.py              # pure cutscene event registry, pack-manifest validation, and the program builder (added September 6, 2026)
 │  ├─ application/
 │  │  ├─ service.py                # serializes commands; revision authority
 │  │  ├─ snapshots.py              # versioned view/adapter contract
@@ -72,7 +73,8 @@ scoreboard/
 │  │  ├─ diagnostics.py            # rotating application diagnostics
 │  │  ├─ local_time.py             # display-only UTC-to-Eastern timestamp conversion
 │  │  ├─ layouts.py                # layouts.json read/write, atomic replace, schema-version fallback (added September 5, 2026)
-│  │  └─ teams.py                  # teams.json read/write, atomic replace, schema-version fallback (added September 6, 2026)
+│  │  ├─ teams.py                  # teams.json read/write, atomic replace, schema-version fallback (added September 6, 2026)
+│  │  └─ cutscene_packs.py         # scans cutscenes/ for manifest.json packs, reads/writes cutscenes.json (added September 6, 2026)
 │  ├─ host/
 │  │  ├─ app.py                    # webview lifecycle and shutdown; owns the six window slots
 │  │  ├─ startup.py                # separate report/resume/new startup surface
@@ -81,6 +83,7 @@ scoreboard/
 │  │  ├─ bridge.py                 # narrow JS/Python contract; also hosts FieldAssistantBridge (added September 5, 2026)
 │  │  ├─ layout_bridge.py          # presentation-layout host bridge; no game-mutating method (added September 5, 2026)
 │  │  ├─ teams.py                  # saved-team library host bridge; no game-mutating method (added September 6, 2026)
+│  │  ├─ cutscenes.py              # CutsceneDirector (playback state, timers) and CutscenesBridge; no game-mutating method (added September 6, 2026)
 │  │  ├─ publisher.py              # off-lock latest-pending webview delivery boundary (C4; known ordering gap documented)
 │  │  └─ displays.py               # enumeration, selection, reopen/fullscreen
 │  ├─ views/
@@ -89,7 +92,8 @@ scoreboard/
 │  │  ├─ startup/                  # recovery preview and explicit choices
 │  │  ├─ layout/                   # editor shell plus layout.js, editor-state.js, editor-canvas.js, editor-panels.js
 │  │  ├─ field_assistant/          # helper window: index.html, field_assistant.js, field_assistant.css (added September 5, 2026)
-│  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer
+│  │  ├─ cutscenes/                # persistent trigger window: index.html, cutscenes.js, cutscenes.css (added September 6, 2026)
+│  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer; cutscene.js, cutscene.css, and the cutscenes/builtin.js scene registry play the animation (added September 6, 2026)
 │  └─ integrations/                # empty/uncreated until a later phase needs it
 │     ├─ obs.py                    # future output adapter, not MVP
 │     └─ controller.py             # future optional input adapter, not MVP
@@ -120,11 +124,13 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 | `domain/formatting.py` | Pure upward display rounding for every clock readout | Stored time, state, or persistence policy |
 | `domain/field_assistant.py` | Pure Field Assistant rules: coordinate conversion, series/line-to-gain, penalty and transition calculations | Files, UI objects, clocks, persistence, or the composite command's revision check |
 | `presentation/layout.py` | Spectator-widget/layout schema, defaults, and validation, including the safe-area policy | Files, UI objects, timers, or authoritative game state |
+| `presentation/cutscenes.py` | The cutscene event registry, pack-manifest validation with a plain-language fallback, and building the one program document a cutscene plays from | Files, UI objects, timers, clocks, or authoritative game state |
 | `application/service.py` | Command order, state revision, snapshots, publication | Rendering or OS display APIs |
 | `application/recovery.py` | Validated startup restore as stopped, owner choice | Silent auto-resume |
 | `infrastructure/persistence.py` | One SQLite transaction per accepted command, the last-known-good backup, the append-only action history, and the single-instance lock | Deciding game rules or producing a revision |
 | `infrastructure/layouts.py` | `layouts.json` read/write, atomic replace, schema-version fallback | Deciding widget geometry or producing a state revision |
 | `infrastructure/teams.py` | `teams.json` read/write, atomic replace, schema-version fallback, team validation/short-name derivation | Applying a team name to the game, or a state revision |
+| `infrastructure/cutscene_packs.py` | Scanning `cutscenes/` for pack folders, writing its `README.txt`, and `cutscenes.json` read/write with atomic replace and schema-version fallback | Deciding whether a manifest is valid, or a state revision |
 | `infrastructure/paths.py` | Platform-default and chosen data-folder resolution, including the bootstrap `data-location.json` pointer | Game state, display preferences, or persistence policy |
 | `infrastructure/config.py` | Non-game preferences inside the selected data folder: display identity and geometry | Game state, the bootstrap data-folder choice, or a state revision |
 | `host/preflight.py` | Runtime and WebView2 prerequisite checks, and fatal-launch reporting | Game state or window lifecycle |
@@ -132,6 +138,7 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 | `host/bridge.py` | JSON-compatible command/snapshot boundary; also `FieldAssistantBridge`'s `get_snapshot`/`preview_field_action`/`finalize_field_action` | Duplicate game state |
 | `host/layout_bridge.py` | Read/validate/save/publish spectator layouts | Any game-mutating method |
 | `host/teams.py` | Read/save/delete the saved-team library in memory; identity lookup by current team name for the view model | Submitting `set_team_name` or any other command |
+| `host/cutscenes.py` | `CutsceneDirector`'s playback state (what is playing, when it ends), the pack library, and `CutscenesBridge`'s small JSON API | Any game-mutating method, a state revision, or a history row |
 | `host/publisher.py` | Execute webview delivery away from the command lock and coalesce pending updates | Authoritative ordering, game state, or persistence; see the reopened C4 limitation in `ARCHITECTURE.md` |
 | `host/displays.py` | Enumeration, display preference, reopen/fullscreen | HDMI switching or LED protocol |
 | operator view | Input intent, forms, feedback, ephemeral UI state | Authoritative scores/clocks |
@@ -157,6 +164,8 @@ Scoreboard/
 ├─ config.json                     # created when Task 7+ needs it
 ├─ layouts.json                    # saved spectator-board presentation layouts (added September 5, 2026)
 ├─ teams.json                      # saved team names, short names, and colours (added September 6, 2026)
+├─ cutscenes.json                  # which pack is selected per cutscene event (added September 6, 2026)
+├─ cutscenes/                      # cutscene pack folders (manifest.json + optional media), plus README.txt (added September 6, 2026)
 ├─ scoreboard.db                   # recoverable state + append-only action history
 ├─ scoreboard.backup.db            # automatically refreshed last-known-good copy
 ├─ scoreboard.lock                 # single-instance lock (R-004)
@@ -174,6 +183,8 @@ The game's durable action history lives in `scoreboard.db`, not in a separate JS
 
 `teams.json` (added September 6, 2026) is its own file for the same reason: the saved-team library is a laptop preference, not game state (`GameState` keeps only `home_name`/`away_name`), so a damaged team library must not be able to cost the operator a saved game or layout, and vice versa. It carries the same schema-version/atomic-write contract; applying a saved team still goes through the existing, validated `set_team_name` command.
 
+`cutscenes.json` and the `cutscenes/` folder (added September 6, 2026) follow the identical pattern: cutscene packs and which one is selected per event are a laptop preference, not game state, so neither file can cost the operator a saved game, layout, or team library, and vice versa. `cutscenes/` holds pack folders (each a `manifest.json` plus an optional video or image) and a `README.txt` written the first time the folder is created; `cutscenes.json` — a sibling of `cutscenes/`, not a file inside it, so emptying the packs folder cannot also erase the selection — holds only which pack id is selected per event, atomically written like every other preference file here.
+
 Tests use isolated temporary directories and never read or overwrite the operator's real state.
 
 ## 6. Test organization
@@ -184,6 +195,7 @@ Tests should normally sit at the lowest layer that can prove the behavior:
 - Field Assistant rules (coordinate conversion, series and line-to-gain, penalties, transitions) and the presentation-layout schema (widget shape, safe-area policy, strict-validate-with-fallback): pure unit tests with no I/O and no clock, following the same pattern as the domain-state tests above.
 - Atomic replace, corrupt-primary fallback, and event ordering: integration tests with temporary directories.
 - `layouts.json` atomic replace and schema-version fallback, the `PresentationLayouts`/`LayoutEditorBridge` publish-on-change guarantees, and the `finalize_field_action` composite command through the real bridge — one revision, one history row, one snapshot, undone as one action: integration tests with temporary directories, on the same terms as the persistence and bridge bullets.
+- The cutscene pack-manifest schema (`presentation/cutscenes.py`): a pure unit test, on the same terms as the presentation-layout schema above. Scanning/selecting packs (`infrastructure/cutscene_packs.py`) and playback/timer/publish behavior (`host/cutscenes.py`'s `CutsceneDirector`, with a fake scheduler and monotonic clock): integration tests with temporary directories, mirroring the layout and team bullets. The spectator player's timeline (`cutscene.js`) is covered the same way `spectator.cjs` covers the board: a Playwright/Edge browser test plus a source-contract test for the no-`fetch`/no-`api.command` boundary.
 - Bridge payload and stale revision behavior: contract/integration tests.
 - Button hierarchy, focus suppression, display placement, fullscreen, disconnect/reopen: narrow automated UI checks plus documented Windows manual tests. `tests/ui/` runs Edge via development-only Playwright; the keyboard harness sends browser requests to a real bridge backed by an isolated temporary SQLite store, and the same pattern now drives the widgetized spectator board (`spectator.cjs`) and the presentation-layout editor page (`layout_editor.cjs`) against a stub `window.pywebview.api` built from real `PresentationLayouts.state()` payloads.
 - Packaging, offline launch, sustained rehearsal: release acceptance scripts/checklists, not unit tests.

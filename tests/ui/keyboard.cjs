@@ -190,7 +190,11 @@ async function main(data) {
     assert.equal(await page.locator('#corrections').isVisible(),false);assert.equal(page.isClosed(),false);
     await page.locator('#open-help').click();
     const help=await page.locator('#shortcut-list tr').evaluateAll(rows=>rows.map(row=>Array.from(row.children).map(e=>e.textContent)));
-    assert.deepEqual(help,[...map.map(row=>[row[3],row[4]]),['Esc','Close dialog / drawer']]);
+    // Appended per .scratch/cutscenes/spec.md 7.2: four `host` bindings
+    // (cutscenes trigger/cancel) that still show up in the shortcut table.
+    assert.deepEqual(help,[...map.map(row=>[row[3],row[4]]),['Esc','Close dialog / drawer'],
+      ['D','Cutscene: First down'],['T','Cutscene: Touchdown (home)'],
+      ['Shift+T','Cutscene: Touchdown (away)'],['Shift+C','Cancel cutscene']]);
     await page.keyboard.press('Escape');assert.equal(await page.locator('#shortcut-help').isVisible(),false);
     await page.locator('#open-advanced').click();
     assert.equal(await page.locator('#advanced-drawer').isVisible(),true);
