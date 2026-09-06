@@ -80,6 +80,9 @@ class LayoutCannotTouchTheGameTests(LayoutTestCase):
         self.assertTrue(saved["ok"], saved)
         layouts.save("Night", moved(layouts.current_layout(), "quarter", color="#FFAA00"))
         layouts.select("Night")
+        layouts.rename("Night", "Evening")
+        layouts.save("Extra", layouts.current_layout())
+        layouts.duplicate("Extra", "Extra copy")
         layouts.reset()
         layouts.state()
         layouts.preview(layouts.current_layout())
@@ -106,6 +109,9 @@ class LayoutCannotTouchTheGameTests(LayoutTestCase):
         bridge.command("add_score", {"team": "away", "points": 3})
         layouts = self.make_layouts()
         layouts.save("Default", moved(layouts.current_layout(), "quarter", x=0.06))
+        layouts.save("Night", layouts.current_layout())
+        layouts.rename("Night", "Evening")
+        layouts.duplicate("Evening", "Evening copy")
         layouts.reset()
 
         commands = {row["command"] for row in read_action_history(self.paths.database)}
@@ -134,7 +140,7 @@ class LayoutCannotTouchTheGameTests(LayoutTestCase):
         self.assertEqual(public, {
             "get_snapshot", "layout_state", "preview_layout", "clamp_layout",
             "reset_widget", "save_layout", "select_layout", "delete_layout",
-            "reset_layout",
+            "rename_layout", "duplicate_layout", "reset_layout",
         })
 
     def test_opening_the_editor_is_a_host_action(self) -> None:
@@ -162,6 +168,109 @@ class LayoutCannotTouchTheGameTests(LayoutTestCase):
         self.assertTrue(message["message"])
 
 
+class RenameAndDuplicateTests(LayoutTestCase):
+    """Renaming and duplicating are host actions, exactly like save/select/delete."""
+
+    def make_counting_link(self) -> tuple[LayoutLink, list[dict]]:
+        link = LayoutLink()
+        published: list[dict] = []
+        link.publish = lambda layout: published.append(layout)  # type: ignore[method-assign]
+        return link, published
+
+    def test_rename_and_duplicate_advance_no_revision_and_write_no_history_row(self) -> None:
+        application = self.make_application()
+        bridge = application.start_new()
+        bridge.command("game_clock_start")
+        self.monotonic.advance(6.0)
+
+        layouts = self.make_layouts()
+        layouts.save("Night", moved(layouts.current_layout(), "quarter", color="#FFAA00"))
+
+        before_state = application.service.materialized_state()
+        before_revision = application.service.revision
+        before_history = len(read_action_history(self.paths.database))
+
+        renamed = layouts.rename("Night", "Evening")
+        self.assertTrue(renamed["ok"], renamed)
+        duplicated = layouts.duplicate("Evening", "Evening copy")
+        self.assertTrue(duplicated["ok"], duplicated)
+        # Refusals must be just as inert as successes.
+        layouts.rename("Nowhere", "Somewhere")
+        layouts.duplicate("Nowhere", "Somewhere")
+        layouts.rename("Default", "Renamed default")
+
+        self.monotonic.advance(4.0)
+        after_state = application.service.materialized_state()
+
+        self.assertEqual(application.service.revision, before_revision)
+        self.assertEqual(len(read_action_history(self.paths.database)), before_history)
+        self.assertTrue(after_state.game_clock.running)
+        self.assertAlmostEqual(
+            before_state.game_clock.seconds - after_state.game_clock.seconds, 4.0, places=6
+        )
+
+    def test_rename_publishes_exactly_once_on_success_and_never_on_refusal(self) -> None:
+        link, published = self.make_counting_link()
+        layouts = self.make_layouts(link=link)
+        layouts.save("Night", layouts.current_layout())
+        published.clear()
+
+        ok = layouts.rename("Night", "Evening")
+        self.assertTrue(ok["ok"], ok)
+        self.assertEqual(len(published), 1)
+
+        refused = layouts.rename("Nowhere", "Somewhere Else")
+        self.assertFalse(refused["ok"])
+        self.assertEqual(len(published), 1)
+
+        refused = layouts.rename("Default", "New Default Name")
+        self.assertFalse(refused["ok"])
+        self.assertEqual(len(published), 1)
+
+        refused = layouts.rename("Evening", "Default")
+        self.assertFalse(refused["ok"])
+        self.assertEqual(len(published), 1)
+
+    def test_duplicate_publishes_exactly_once_on_success_and_never_on_refusal(self) -> None:
+        link, published = self.make_counting_link()
+        layouts = self.make_layouts(link=link)
+        layouts.save("Night", layouts.current_layout())
+        published.clear()
+
+        ok = layouts.duplicate("Night", "Night copy")
+        self.assertTrue(ok["ok"], ok)
+        self.assertEqual(len(published), 1)
+        self.assertEqual(layouts.state()["active"], "Night copy")
+
+        refused = layouts.duplicate("Nowhere", "Somewhere Else")
+        self.assertFalse(refused["ok"])
+        self.assertEqual(len(published), 1)
+
+        refused = layouts.duplicate("Night", "Night copy")  # already exists
+        self.assertFalse(refused["ok"])
+        self.assertEqual(len(published), 1)
+
+    def test_renaming_the_active_layout_keeps_it_active(self) -> None:
+        layouts = self.make_layouts()
+        layouts.save("Night", layouts.current_layout())
+        layouts.select("Night")
+
+        result = layouts.rename("Night", "Evening")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["active"], "Evening")
+
+    def test_duplicating_makes_the_copy_active(self) -> None:
+        layouts = self.make_layouts()
+        layouts.save("Night", layouts.current_layout())
+        layouts.select("Default")
+
+        result = layouts.duplicate("Night", "Night copy")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["active"], "Night copy")
+
+
 class LayoutPayloadTests(LayoutTestCase):
     def test_every_payload_is_json_compatible(self) -> None:
         application = self.make_application()
@@ -176,9 +285,15 @@ class LayoutPayloadTests(LayoutTestCase):
         self.assert_json_only(editor.save_layout("Default", layouts.current_layout()))
         self.assert_json_only(editor.clamp_layout(layouts.current_layout()))
         self.assert_json_only(editor.reset_widget("quarter", layouts.current_layout()))
+        self.assert_json_only(editor.save_layout("Night", layouts.current_layout()))
+        self.assert_json_only(editor.rename_layout("Night", "Evening"))
+        self.assert_json_only(editor.duplicate_layout("Evening", "Evening copy"))
         self.assert_json_only(editor.reset_layout())
         # A rejection payload has to survive the boundary too.
         self.assert_json_only(editor.save_layout("Default", {"nonsense": True}))
+        self.assert_json_only(editor.rename_layout("Nowhere", "Somewhere"))
+        self.assert_json_only(editor.duplicate_layout("Nowhere", "Somewhere"))
+        self.assert_json_only(editor.rename_layout("Default", "New Name"))
         self.assert_json_only(SpectatorBridge(bridge.spectator_snapshot,
                                               layouts.current_layout).get_layout())
 

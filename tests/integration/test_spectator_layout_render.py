@@ -97,6 +97,10 @@ class BoardJsDataContractTests(unittest.TestCase):
         extracted = _extract_js_literal(self.source, "DEFAULT_LAYOUT")
         self.assertEqual(extracted, layout.default_layout())
 
+    def test_font_families_match_python_exactly(self):
+        extracted = _extract_js_literal(self.source, "FONT_FAMILIES")
+        self.assertEqual(extracted, dict(layout.FONT_FAMILIES))
+
 
 class SpectatorHouseRulesTests(unittest.TestCase):
     """The renderer stays presentation-only: no controls, no derived values."""
@@ -111,6 +115,24 @@ class SpectatorHouseRulesTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             for forbidden in _FORBIDDEN_TOKENS:
                 self.assertNotIn(forbidden, source, f"{forbidden!r} found in {path.name}")
+
+
+class BoardJsRendersFreeElementsTests(unittest.TestCase):
+    """v2 source-level checks: board.js knows how to place free elements, and
+    no editing affordance from the layout editor has leaked into the shared
+    renderer that also draws the spectator's LED wall (spec section 3)."""
+
+    def test_board_js_contains_the_v2_element_markers(self):
+        source = BOARD_JS.read_text(encoding="utf-8")
+        for marker in ("data-item", "data-board-root", "data-element", "element-image"):
+            self.assertIn(marker, source, f"{marker!r} not found in board.js")
+
+    def test_board_js_and_board_css_contain_no_editing_affordance(self):
+        board_js = BOARD_JS.read_text(encoding="utf-8").lower()
+        board_css = (VIEWS_ROOT / "shared" / "board.css").read_text(encoding="utf-8").lower()
+        for forbidden in ("handle", "guide", "drag", "resize"):
+            self.assertNotIn(forbidden, board_js, f"{forbidden!r} found in board.js")
+            self.assertNotIn(forbidden, board_css, f"{forbidden!r} found in board.css")
 
 
 def _resolve_dotted_path(model: dict, path: str):

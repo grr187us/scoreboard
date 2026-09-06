@@ -20,13 +20,19 @@ from scoreboard.infrastructure.layouts import (
     LayoutLibrary,
     default_library,
     delete_layout,
+    duplicate_layout,
     read_library,
+    rename_layout,
     reset_library,
     save_layout,
     select_layout,
     write_library,
 )
-from scoreboard.presentation.layout import DEFAULT_LAYOUT_NAME, default_layout
+from scoreboard.presentation.layout import (
+    DEFAULT_LAYOUT_NAME,
+    LAYOUT_SCHEMA_VERSION,
+    default_layout,
+)
 
 from tests.integration.support import TemporaryDataDirectoryTest
 
@@ -248,6 +254,222 @@ class NamedLayoutTests(LayoutLibraryTestCase):
         self.assertEqual(library.layouts, {DEFAULT_LAYOUT_NAME: default_layout()})
         self.assertEqual(library.active, DEFAULT_LAYOUT_NAME)
         self.assertEqual(read_library(self.paths).active_layout(), default_layout())
+
+
+class RenameLayoutTests(LayoutLibraryTestCase):
+    def test_a_stored_layout_can_be_renamed(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", customised(color="#FFAA00"))
+
+        library, validation = rename_layout(self.paths, "Night", "Evening")
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertNotIn("Night", library.layouts)
+        self.assertIn("Evening", library.layouts)
+        # The renamed layout's own name field is updated, not just the key.
+        self.assertEqual(library.layouts["Evening"]["name"], "Evening")
+        self.assertEqual(library.layouts["Evening"]["schema_version"], LAYOUT_SCHEMA_VERSION)
+        self.assertEqual(
+            library.layouts["Evening"]["widgets"]["quarter"]["color"], "#FFAA00"
+        )
+        reloaded = read_library(self.paths)
+        self.assertIn("Evening", reloaded.layouts)
+        self.assertNotIn("Night", reloaded.layouts)
+
+    def test_renaming_the_active_layout_keeps_it_active(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        select_layout(self.paths, "Night")
+
+        library, validation = rename_layout(self.paths, "Night", "Evening")
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertEqual(library.active, "Evening")
+        self.assertEqual(read_library(self.paths).active, "Evening")
+
+    def test_renaming_a_layout_that_is_not_active_leaves_the_active_one_alone(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        select_layout(self.paths, "Default")
+
+        library, validation = rename_layout(self.paths, "Night", "Evening")
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertEqual(library.active, DEFAULT_LAYOUT_NAME)
+
+    def test_the_default_layout_cannot_be_renamed(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        library, validation = rename_layout(self.paths, DEFAULT_LAYOUT_NAME, "Something Else")
+
+        self.assertFalse(validation.ok)
+        self.assertEqual({i.code for i in validation.errors}, {"DEFAULT_PROTECTED"})
+        self.assertEqual(self.paths.layouts.read_bytes(), before)
+        self.assertIn(DEFAULT_LAYOUT_NAME, read_library(self.paths).layouts)
+
+    def test_renaming_an_unknown_layout_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        library, validation = rename_layout(self.paths, "Nowhere", "Somewhere")
+
+        self.assertFalse(validation.ok)
+        self.assertEqual({i.code for i in validation.errors}, {"LAYOUT_NOT_FOUND"})
+        self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_renaming_to_an_existing_name_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        save_layout(self.paths, "Morning", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        library, validation = rename_layout(self.paths, "Night", "Morning")
+
+        self.assertFalse(validation.ok)
+        self.assertEqual({i.code for i in validation.errors}, {"LAYOUT_EXISTS"})
+        self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_renaming_to_an_invalid_name_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        for bad_name in ("", "   ", "A" * (MAX_LAYOUT_NAME_LENGTH + 1), None, 7, "bad\x00name"):
+            with self.subTest(new=bad_name):
+                _, validation = rename_layout(self.paths, "Night", bad_name)
+                self.assertFalse(validation.ok)
+                self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_renaming_from_an_invalid_name_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        for bad_name in ("", "   ", None, 7):
+            with self.subTest(old=bad_name):
+                _, validation = rename_layout(self.paths, bad_name, "Anything")
+                self.assertFalse(validation.ok)
+                self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_a_failed_rename_write_is_reported_and_leaves_the_file_untouched(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        # Block the atomic write's temp file with a directory of the same name.
+        temporary = self.paths.layouts.with_suffix(".json.tmp")
+        temporary.mkdir(parents=True, exist_ok=True)
+        try:
+            library, validation = rename_layout(self.paths, "Night", "Evening")
+
+            self.assertFalse(validation.ok)
+            self.assertEqual({i.code for i in validation.errors}, {"WRITE_FAILED"})
+            self.assertEqual(self.paths.layouts.read_bytes(), before)
+            self.assertIn("Night", library.layouts)
+        finally:
+            temporary.rmdir()
+
+
+class DuplicateLayoutTests(LayoutLibraryTestCase):
+    def test_a_stored_layout_can_be_duplicated(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", customised(color="#FFAA00"))
+
+        library, validation = duplicate_layout(self.paths, "Night", "Night copy")
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertIn("Night", library.layouts)
+        self.assertIn("Night copy", library.layouts)
+        self.assertEqual(library.layouts["Night copy"]["name"], "Night copy")
+        self.assertEqual(library.layouts["Night copy"]["schema_version"], LAYOUT_SCHEMA_VERSION)
+        self.assertEqual(
+            library.layouts["Night copy"]["widgets"]["quarter"]["color"], "#FFAA00"
+        )
+        reloaded = read_library(self.paths)
+        self.assertIn("Night", reloaded.layouts)
+        self.assertIn("Night copy", reloaded.layouts)
+
+    def test_duplicating_makes_the_copy_active(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        select_layout(self.paths, "Default")
+
+        library, validation = duplicate_layout(self.paths, "Night", "Night copy")
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertEqual(library.active, "Night copy")
+        self.assertEqual(read_library(self.paths).active, "Night copy")
+
+    def test_the_default_layout_can_be_duplicated(self) -> None:
+        save_layout(self.paths, DEFAULT_LAYOUT_NAME, default_layout())
+
+        library, validation = duplicate_layout(self.paths, DEFAULT_LAYOUT_NAME, "Default copy")
+
+        self.assertTrue(validation.ok, [i.message for i in validation.errors])
+        self.assertIn(DEFAULT_LAYOUT_NAME, library.layouts)
+        self.assertIn("Default copy", library.layouts)
+
+    def test_duplicating_an_unknown_layout_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        library, validation = duplicate_layout(self.paths, "Nowhere", "Somewhere")
+
+        self.assertFalse(validation.ok)
+        self.assertEqual({i.code for i in validation.errors}, {"LAYOUT_NOT_FOUND"})
+        self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_duplicating_to_an_existing_name_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        library, validation = duplicate_layout(self.paths, "Night", DEFAULT_LAYOUT_NAME)
+
+        self.assertFalse(validation.ok)
+        self.assertEqual({i.code for i in validation.errors}, {"LAYOUT_EXISTS"})
+        self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_duplicating_to_an_invalid_name_is_refused(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        for bad_name in ("", "   ", "A" * (MAX_LAYOUT_NAME_LENGTH + 1), None, 7, "bad\x00name"):
+            with self.subTest(new=bad_name):
+                _, validation = duplicate_layout(self.paths, "Default", bad_name)
+                self.assertFalse(validation.ok)
+                self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_the_stored_count_is_bounded_on_duplicate(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        for index in range(MAX_STORED_LAYOUTS - 1):
+            save_layout(self.paths, f"Layout {index}", default_layout())
+        before = self.paths.layouts.read_bytes()
+        library = read_library(self.paths)
+        self.assertEqual(len(library.layouts), MAX_STORED_LAYOUTS)
+
+        _, validation = duplicate_layout(self.paths, "Default", "One too many")
+
+        self.assertFalse(validation.ok)
+        self.assertEqual({i.code for i in validation.errors}, {"MAX_STORED_LAYOUTS"})
+        self.assertEqual(self.paths.layouts.read_bytes(), before)
+
+    def test_a_failed_duplicate_write_is_reported_and_leaves_the_file_untouched(self) -> None:
+        save_layout(self.paths, "Default", default_layout())
+        save_layout(self.paths, "Night", default_layout())
+        before = self.paths.layouts.read_bytes()
+
+        temporary = self.paths.layouts.with_suffix(".json.tmp")
+        temporary.mkdir(parents=True, exist_ok=True)
+        try:
+            library, validation = duplicate_layout(self.paths, "Night", "Night copy")
+
+            self.assertFalse(validation.ok)
+            self.assertEqual({i.code for i in validation.errors}, {"WRITE_FAILED"})
+            self.assertEqual(self.paths.layouts.read_bytes(), before)
+            self.assertNotIn("Night copy", library.layouts)
+        finally:
+            temporary.rmdir()
 
 
 class LibraryValueTests(unittest.TestCase):

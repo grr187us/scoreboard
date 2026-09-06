@@ -2,7 +2,8 @@
 
 The presentation layout is a host concern, exactly like the display preference
 and the data folder in :mod:`scoreboard.host.bridge`: reading, validating,
-saving, selecting, resetting, or previewing a layout advances no revision,
+saving, selecting, renaming, duplicating, resetting, or previewing a layout
+advances no revision,
 submits no :class:`~scoreboard.domain.commands.Command`, writes nothing to
 ``scoreboard.db`` or its backup, and records no action-history row. The one
 durable side effect anywhere in this module is a write to ``layouts.json``
@@ -130,6 +131,9 @@ class PresentationLayouts:
             "layout": library.active_layout(),
             "widgets": layout_module.widget_descriptors(),
             "limits": layout_module.limits(),
+            # Built-in starting points the editor offers as a gallery. Each is
+            # a complete, validated layout document (spec section 1.7).
+            "presets": layout_module.preset_descriptors(),
             "issues": [issue.to_dict() for issue in library.issues],
             "fell_back": library.fell_back,
             "saved": self._saved,
@@ -217,6 +221,39 @@ class PresentationLayouts:
             self._diagnostics.note("LAYOUT_INVALID", reason="delete")
         return self._finished(validation)
 
+    def rename(self, old: Any, new: Any) -> dict[str, Any]:
+        """Rename a stored layout. ``"Default"`` can never be renamed.
+
+        Renaming the active layout keeps it active under the new name.
+        """
+
+        library, validation = layouts_infra.rename_layout(self._paths, old, new)
+        self._library = library
+        if validation.ok:
+            self._saved = True
+            self._message = f"Renamed the layout to {new!r}."
+            self._publish()
+        else:
+            self._saved = False
+            self._message = "That layout could not be renamed."
+            self._diagnostics.note("LAYOUT_INVALID", reason="rename")
+        return self._finished(validation)
+
+    def duplicate(self, name: Any, new_name: Any) -> dict[str, Any]:
+        """Copy a stored layout under a new name. The copy becomes active."""
+
+        library, validation = layouts_infra.duplicate_layout(self._paths, name, new_name)
+        self._library = library
+        if validation.ok:
+            self._saved = True
+            self._message = f"Duplicated the layout as {library.active!r}."
+            self._publish()
+        else:
+            self._saved = False
+            self._message = "That layout could not be duplicated."
+            self._diagnostics.note("LAYOUT_INVALID", reason="duplicate")
+        return self._finished(validation)
+
     def reset(self) -> dict[str, Any]:
         """Restore the built-in default layout library."""
 
@@ -288,6 +325,12 @@ class LayoutEditorBridge:
 
     def delete_layout(self, name: Any) -> dict[str, Any]:
         return self._layouts.delete(name)
+
+    def rename_layout(self, old: Any, new: Any) -> dict[str, Any]:
+        return self._layouts.rename(old, new)
+
+    def duplicate_layout(self, name: Any, new_name: Any) -> dict[str, Any]:
+        return self._layouts.duplicate(name, new_name)
 
     def reset_layout(self) -> dict[str, Any]:
         return self._layouts.reset()

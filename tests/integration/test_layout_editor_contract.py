@@ -4,6 +4,13 @@ These are static checks on the shipped page. They exist because the strongest
 guarantee this feature can offer is structural: there is no code path from the
 layout editor to a game command, and a test that reads the file is the thing
 that keeps it that way as the page grows.
+
+v2 splits the editor's JavaScript across four files (`layout.js`,
+`editor-state.js`, `editor-canvas.js`, `editor-panels.js`) that share one
+`window.LayoutEditor` namespace. Every check below that used to read just
+`layout.js` now reads all four -- concatenated into ``ALL_SCRIPT`` -- so
+splitting the file cannot quietly weaken a guarantee that used to apply to
+the whole script.
 """
 
 from __future__ import annotations
@@ -19,21 +26,51 @@ from scoreboard.presentation.layout import WIDGET_IDS, WIDGET_LABELS
 VIEWS = Path(__file__).resolve().parents[2] / "src" / "scoreboard" / "views"
 EDITOR = VIEWS / "layout"
 
+#: Every JavaScript file this window ships, in load order. Kept as a literal
+#: list (rather than a glob) so a stray extra .js file must be added here on
+#: purpose before its contents count toward any of the guarantees below.
+SCRIPT_FILES = ("layout.js", "editor-state.js", "editor-canvas.js", "editor-panels.js")
+
 EDITABLE_PROPERTIES = frozenset({
+    # v1 widget properties.
     "visible", "x", "y", "width", "height", "font_scale", "color",
     "text_align", "vertical_align", "font_weight", "z_index",
+    # v2 widget/element style properties (spec section 1.3).
+    "font_family", "letter_spacing", "text_transform", "text_effect",
+    "background", "background_opacity", "border_color", "border_width",
+    "corner_radius", "padding",
+    # Element-only properties (spec section 1.4).
+    "text", "opacity", "fit",
 })
+
+
+def read_scripts() -> dict[str, str]:
+    return {name: (EDITOR / name).read_text(encoding="utf-8") for name in SCRIPT_FILES}
+
+
+def code_only(script: str) -> str:
+    """The script with its comments removed.
+
+    The checks below are about what the editor *does*, not what it says about
+    itself: a module comment legitimately names ``bridge.command()`` to
+    explain that no such call exists.
+    """
+
+    without_blocks = re.sub(r"/\*.*?\*/", " ", script, flags=re.S)
+    return re.sub(r"(?m)//.*$", " ", without_blocks)
 
 
 class EditorPageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.html = (EDITOR / "index.html").read_text(encoding="utf-8")
-        cls.script = (EDITOR / "layout.js").read_text(encoding="utf-8")
+        cls.scripts = read_scripts()
+        cls.script = "\n".join(cls.scripts[name] for name in SCRIPT_FILES)
         cls.style = (EDITOR / "layout.css").read_text(encoding="utf-8")
 
-    def test_the_three_files_exist_and_are_not_empty(self) -> None:
-        for path in (EDITOR / "index.html", EDITOR / "layout.js", EDITOR / "layout.css"):
+    def test_the_editor_files_exist_and_are_not_empty(self) -> None:
+        paths = [EDITOR / "index.html", EDITOR / "layout.css"] + [EDITOR / name for name in SCRIPT_FILES]
+        for path in paths:
             self.assertTrue(path.is_file(), path)
             self.assertGreater(path.stat().st_size, 0, path)
 
@@ -55,24 +92,17 @@ class EditorPageTests(unittest.TestCase):
         self.assertNotIn("data-widget=", self.html,
                          "widget markup is built by board.js, never duplicated here")
 
-
-def code_only(script: str) -> str:
-    """The script with its comments removed.
-
-    The checks below are about what the editor *does*, not what it says about
-    itself: the module comment legitimately names ``bridge.command()`` to
-    explain that no such call exists.
-    """
-
-    without_blocks = re.sub(r"/\*.*?\*/", " ", script, flags=re.S)
-    return re.sub(r"(?m)//.*$", " ", without_blocks)
+    def test_the_scripts_share_one_namespace(self) -> None:
+        for name in SCRIPT_FILES:
+            self.assertIn("LayoutEditor", self.scripts[name], name)
 
 
 class NoGameCommandTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.html = (EDITOR / "index.html").read_text(encoding="utf-8")
-        cls.script = (EDITOR / "layout.js").read_text(encoding="utf-8")
+        cls.scripts = read_scripts()
+        cls.script = "\n".join(cls.scripts[name] for name in SCRIPT_FILES)
         cls.code = code_only(cls.script)
 
     def test_the_page_carries_no_command_control(self) -> None:
@@ -82,16 +112,26 @@ class NoGameCommandTests(unittest.TestCase):
         self.assertNotIn("api.command", self.code, "the editor must not submit a command")
         self.assertNotIn(".command(", self.code, "the editor must not submit a command")
         # And the comment that explains the rule is still there to explain it.
-        self.assertIn("never calls a game command", self.script)
+        self.assertIn("never calls a game command", self.scripts["layout.js"])
 
     def test_no_command_name_appears_anywhere_in_the_editor(self) -> None:
         for command in CommandType:
             self.assertNotIn(command.value, self.html, f"{command.value} in the page")
             self.assertNotIn(command.value, self.code, f"{command.value} in the script")
 
+    def test_no_lowercase_undo_appears_anywhere(self) -> None:
+        """History is `history_back`/`history_forward`; visible labels use the
+        capitalized words "Undo"/"Redo" only. Python's `in` is case-sensitive,
+        so this is a stronger, un-comment-stripped check than the CommandType
+        scan above: the lowercase word must not occur even in a comment."""
+
+        self.assertNotIn("undo", self.html)
+        for name in SCRIPT_FILES:
+            self.assertNotIn("undo", self.scripts[name], name)
+
     def test_it_calls_only_real_methods_of_the_editor_bridge(self) -> None:
         available = {name for name in dir(LayoutEditorBridge) if not name.startswith("_")}
-        called = set(re.findall(r"api\.([a-z_]+)\s*\(", code_only(self.script)))
+        called = set(re.findall(r"api\.([a-z_]+)\s*\(", self.code))
 
         self.assertTrue(called, "the editor must talk to its bridge")
         self.assertTrue(called.issubset(available),
@@ -107,7 +147,8 @@ class ControlCoverageTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.html = (EDITOR / "index.html").read_text(encoding="utf-8")
-        cls.script = (EDITOR / "layout.js").read_text(encoding="utf-8")
+        cls.scripts = read_scripts()
+        cls.script = "\n".join(cls.scripts[name] for name in SCRIPT_FILES)
 
     def test_there_is_a_control_for_every_editable_property(self) -> None:
         declared = set(re.findall(r'data-prop="([a-z_]+)"', self.html))
@@ -127,13 +168,38 @@ class ControlCoverageTests(unittest.TestCase):
     def test_the_limits_come_from_python_rather_than_from_literals(self) -> None:
         for key in ("min_font_scale", "max_font_scale", "min_widget_width",
                     "min_widget_height", "text_alignments", "vertical_alignments",
-                    "font_weights"):
+                    "font_weights", "font_families", "text_transforms", "text_effects",
+                    "image_fits", "widget_groups", "max_text_length", "max_image_bytes"):
             self.assertIn(key, self.script, key)
 
     def test_it_offers_reset_save_and_discard(self) -> None:
         for action in ("save", "save_as_open", "discard", "reset_widget",
                        "reset_layout_confirm", "clamp"):
             self.assertIn(f'data-action="{action}"', self.html, action)
+
+    def test_it_offers_history_back_and_forward(self) -> None:
+        for action in ("history_back", "history_forward"):
+            self.assertIn(f'data-action="{action}"', self.html, action)
+        self.assertIn("Undo", self.html)
+        self.assertIn("Redo", self.html)
+
+    def test_it_offers_rename_duplicate_and_delete_for_stored_layouts(self) -> None:
+        for action in ("rename_layout_open", "duplicate_layout_open", "delete_layout_open"):
+            self.assertIn(f'data-action="{action}"', self.html, action)
+
+    def test_it_offers_the_three_element_types(self) -> None:
+        for action in ("add_text", "add_image", "add_box"):
+            self.assertIn(f'data-action="{action}"', self.html, action)
+
+    def test_the_image_picker_is_restricted_to_the_four_accepted_types(self) -> None:
+        match = re.search(r'<input[^>]*id="image-file-input"[^>]*>', self.html)
+        self.assertIsNotNone(match, "no #image-file-input file picker")
+        tag = match.group(0)
+        self.assertEqual(re.search(r'type="([^"]+)"', tag).group(1), "file")
+        accept = re.search(r'accept="([^"]+)"', tag)
+        self.assertIsNotNone(accept, "the file input must restrict its accepted types")
+        types = {value.strip() for value in accept.group(1).split(",")}
+        self.assertEqual(types, {"image/png", "image/jpeg", "image/gif", "image/webp"})
 
     def test_position_is_reachable_without_typing_a_number(self) -> None:
         """The point of direct manipulation: every geometry change has a
@@ -151,9 +217,15 @@ class ControlCoverageTests(unittest.TestCase):
         self.assertIn("shiftKey", self.script, "Shift must give a coarser nudge")
 
     def test_the_number_fields_survive_as_the_precise_fallback(self) -> None:
-        """Demoted, not removed: an operator still needs an exact value."""
+        """Demoted, not removed: an operator still needs an exact value.
 
-        self.assertIn('<details class="precise"', self.html)
+        v2 replaces v1's collapsed `<details class="precise">` box with a
+        always-visible "Position & size" section (direct manipulation is now
+        the primary route via drag, so there is no need to hide the numbers
+        behind a disclosure widget) -- but the controls themselves must still
+        be there for every geometry property.
+        """
+
         for prop in ("x", "y", "width", "height", "z_index"):
             self.assertIn(f'data-prop="{prop}"', self.html, prop)
 

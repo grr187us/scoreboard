@@ -303,6 +303,89 @@ def delete_layout(paths: ScoreboardPaths, name: Any) -> tuple[LayoutLibrary, Lay
     return library, LayoutValidation(library.active_layout(), ())
 
 
+def rename_layout(paths: ScoreboardPaths, old: Any, new: Any) -> tuple[LayoutLibrary, LayoutValidation]:
+    """Rename a stored layout. ``"Default"`` cannot be renamed.
+
+    Renaming the active layout keeps it active under the new name. As with
+    every sibling in this module, any refusal -- an invalid name, an unknown
+    source, "Default", a name already in use, or a disk failure -- returns the
+    **currently stored** library completely unchanged, and writes nothing.
+    """
+
+    current = read_library(paths)
+    old_issue = validate_layout_name(old)
+    if old_issue is not None:
+        return current, LayoutValidation(None, (old_issue,))
+    clean_old = old.strip()
+    if clean_old == DEFAULT_LAYOUT_NAME:
+        issue = LayoutIssue("DEFAULT_PROTECTED", "The Default layout cannot be renamed.")
+        return current, LayoutValidation(None, (issue,))
+    if clean_old not in current.layouts:
+        issue = LayoutIssue("LAYOUT_NOT_FOUND", f"No stored layout is named {clean_old!r}.")
+        return current, LayoutValidation(None, (issue,))
+
+    new_issue = validate_layout_name(new)
+    if new_issue is not None:
+        return current, LayoutValidation(None, (new_issue,))
+    clean_new = new.strip()
+    if clean_new != clean_old and clean_new in current.layouts:
+        issue = LayoutIssue("LAYOUT_EXISTS", f"A layout named {clean_new!r} already exists.")
+        return current, LayoutValidation(None, (issue,))
+
+    layouts = dict(current.layouts)
+    document = layouts.pop(clean_old)
+    layouts[clean_new] = {**document, "name": clean_new}
+    active = clean_new if current.active == clean_old else current.active
+    library = LayoutLibrary(active=active, layouts=layouts)
+    if not write_library(paths, library):
+        issue = LayoutIssue("WRITE_FAILED", "The rename could not be saved to disk.")
+        return current, LayoutValidation(None, (issue,))
+    return library, LayoutValidation(library.active_layout(), ())
+
+
+def duplicate_layout(
+    paths: ScoreboardPaths, name: Any, new_name: Any
+) -> tuple[LayoutLibrary, LayoutValidation]:
+    """Copy a stored layout under a new name, making the copy active.
+
+    ``MAX_STORED_LAYOUTS`` still applies. As with every sibling in this
+    module, any refusal returns the **currently stored** library completely
+    unchanged, and writes nothing.
+    """
+
+    current = read_library(paths)
+    name_issue = validate_layout_name(name)
+    if name_issue is not None:
+        return current, LayoutValidation(None, (name_issue,))
+    clean_name = name.strip()
+    if clean_name not in current.layouts:
+        issue = LayoutIssue("LAYOUT_NOT_FOUND", f"No stored layout is named {clean_name!r}.")
+        return current, LayoutValidation(None, (issue,))
+
+    new_name_issue = validate_layout_name(new_name)
+    if new_name_issue is not None:
+        return current, LayoutValidation(None, (new_name_issue,))
+    clean_new_name = new_name.strip()
+    if clean_new_name in current.layouts:
+        issue = LayoutIssue("LAYOUT_EXISTS", f"A layout named {clean_new_name!r} already exists.")
+        return current, LayoutValidation(None, (issue,))
+
+    layouts = dict(current.layouts)
+    if len(layouts) >= MAX_STORED_LAYOUTS:
+        issue = LayoutIssue(
+            "MAX_STORED_LAYOUTS", f"No more than {MAX_STORED_LAYOUTS} layouts may be stored."
+        )
+        return current, LayoutValidation(None, (issue,))
+
+    source = layouts[clean_name]
+    layouts[clean_new_name] = {**source, "name": clean_new_name}
+    library = LayoutLibrary(active=clean_new_name, layouts=layouts)
+    if not write_library(paths, library):
+        issue = LayoutIssue("WRITE_FAILED", "The duplicate could not be saved to disk.")
+        return current, LayoutValidation(None, (issue,))
+    return library, LayoutValidation(library.active_layout(), ())
+
+
 def reset_library(paths: ScoreboardPaths) -> LayoutLibrary:
     """Restore the built-in single-layout library, discarding every save."""
 
@@ -318,7 +401,9 @@ __all__ = [
     "LayoutLibrary",
     "default_library",
     "delete_layout",
+    "duplicate_layout",
     "read_library",
+    "rename_layout",
     "reset_library",
     "save_layout",
     "select_layout",

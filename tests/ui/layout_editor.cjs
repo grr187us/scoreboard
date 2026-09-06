@@ -1,9 +1,16 @@
-/* Drive the presentation layout editor against a stub bridge.
+/* Drive the presentation layout editor v2 against a stub bridge.
  *
  * Every payload the stub returns was produced by the real Python
  * `PresentationLayouts` and `spectator_view_model` (see
  * test_layout_editor_browser.py), so the page is exercised against the shapes
  * it will actually receive rather than against hand-written fixtures.
+ *
+ * v2 replaces the plain widget list and 0..1 number boxes with a layers
+ * rail, a percent-based inspector, and direct manipulation as the primary
+ * route; this script is updated to match (element ids, `data-action` names,
+ * percent-valued fields) and extended with the v2-only gestures: adding a
+ * text element and a box, history back/forward, a multi-select drag, an
+ * alignment command, and deleting an element.
  */
 
 const { chromium } = require('playwright');
@@ -16,7 +23,7 @@ async function main(data) {
   const checks = [];
   try {
     const page = await browser.newPage();
-    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.setViewportSize({ width: 1220, height: 780 });
     await page.route(/^https?:/, route => route.abort());
 
     await page.addInitScript(payload => {
@@ -42,21 +49,18 @@ async function main(data) {
           save_layout: (name, draft) => { record('save_layout', name); return Promise.resolve(payload.saved); },
           select_layout: name => { record('select_layout', name); return Promise.resolve(payload.state); },
           delete_layout: name => { record('delete_layout', name); return Promise.resolve(payload.state); },
+          rename_layout: (oldName, newName) => { record('rename_layout', newName); return Promise.resolve(payload.state); },
+          duplicate_layout: (name, newName) => { record('duplicate_layout', newName); return Promise.resolve(payload.state); },
           reset_layout: () => { record('reset_layout'); return Promise.resolve(payload.state); },
         }
       };
     }, data);
 
     await page.goto(pathToFileURL(path.resolve('src/scoreboard/views/layout/index.html')).href);
-    await page.waitForFunction(() => document.querySelectorAll('#widget-list button').length > 0);
+    await page.waitForFunction(() => document.querySelectorAll('[data-select-widget]').length > 0);
 
-    // The numeric fields live in a collapsed "Precise values" section now that
-    // dragging is the primary way to place a widget. Open it once, so the
-    // checks below that still drive those fields can reach them.
-    await page.evaluate(() => { document.getElementById('precise').open = true; });
-
-    // --- The widget list is generated from Python's descriptors ------------
-    const listed = await page.$$eval('#widget-list button', els => els.map(e => e.textContent));
+    // --- The widget list is generated from Python's descriptors, grouped ---
+    const listed = await page.$$eval('[data-select-widget]', els => els.map(e => e.textContent));
     assert.equal(listed.length, data.state.widgets.length);
     for (const descriptor of data.state.widgets) {
       assert.ok(listed.some(text => text.startsWith(descriptor.label)),
@@ -67,12 +71,13 @@ async function main(data) {
     assert.ok(listed.some(text => text.startsWith(hiddenLabel) && /hidden/.test(text)));
     checks.push('widget list');
 
-    // --- Selecting fills every property control ----------------------------
+    // --- Selecting fills every property control, as percentages ------------
+    const pct = value => Math.round(value * 1000) / 10;
     await page.click('[data-select-widget="play_clock_value"]');
     const shown = await page.evaluate(() => {
       const value = id => document.getElementById(id).value;
       return {
-        label: document.getElementById('selected-label').textContent,
+        label: document.getElementById('inspector-title').textContent,
         x: value('prop-x'), y: value('prop-y'),
         width: value('prop-width'), height: value('prop-height'),
         font: value('prop-font_scale'), color: value('prop-color'),
@@ -84,10 +89,10 @@ async function main(data) {
     });
     const expected = data.state.layout.widgets.play_clock_value;
     assert.equal(shown.label, 'Play clock');
-    assert.equal(Number(shown.x), expected.x);
-    assert.equal(Number(shown.y), expected.y);
-    assert.equal(Number(shown.width), expected.width);
-    assert.equal(Number(shown.font), expected.font_scale);
+    assert.equal(Number(shown.x), pct(expected.x));
+    assert.equal(Number(shown.y), pct(expected.y));
+    assert.equal(Number(shown.width), pct(expected.width));
+    assert.equal(Number(shown.font), pct(expected.font_scale));
     assert.equal(shown.color, expected.color);
     assert.equal(Number(shown.weight), expected.font_weight);
     assert.equal(shown.visible, expected.visible);
@@ -96,38 +101,37 @@ async function main(data) {
     checks.push('property panel');
 
     // --- Changing X moves the previewed widget -----------------------------
-    await page.fill('#prop-x', '0.200');
+    await page.fill('#prop-x', '20.0');
     await page.dispatchEvent('#prop-x', 'input');
     const placed = await page.evaluate(() => {
       const canvas = document.querySelector('#canvas').getBoundingClientRect();
-      const widget = document.querySelector('[data-widget="play_clock_value"]').getBoundingClientRect();
+      const widget = document.querySelector('[data-item="play_clock_value"]').getBoundingClientRect();
       return { offset: (widget.left - canvas.left) / canvas.width };
     });
-    assert.ok(Math.abs(placed.offset - 0.200) < 0.002, `preview at ${placed.offset}`);
+    assert.ok(Math.abs(placed.offset - 0.200) < 0.003, `preview at ${placed.offset}`);
     checks.push('numeric move');
 
     // --- Toggling visibility hides it in the preview -----------------------
     await page.uncheck('#prop-visible');
-    assert.equal(await page.getAttribute('[data-widget="play_clock_value"]', 'hidden') !== null, true);
+    assert.equal(await page.getAttribute('[data-item="play_clock_value"]', 'hidden') !== null, true);
     await page.check('#prop-visible');
     // Put it back where it started: the moved widget now sits on top of the
     // quarter, and the next check clicks the quarter in the preview.
-    await page.fill('#prop-x', String(expected.x));
+    await page.fill('#prop-x', String(pct(expected.x)));
     await page.dispatchEvent('#prop-x', 'input');
+    await page.dispatchEvent('#prop-x', 'change');
     checks.push('visibility toggle');
 
     // --- Clicking a widget in the preview selects it -----------------------
-    await page.click('[data-widget="quarter"]', { force: true });
-    assert.equal(await page.textContent('#selected-label'), 'Quarter');
-    assert.equal(await page.getAttribute('[data-select-widget="quarter"]', 'class'),
-      await page.evaluate(() => document.querySelector('[data-select-widget="quarter"]').className));
+    await page.click('[data-item="quarter"]', { force: true });
+    assert.equal(await page.textContent('#inspector-title'), 'Quarter');
     assert.ok((await page.evaluate(() =>
-      document.querySelector('[data-select-widget="quarter"]').className)).includes('is-current'));
+      document.querySelector('[data-select-widget="quarter"]').closest('.rail-row').className)).includes('is-current'));
     checks.push('preview selection');
 
     // --- An out-of-safe-area value reports and blocks Save -----------------
     await page.click('[data-select-widget="ball_on"]');
-    await page.fill('#prop-y', '0.930');
+    await page.fill('#prop-y', '93.0');
     await page.dispatchEvent('#prop-y', 'input');
     await page.waitForFunction(() => document.getElementById('save').disabled === true);
     const issueText = await page.textContent('#issue-list');
@@ -138,25 +142,25 @@ async function main(data) {
     checks.push('validation blocks save');
 
     // Correcting it re-enables Save.
-    await page.fill('#prop-y', '0.854');
+    await page.fill('#prop-y', '85.4');
     await page.dispatchEvent('#prop-y', 'input');
     await page.waitForFunction(() => document.getElementById('save').disabled === false);
     checks.push('validation clears');
 
     // --- Clicking an issue selects the widget it names ---------------------
-    await page.fill('#prop-y', '0.930');
+    await page.fill('#prop-y', '93.0');
     await page.dispatchEvent('#prop-y', 'input');
     await page.waitForFunction(() => document.querySelectorAll('#issue-list button').length > 0);
     await page.click('[data-select-widget="quarter"]');
     await page.click('#issue-list button');
-    assert.equal(await page.textContent('#selected-label'), 'Ball on');
+    assert.equal(await page.textContent('#inspector-title'), 'Ball on');
     checks.push('issue selects widget');
 
     // --- Reset this widget restores the default values ---------------------
     await page.click('[data-action="reset_widget"]');
     await page.waitForFunction(
       expectedY => Number(document.getElementById('prop-y').value) === expectedY,
-      data.state.layout.widgets.ball_on.y);
+      pct(data.state.layout.widgets.ball_on.y));
     checks.push('reset widget');
 
     // --- Save as sends the typed name, with no blocking dialog -------------
@@ -173,7 +177,7 @@ async function main(data) {
     // so they exercise the same path an operator's hand does: pointer
     // capture, the snap, and the safe-area boundary.
     const geometry = id => page.evaluate(widgetId => {
-      const el = document.querySelector(`#game-board [data-widget="${widgetId}"]`);
+      const el = document.querySelector(`#game-board [data-item="${widgetId}"]`);
       const read = name => Number(el.style.getPropertyValue(name));
       return { x: read('--x'), y: read('--y'), w: read('--w'), h: read('--h') };
     }, id);
@@ -226,6 +230,7 @@ async function main(data) {
     assert.ok(nudgedByButton.x > beforeNudge.x, 'the arrow button must move it right');
 
     await page.locator('#canvas').click({ position: { x: 4, y: 4 } });
+    await page.click('[data-select-widget="quarter"]');
     await page.keyboard.press('ArrowRight');
     const nudgedByKey = await geometry('quarter');
     const fine = nudgedByKey.x - nudgedByButton.x;
@@ -243,7 +248,85 @@ async function main(data) {
       'an arrow key inside a text field must not move the widget');
     checks.push('arrows leave fields alone');
 
-    // --- The page itself never scrolls at 1280x720 -------------------------
+    // --- History: undo/redo -------------------------------------------------
+    await page.click('[data-select-widget="quarter"]');
+    const beforeHistoryMove = await geometry('quarter');
+    await page.click('[data-action="nudge_right"]');
+    const afterHistoryMove = await geometry('quarter');
+    assert.notEqual(afterHistoryMove.x, beforeHistoryMove.x);
+    await page.click('[data-action="history_back"]');
+    await page.waitForFunction(
+      expected => {
+        const el = document.querySelector('#game-board [data-item="quarter"]');
+        return Number(el.style.getPropertyValue('--x')) === expected;
+      },
+      beforeHistoryMove.x);
+    await page.click('[data-action="history_forward"]');
+    await page.waitForFunction(
+      expected => {
+        const el = document.querySelector('#game-board [data-item="quarter"]');
+        return Number(el.style.getPropertyValue('--x')) === expected;
+      },
+      afterHistoryMove.x);
+    checks.push('history back and forward');
+
+    // --- Add a text element and a box, then align and delete ---------------
+    const elementCountBefore = await page.evaluate(() =>
+      document.querySelectorAll('#rail-elements-body .rail-row').length);
+    await page.click('[data-action="add_text"]');
+    await page.waitForFunction(
+      count => document.querySelectorAll('#rail-elements-body .rail-row').length === count,
+      elementCountBefore + 1);
+    assert.equal(await page.locator('[data-item^="text_"]').count(), 1);
+    checks.push('add text element');
+
+    await page.click('[data-action="add_box"]');
+    await page.waitForFunction(
+      count => document.querySelectorAll('#rail-elements-body .rail-row').length === count,
+      elementCountBefore + 2);
+    assert.equal(await page.locator('[data-item^="box_"]').count(), 1);
+    checks.push('add box');
+
+    // The box is selected after being added; align it left. A box may cross
+    // the safe area (it is a full-bleed backdrop candidate), so aligning it
+    // targets the canvas edge, not the safe-area inset -- the same boundary
+    // rule that already governs where a box is allowed to be dragged.
+    await page.click('[data-action="align_left"]');
+    const boxGeometry = await page.evaluate(() => {
+      const el = document.querySelector('[data-item^="box_"]');
+      return Number(el.style.getPropertyValue('--x'));
+    });
+    assert.ok(Math.abs(boxGeometry - 0) < 1e-6, 'align left must snap to the canvas edge for a box');
+    checks.push('align');
+
+    // --- Multi-select drag: shift-click two widgets and move them together -
+    await page.click('[data-select-widget="down"]');
+    await page.click('[data-select-widget="distance"]', { modifiers: ['Shift'] });
+    const downBefore = await geometry('down');
+    const distanceBefore = await geometry('distance');
+    const boxNow = await canvasBox();
+    const atNow = (fx, fy) => [boxNow.x + fx * boxNow.width, boxNow.y + fy * boxNow.height];
+    await page.mouse.move(...atNow(downBefore.x + downBefore.w / 2, downBefore.y + downBefore.h / 2));
+    await page.mouse.down();
+    await page.mouse.move(...atNow(downBefore.x + downBefore.w / 2, downBefore.y + downBefore.h / 2 + 0.05),
+      { steps: 6 });
+    await page.mouse.up();
+    const downAfter = await geometry('down');
+    const distanceAfter = await geometry('distance');
+    assert.ok(downAfter.y > downBefore.y, 'the primary member of the selection must move');
+    assert.ok(Math.abs((distanceAfter.y - distanceBefore.y) - (downAfter.y - downBefore.y)) < 1e-6,
+      'every selected member must move by the same delta');
+    checks.push('multi-select drag');
+
+    // --- Delete removes the selected element, leaves widgets alone ---------
+    await page.click('[data-item^="text_"]');
+    await page.keyboard.press('Delete');
+    await page.waitForFunction(() => document.querySelectorAll('[data-item^="text_"]').length === 0);
+    assert.equal(await page.locator('[data-item="quarter"]').count(), 1,
+      'deleting an element must never remove a widget');
+    checks.push('delete element');
+
+    // --- The page itself never scrolls at 1220x780 --------------------------
     const scroll = await page.evaluate(() => {
       const de = document.documentElement;
       return { w: de.scrollWidth, cw: de.clientWidth, h: de.scrollHeight, ch: de.clientHeight };

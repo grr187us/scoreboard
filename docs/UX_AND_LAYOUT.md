@@ -1,7 +1,7 @@
 # Operator Workflow and Initial Layouts
 
 **Status:** Phase 1 wireframe baseline; visual design is not implemented
-**Last updated:** September 5, 2026 (added the field-status readout, the Field status drawer, the recovery screen's local-time display, and the presentation layout editor)
+**Last updated:** September 5, 2026 (added the field-status readout, the Field status drawer, the recovery screen's local-time display, and the presentation layout editor; rebuilt the editor as the v2 canvas editor described in section 10)
 
 ## 1. Design intent
 
@@ -316,54 +316,52 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
 - Verify fullscreen placement and recovery when the processor input is reselected.
 - Decide whether the logical 16:9 canvas is correct or whether a custom aspect-ratio profile is required.
 
-## 10. Presentation layout editor (added September 5, 2026)
+## 10. Presentation layout editor (added September 5, 2026; rebuilt as v2 the same day)
 
-Implements item 3 of "Owner-requested next scoreboard work," delivered after items 1 and 2 (local time, expanded football fields). See "Phase 2 owner request 3 — presentation layout editor" in `PROJECT_ROADMAP.md` for full evidence.
+Implements item 3 of "Owner-requested next scoreboard work," delivered after items 1 and 2 (local time, expanded football fields). See "Phase 2 owner request 3 — presentation layout editor" and "Phase 2 owner request 3 — presentation layout editor v2" in `PROJECT_ROADMAP.md` for full evidence, and `.scratch/layout-editor-v2/spec.md` for the design spec four agents built against.
+
+The v1 editor was functionally safe but was numeric-fields-only: no undo, no multi-select, no free text or images, no board background, no fonts, no presets, and no way to rename, duplicate, or delete a stored layout from the UI. v2 turns it into a dense, dark, Figma/Canva-style canvas editor — a real design surface — while keeping every v1 safety property exactly intact.
 
 ### 10.1 What it is and is not
 
-The editor changes only *where and how* the spectator board draws text: position, size, color, alignment, vertical alignment, font weight, stacking order, and visibility — one property at a time, through numeric controls. It cannot change *what* any string says. Every value a spectator sees is still produced in Python (`domain/formatting.py`); static labels (`GAME CLOCK`, `PLAY CLOCK`) can be moved, resized, recolored, or hidden but never retitled, and the editor cannot invent a field the application does not already produce. Saving, loading, or editing a layout advances no state revision, submits no `Command`, writes no action-history row, and never touches `scoreboard.db` or its backup — it is a host/presentation concern, exactly like the saved display and the data-folder choice (`docs/ARCHITECTURE.md` §9).
+The editor still changes only *where and how* the spectator board draws: position, size, color, font, alignment, stacking order, visibility, background, and — new in v2 — free text, images, and simple shapes layered above or below the widgets. It still cannot change *what* any game value says. Every game value a spectator sees is still produced in Python and copied, never computed, by JavaScript; static labels (`GAME CLOCK`, `PLAY CLOCK`) can be moved, resized, restyled, or hidden but never retitled, and a free text element's own wording is operator-typed decorative copy (a sponsor line, an event note) — it is not, and cannot be, bound to a game field (see 10.8). Saving, loading, or editing a layout advances no state revision, submits no `Command`, writes no action-history row, and never touches `scoreboard.db` or its backup — it is a host/presentation concern, exactly like the saved display and the data-folder choice (`docs/ARCHITECTURE.md` §9). The editor's JavaScript has no method named `command`, no `api.command(`, and no method named after any game command; its bridge surface is exactly `get_snapshot`, `layout_state`, `preview_layout`, `clamp_layout`, `reset_widget`, `save_layout`, `select_layout`, `delete_layout`, `rename_layout`, `duplicate_layout`, `reset_layout`.
 
 ### 10.2 Opening it
 
-**Advanced ▸ → Presentation layout…** in the operator window opens a separate window at 1220×780, minimum 980×620, because editing needs its own preview canvas and property panel alongside the widget list — it does not fit the corrections-drawer pattern used elsewhere. Like the Field Assistant (section 11.2), it opens, closes, and reopens independently of the operator and spectator windows, and closing it affects nothing else. There are deliberately no editing controls on the spectator display itself; it only ever receives a layout to render.
+**Advanced ▸ → Presentation layout…** in the operator window opens a separate window at 1220×780, minimum 980×620 — unchanged from v1, because a real canvas editor needs its own preview, layers list, and property panel and does not fit the corrections-drawer pattern used elsewhere. Like the Field Assistant (section 11.2), it opens, closes, and reopens independently of the operator and spectator windows, and closing it affects nothing else. There are deliberately no editing controls on the spectator display itself; it only ever receives a finished layout to render.
 
 ### 10.3 Workflow
 
+The window is a toolbar across the top, a layers rail on the left, the canvas in the middle, an inspector on the right, and a status bar along the bottom.
+
 1. Open the editor from Advanced. It loads the active layout and a live read-only snapshot of the current game for its preview.
-2. Select a widget from the list on the left, or click it directly in the preview.
-3. **Place it by pointing at it** (added September 5, 2026). Drag the widget on the preview to move it; drag one of the eight handles on the selection to resize it. Arrow keys nudge the selection one step, and Shift with an arrow nudges it four steps; the `Move` arrows in the properties panel do the same for an operator who does not know the keys are there. `Bring forward` and `Send back` change the stacking order.
-4. Style it in the panel on the right: font scale, color, text alignment, vertical alignment, font weight, and visibility. The exact numbers for position, size, and stacking are still there under **Precise values**, collapsed — they are the way to read off an exact figure or match one widget to another, not the way to place something.
-5. Each edit re-validates the draft immediately and lists any error or warning below the preview, naming the affected widget.
-6. `Save` is disabled while an error is outstanding. `Save as…` stores the draft under a new name; `Save` overwrites the currently selected one, including `Default`.
-7. `Discard changes` throws the draft away and reloads the last saved layout. `Reset this widget` restores one widget to its built-in default; `Reset entire layout…` restores the whole built-in default after an inline confirmation. `Fit to safe area` is a best-effort repair that nudges out-of-range geometry back into range.
+2. **Toolbar.** The layout name is a menu button listing every stored layout (click to switch) and, below a divider, `Save`, `Save as…`, `Duplicate…`, `Rename…`, `Delete…`, and `Reset to built-in…`. Each of the last five opens a small inline popover with a text field and Confirm/Cancel — there are no browser `alert`/`confirm` dialogs anywhere in the editor. `Default` shows `Rename`/`Delete` disabled with the tooltip "The Default layout is always available," but `Default` **can** be duplicated. Undo/redo icon buttons (`Ctrl+Z`, `Ctrl+Y`/`Ctrl+Shift+Z`) step through the last 100 drafts; a gesture, a nudge, a restack, an add/duplicate/delete, a preset, a clamp, a reset, and every committed property change push one history entry, while a control still being dragged or typed into updates the draft live without spamming history. `+ Text`, `+ Image`, `+ Box` add a free element at the canvas centre and select it; dropping an image file onto the canvas does the same as `+ Image`. A `Presets` menu offers the four built-in starting points (10.4a); choosing one asks to replace the current draft first if it is dirty. Zoom (`50/75/100/150/200%`, `Fit`) scales the canvas without changing anything about the layout itself. `Save` is the one accent-filled primary button, disabled while any validation error is outstanding; `Ctrl+S` saves.
+3. **Layers rail.** A `Board` row selects the board itself (its inspector shows background color and safe-area insets — see below). Directly below it, an **Elements** group lists every free text/image/box element the operator has added, most recently stacked first — it comes first so the operator's own additions never scroll out of sight; under it the fifteen widgets are grouped **Teams**, **Clocks**, and **Field** (10.4). Each row shows a small type icon, a label (an element shows its text, its image file name, or its id), an eye toggle that hides it without changing the selection, and — for elements — a trash button. A hidden row is dimmed and says so in its tooltip, not just by dimming. Shift+click a row to add it to the selection.
+4. **Canvas.** Click a widget or element directly to select it — on the rail or on the canvas — or drag it to move it; drag one of the eight grips on a single selection to resize it. The safe area is a dashed outline labeled at its corner. Snapping to the grid, to other visible items, to the safe area, and to the board edges works exactly as in v1, with a guide line while a snap holds and a small readout chip (`X 24.0% Y 12.0%` or `W 38.0% H 11.8%`) near the pointer while dragging or resizing. Shift+click or a marquee drag over empty canvas selects several items at once; dragging any selected item moves the whole group by one delta, clamped so no member leaves its own boundary (safe area for widgets and text, the canvas itself for images and boxes). Arrow keys nudge the selection one step, Shift+arrow nudges four steps, and `Delete`/`Backspace` removes selected elements (a widget in a mixed selection is left alone — a widget can be hidden but never deleted). `Escape` clears the selection. Right-click opens a small context menu: bring to front/forward, send backward/to back, duplicate and delete (elements), hide/show, and reset (widgets). A hidden item still renders at reduced opacity with a dotted border so it stays selectable.
+5. **Inspector.** Its header names the current selection ("Home score", `Text "HOMECOMING"`, "3 items", or "Board"). Sections: *Position & size* (X/Y/W/H as percent, an align/distribute strip, and the four nudge arrows kept from v1); *Layer* (front/forward/backward/back, the numeric stacking order, and the visible checkbox); *Text*, for widgets and text elements (font family, weight, size as a percent of board width, letter spacing, an "Aa/AA" case toggle, a shadow/outline effect control, color, and horizontal/vertical alignment — static widget labels keep the v1 note that their wording is fixed); *Fill & border* (an optional background fill with its own opacity, an optional border with width and corner radius, inner padding for text, and opacity for elements); *Image*, for image elements (a thumbnail, "Replace image…", the fit mode, and a size readout); and *Actions* (`Reset this widget`, `Duplicate`, `Delete`, and `Fit to safe area…` for the whole layout). Selecting `Board` shows the background color, the four safe-area insets as percentages, and a gallery of the built-in presets with an Apply button on each.
+6. **Status bar.** The left side reads `✓ No problems` or names the error/warning count; clicking it opens a drawer listing each issue, and clicking an issue selects the affected item. The right side keeps the fixed scope note: "Changes how the board looks. It never changes scores, clocks, or any other game value."
+7. Every committed change re-validates the draft against Python and updates the status bar immediately; nothing about *when* Python validates changed from v1 — only the surface for making a change did.
 
-**How a gesture stays safe.** A drag produces a pointer event per frame, so the
-editor -- not Python -- converts pixels to canvas fractions, snaps them, and
-holds them inside the safe area. Python still has the last word: every finished
-gesture calls `preview_layout()`, and `Save` is gated on that answer exactly as
-it was when the only way to move a widget was to type a number. The editor
-gained a gesture, not authority.
+**How a gesture stays safe — unchanged from v1.** A drag produces a pointer event per frame, so the editor — not Python — converts pixels to canvas fractions, snaps them, and holds them inside the applicable boundary. Python still has the last word: every finished gesture calls `preview_layout()`, and `Save` is gated on that answer exactly as it was when the only way to move a widget was to type a number. The same three rules still apply: a hard-boundary drag can never build a layout `Save` then rejects; nothing but a finite, schema-precision number ever reaches the draft, so a collapsed or not-yet-laid-out canvas makes a gesture a no-op instead of writing `NaN`; and a snap only ever shows a guide while it is actually holding.
 
-Three rules make the gesture hard to misuse:
+### 10.3a Keyboard map
 
-- **Snapping.** A widget snaps to a fine grid, and to the edges and centre
-  lines of every other visible widget, of the safe area, and of the board
-  itself. A guide line appears only while a snap is actually holding, so the
-  operator can see *why* it stopped where it did. This is what makes a tidy
-  board reachable by hand on a wall where a two-pixel misalignment is visible
-  from the stands.
-- **The safe area is a hard boundary.** A drag stops at it. Because a
-  breach is a validation error that blocks `Save`, refusing the move outright
-  means a gesture can never build a layout that `Save` then rejects.
-- **Nothing but a real number reaches the draft.** Every geometry write is
-  rounded to the schema's own precision and checked for finiteness first. A
-  canvas that reports no size -- a collapsed or not-yet-laid-out preview --
-  makes the gesture a no-op instead of writing `NaN` into the layout.
+| Key | Action |
+|---|---|
+| Arrow keys | Nudge the selection one step (Shift ×4) |
+| `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` | Undo / Redo |
+| `Ctrl+D` | Duplicate the selection |
+| `Delete` / `Backspace` | Remove the selected elements |
+| `Escape` | Clear the selection, or close the open menu/popover |
+| `Ctrl+S` | Save |
+| `Ctrl+A` | Select all visible items |
+| `+` / `-` | Zoom in/out (only while focus is not in a field) |
+
+Arrow keys and `Delete` never fire while a text field has focus, so typing a hyphen or a number into a property box cannot nudge or delete the selection.
 
 ### 10.4 Widget inventory
 
-Fifteen widgets cover the spectator board. `game_clock_label`, `home_timeouts`, and `away_timeouts` are positionable but ship **hidden by default**, so the default layout keeps drawing exactly the fields today's board draws; the operator turns them on as a deliberate presentation choice.
+Fifteen widgets cover the spectator board, organized in the layers rail into three groups — **Teams** (home/away name and score, possession), **Clocks** (game clock label/value, play clock label/value, quarter), and **Field** (down, distance, ball on, home/away timeouts). `game_clock_label`, `home_timeouts`, and `away_timeouts` are positionable but ship **hidden by default**, so the default layout keeps drawing exactly the fields today's board draws; the operator turns them on as a deliberate presentation choice.
 
 **What the default changed, and why.** The arrangement, the reading order, and the visual weight are preserved, but the default is a faithful re-expression rather than a pixel copy, in two respects worth recording:
 
@@ -398,25 +396,49 @@ Both are presentation defaults, not rules: an operator can restore any size thro
 - Static labels (`game_clock_label`, `play_clock_label`) may be styled, moved, resized, or hidden; their text is owned by the application and there is no free-text editor for them.
 - A widget whose value can legitimately be absent from a snapshot (`possession`, `down`, `distance`, `ball_on`, `home_timeouts`, `away_timeouts`) is hidden by the renderer — not drawn as an empty box — whenever its rendered text is blank. Whether the widget is turned on at all is still the operator's choice; the rendering gap for a missing value is automatic and graceful.
 - Every widget carries a numeric stacking order so overlap between adjacent widgets (for example a label beside its value) is resolved deterministically rather than by markup order.
+- **New in v2**, every widget can additionally carry a font family, letter spacing, an uppercase/normal text-transform, a shadow or outline text effect, a background fill with its own opacity, a border color/width, a corner radius, and inner padding — all optional, all defaulted so the built-in default layout still renders pixel-identical to v1 (same geometry, Arial, no backgrounds, no effects).
+
+### 10.4a Free elements, fonts, and presets (added in v2)
+
+**Free elements.** Alongside the fifteen fixed widgets, a layout may now hold up to 24 **elements** — `text`, `image`, or `box` — added from the toolbar or the canvas context menu and positioned, resized, restacked, and styled exactly like a widget. An element's `id` is generated (`text_1`, `image_1`, `box_1`, …) and never collides with a widget id. A text element carries its own operator-typed wording (1–120 characters, up to 4 lines) and the full text style set (font, weight, size, spacing, transform, effect, color, alignment); a box is nothing but its background/border/radius, useful as a backdrop panel; an image holds a picture the operator supplies. **Elements never take part in widget-overlap validation** — a panel placed behind the scores is the point, not a defect. A text element must still fit inside the safe area like a widget, but an image or box only has to stay inside the canvas and is allowed to cross the safe area, which is how a full-bleed backdrop or a bottom bar is built.
+
+**Images.** `+ Image` opens a file picker restricted to PNG, JPEG, GIF, and WebP; the file is read locally and embedded in the layout as a `data:` URI — nothing is referenced from disk or a network location. Each image is capped at 2 MB decoded, and every image in a layout together is capped at 6 MB decoded; a file over the limit, or of an unsupported type, is refused inline with a plain message, never a browser alert. Dropping an image file directly onto the canvas does the same thing as the toolbar button. An image element's aspect ratio is preserved when it is added, and its **fit** (contain/cover/fill) is adjustable afterward. SVG is not accepted (10.8) because an SVG file can itself contain a script.
+
+**Fonts.** Ten Windows system fonts are available for any widget or text element — Arial, Arial Black, Impact, Bahnschrift, Segoe UI, Segoe UI Black, Consolas, Georgia, Verdana, and Trebuchet MS — all already installed on Windows, so nothing is downloaded and the board keeps working with no network access.
+
+**Presets.** The `Presets` menu (toolbar) and the presets gallery (Board inspector) offer four complete starting layouts: **Classic** (today's default, unchanged), **Broadcast bar** (a dark rounded bar across the bottom holding both team lines and the game clock, with the top of the board left empty for future media), **Big score** (both scores enlarged across the top half), and **Tigers navy** (a branded look using the project's navy/red palette). Choosing one replaces the current draft — after an inline confirmation if the draft has unsaved changes — but keeps the currently selected layout's *name*, so applying a preset is a starting point to keep editing and save, not an irreversible switch.
+
+**Library management.** The layout-name menu in the toolbar is now a full library manager: **Save**, **Save as…**, **Duplicate…**, **Rename…**, and **Delete…** are all reachable from the UI (v1 could only save and switch; delete existed only on the bridge). Every one of these opens a small inline text-field popover with Confirm/Cancel — there is no browser `prompt`/`confirm` anywhere in the editor. `Default` cannot be renamed or deleted (the control is disabled with an explanatory tooltip) but **can** be duplicated, which is the normal way to start a new layout from the built-in one. Renaming or duplicating to a name already in use is refused with a plain message and changes nothing on disk; renaming the active layout keeps it active under its new name, and duplicating makes the new copy active.
+
+### 10.5a Font and style rules (v2)
+
+- A widget or text element's *wording* is still never editable beyond what 10.5 already says — font, weight, size, spacing, case, color, effect, background, border, and padding are styling, not content.
+- Only the ten system fonts in 10.4a are offered; there is no way to load or reference an external font file or web font.
+- A text shadow or outline effect is a rendering style, applied identically on the operator's live preview and the real board; it cannot be used to fake a value the board does not actually have.
 
 ### 10.6 Safe-area policy
 
-The safe area is a margin inset from all four edges of the logical 16:9 canvas, expressed as a fraction of canvas width/height. It defaults to 4% on every side and is itself an editable, validated property: an operator can widen or narrow it only within a documented minimum and maximum inset, and the four insets together must always leave at least half of the canvas usable on both axes. Every visible widget must fit entirely inside the safe area. A layout that violates any of this is **rejected outright** with an error naming the widget or the safe area — it is never silently clamped or accepted.
+The safe area is a margin inset from all four edges of the logical 16:9 canvas, expressed as a fraction of canvas width/height. It defaults to 4% on every side and is itself an editable, validated property: an operator can widen or narrow it only within a documented minimum and maximum inset, and the four insets together must always leave at least half of the canvas usable on both axes. Every visible widget, and every **text** element, must fit entirely inside the safe area. An **image** or **box** element only has to stay inside the canvas itself and is deliberately allowed to cross the safe area (10.4a). A layout that violates any of this is **rejected outright** with an error naming the widget, the element, or the safe area — it is never silently clamped or accepted (`Fit to safe area…` is an explicit, operator-requested repair, not something `Save` does on its own).
 
 ### 10.7 A bad layout
 
-Validation is strict: a value out of range, an unrecognized color format, a widget that would sit outside the safe area, or a serious overlap between two visible widgets is an error, and the layout as a whole is rejected rather than partially applied. A stored layout that fails to load — corrupted, wrong schema version, or otherwise invalid — falls back to the last known valid layout, and if none exists, to the built-in default. A malformed `layouts.json` never prevents the scoreboard from launching.
+Validation is strict: a value out of range, an unrecognized color format, a widget or text element that would sit outside its boundary, an image that fails to decode or exceeds a size cap, or a serious overlap between two visible widgets is an error, and the layout as a whole is rejected rather than partially applied. A stored layout that fails to load — corrupted, an unrecognized schema version, or otherwise invalid — falls back to the last known valid layout, and if none exists, to the built-in default. A malformed `layouts.json` never prevents the scoreboard from launching.
 
-**To reset a bad layout:** use **Reset entire layout…** inside the editor, or close the application, delete `layouts.json` from the Scoreboard data folder (the same per-user `%LOCALAPPDATA%\Scoreboard` folder documented in `docs/ARCHITECTURE.md` §9 and `docs/PACKAGING.md`, or the operator-chosen folder if one was set — see "Where the game is saved" below), and relaunch. The scoreboard rebuilds the built-in default layout automatically either way.
+**A layout saved by v1 (schema version 1) still opens.** It is accepted, every new v2 property is filled in from its default, and the editor shows one warning — "This layout was saved by an earlier version and was upgraded; save it to keep the upgrade." — rather than an error; nothing is rejected just because it predates elements, fonts, or a background color.
 
-### 10.8 What v1 does not support
+**To reset a bad layout:** use **Reset to built-in…** in the editor's layout-name menu, or close the application, delete `layouts.json` from the Scoreboard data folder (the same per-user `%LOCALAPPDATA%\Scoreboard` folder documented in `docs/ARCHITECTURE.md` §9 and `docs/PACKAGING.md`, or the operator-chosen folder if one was set — see "Where the game is saved" below), and relaunch. The scoreboard rebuilds the built-in default layout automatically either way.
 
-- OBS, media playback, logos/images, animations, sponsor rotation, or video.
-- Networking or cloud storage of a layout; every layout is a local file.
-- Physical controllers, freeform canvas design, or arbitrary custom text for an authoritative field — the editor cannot add a field the application does not already produce.
-- Editing the operator panel's own layout, or a different hand-tuned layout per screen resolution.
-- **Drag-and-drop or drag-resize of any kind.** Every geometry property is a numeric field with a documented range; there is no pointer-based positioning in v1.
-- The pregame/halftime **event countdown board** (the `KICKOFF IN…` / `UNTIL SECOND HALF…` presentation) is **not editable in v1**. It keeps its existing markup and CSS untouched; only the in-game widgetized board is covered by the editor.
+### 10.8 What v2 still does not support
+
+- OBS, media playback, animations, sponsor rotation, or video.
+- Networking or cloud storage of a layout; every layout, including its embedded images, is a local file.
+- Physical controllers.
+- Binding a text element's wording to a game field, or any other way to make free text a computed value — a text element's content is fixed operator-typed copy (10.1, 10.4a).
+- SVG images — an SVG file can contain a script, which offline, unreviewed image handling should not have to defend against; only PNG/JPEG/GIF/WebP are accepted.
+- A font that is not already installed on Windows; nothing is downloaded (10.4a).
+- A different hand-tuned layout per screen resolution.
+- Editing the operator panel's own layout.
+- The pregame/halftime **event countdown board** (the `KICKOFF IN…` / `UNTIL SECOND HALF…` presentation) is **not editable in v2**. It keeps its existing markup and CSS untouched; only the in-game widgetized board is covered by the editor.
 
 ## 11. Field Assistant window (added September 5, 2026)
 

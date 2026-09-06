@@ -1,10 +1,19 @@
-/* Generic widget styling shared by the spectator board and the layout
- * editor's live preview. A widget's position/size/style is set as inline
- * custom properties by `board.js`'s applyLayout(); this file only says how
- * those custom properties turn into a drawn box. Nothing here is specific to
- * the spectator page's element ids, so the editor's preview can reuse it
- * unchanged. `--canvas-width` is defined by whichever page includes this
- * file (see spectator.css).
+/* Generic widget/element styling shared by the spectator board and the
+ * layout editor's live preview. A node's position/size/style is set as
+ * inline custom properties by `board.js`'s applyLayout(); this file only
+ * says how those custom properties turn into a drawn box. Nothing here is
+ * specific to the spectator page's element ids, so the editor's preview can
+ * reuse it unchanged. `--canvas-width` is defined by whichever page includes
+ * this file (see spectator.css).
+ *
+ * `--x --y --w --h --fs --color --fw --ta --va` place and style a widget's
+ * text, same as before. `--ff --ls --tt --bg --bc --bw --br --pad` are the
+ * newer style properties shared by widgets and free elements: font stack,
+ * letter spacing, text transform, fill colour, border colour/width, corner
+ * radius, and inner inset. `--op` is opacity for a free element only -- a
+ * widget has no such property. `--fit` picks an image element's object-fit.
+ * Every one of the newer custom properties carries a fallback in its var()
+ * so a layout saved before these properties existed still draws correctly.
  */
 
 .widget {
@@ -22,12 +31,52 @@
   justify-content: var(--ta);
   align-items: var(--va);
   font-variant-numeric: tabular-nums;
+  font-family: var(--ff, Arial, Helvetica, sans-serif);
+  letter-spacing: calc(var(--ls, 0) * 1em);
+  text-transform: var(--tt, none);
+  background: var(--bg, transparent);
+  border: calc(var(--canvas-width) * var(--bw, 0)) solid var(--bc, transparent);
+  border-radius: calc(var(--canvas-width) * var(--br, 0));
+  padding: calc(var(--canvas-width) * var(--pad, 0));
 }
 
 .widget-text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* A free element (text/image/box) placed alongside the widgets. A text
+ * element also carries the .widget class above, so its text is styled
+ * identically to a widget's; an image or box element has no text, so it is
+ * positioned and painted here instead. */
+.element {
+  position: absolute;
+  left: calc(var(--x, 0) * 100%);
+  top: calc(var(--y, 0) * 100%);
+  width: calc(var(--w, 0.1) * 100%);
+  height: calc(var(--h, 0.1) * 100%);
+  opacity: var(--op, 1);
+  background: var(--bg, transparent);
+  border: calc(var(--canvas-width) * var(--bw, 0)) solid var(--bc, transparent);
+  border-radius: calc(var(--canvas-width) * var(--br, 0));
+}
+
+/* Clip the picture to its box so a corner radius rounds the image too. */
+.element-image { overflow: hidden; }
+
+.element-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: var(--fit, contain);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* A text effect is a class, not a property, so it can layer on top of the
+ * ordinary colour/weight styling above without a second custom property per
+ * effect. */
+.effect-shadow .widget-text { text-shadow: 0 0.06em 0.18em rgba(0, 0, 0, .85); }
+.effect-outline .widget-text { -webkit-text-stroke: 0.04em #000; paint-order: stroke fill; }
 
 /* Colour supplements, never replaces, the textual clock status shown to the
  * operator (carried over from the pre-widget spectator board). */

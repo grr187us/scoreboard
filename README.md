@@ -66,7 +66,7 @@ The Phase 2 MVP provides, or will provide:
 | Down, distance, possession, field position, and timeouts remaining | Built and tested; owner/officials decisions on the timeout default and halftime reset remain open |
 | Human-readable Eastern-time recovery timestamps | Built and tested |
 | Field Assistant: a separate helper window that proposes down, distance, spot, penalty, turnover, and scoring outcomes and commits them as one reviewable action | Built and tested against the FA-01 to FA-28 matrix; no game-day rehearsal evidence yet |
-| Presentation layout editor: a separate window that moves, sizes, colors, and saves spectator-board widget layouts without touching game state | Built and tested; owner sign-off on the default layout and a stadium-resolution legibility check remain open |
+| Presentation layout editor (v2): a separate canvas-style window that positions, styles, and saves spectator-board widgets plus free text/image/box elements, with undo, multi-select, and layout presets, without touching game state | Built and tested against focused suites and both a stub-bridge preview and the real pywebview runtime; owner sign-off on the default layout, a stadium-resolution legibility check, and the Playwright browser suite (no Node.js on this host) remain open |
 | Sustained rehearsal and recovery acceptance | Task 12, not started |
 
 Detailed, testable behavior is in [MVP requirements](docs/MVP_REQUIREMENTS.md).

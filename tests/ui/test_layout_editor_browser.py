@@ -61,6 +61,8 @@ class LayoutEditorBrowserTests(unittest.TestCase):
             "issue selects widget", "reset widget", "save as",
             "drag to move", "safe area is a hard boundary", "resize by handle",
             "nudge by key and button", "arrows leave fields alone",
+            "history back and forward", "add text element", "add box", "align",
+            "multi-select drag", "delete element",
             "no page scroll", "no game command",
         ])
 

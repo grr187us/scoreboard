@@ -1,6 +1,6 @@
 # Phase 2 Implementation Backlog
 
-**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors — 597 tests, 15 failures, 3 errors, itemized under "Automated suite failure inventory" in `../PROJECT_ROADMAP.md`. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started. The owner-requested local-time presentation, expanded scoreboard fields, presentation layout editor, and Field Assistant (all below) were implemented or delivered for rehearsal on September 5, 2026; none of them touches Task 12 or the hardware/stadium evidence gap.
+**Status:** Tasks 1-11 are substantially implemented; focused current-workflow verification passes, but the full discovered suite still has legacy pregame/quarter expectation failures and unavailable browser-tool errors — 597 tests, 15 failures, 3 errors, itemized under "Automated suite failure inventory" in `../PROJECT_ROADMAP.md`. Tasks 1-9 were audited against this backlog on September 5, 2026. Task 10 is implemented against fake screen lists and its two-display and stadium acceptance is outstanding — see `DISPLAY_CHECKLIST.md`. Hardware and release evidence remains open in the roadmap. Task 12 is not started. The owner-requested local-time presentation, expanded scoreboard fields, presentation layout editor, and Field Assistant (all below) were implemented or delivered for rehearsal on September 5, 2026; none of them touches Task 12 or the hardware/stadium evidence gap. The presentation layout editor was rebuilt as a v2 canvas editor the same day (see below); the failure/error counts in this line predate that rebuild; full discovery run after v2 (September 5, 2026, `SCOREBOARD_DATA_DIR` isolated): **703 tests, 16 failures, 3 errors** — the same inventory as the pre-v2 baseline; the one new failure the run surfaced (`test_the_build_script_requires_every_view_file`, because the editor gained three script files) was fixed by adding them to `tools/build_package.py` before this was recorded.
 **Last updated:** September 5, 2026
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
@@ -274,7 +274,7 @@ quarter-safety workflow and need an owner decision before implementation.
 | 02 — Quarter-transition safeguards | Confirm every quarter action; PRE → 1st time abandonment uses owner-approved action wording | ✅ Bundle A implemented and verified September 5 | Delivered with 01 |
 | 03 — Running-clock colors | Green running game clock; red running play clock, with text status retained | ✅ Implemented and verified September 5 | Delivered with 04 |
 | 04 — Persistent Play Clock label and quarter title | Show `PLAY CLOCK —` after a clear; render `2nd Quarter` and equivalent live labels | ✅ Implemented and verified September 5 | Delivered with 03 |
-| 05 — Presentation layout editor discovery | Safe, offline visual-editor research | ✅ v1 delivered September 5, 2026 | Delivered as numeric constrained editing (no drag-and-drop); see "Phase 2 owner request 3" in `PROJECT_ROADMAP.md` |
+| 05 — Presentation layout editor discovery | Safe, offline visual-editor research | ✅ v1 delivered September 5, 2026; ✅ rebuilt as a v2 canvas editor the same day | v1 delivered numeric constrained editing (no drag-and-drop); v2 replaced it with pointer drag/resize, multi-select, undo, free elements, fonts, and presets — see "Phase 2 owner request 3 — presentation layout editor v2" in `PROJECT_ROADMAP.md` |
 
 The owner explicitly considers routine scoring increments such as `+6` quick,
 reversible actions; do not add confirmation to them. Major time/lifecycle
@@ -310,41 +310,78 @@ object briefly reaching the JSON/history boundary through Undo) found and
 fixed during testing. No additional essential field beyond the five listed
 was identified during the requirements review.
 
-## Presentation layout editor — ✅ v1 delivered September 5, 2026
+## Presentation layout editor — ✅ v1 delivered, ✅ v2 delivered, both September 5, 2026
 
 Implements item 3 of "Owner-requested next scoreboard work" in
 `PROJECT_ROADMAP.md`, delivered after the local-time presentation and expanded
 football fields it was waiting on (items 1 and 2, both implemented and
 verified above). See "Phase 2 owner request 3 — presentation layout editor"
-in `PROJECT_ROADMAP.md` for full evidence, and `docs/UX_AND_LAYOUT.md` §10 for
-the operator-facing workflow, widget inventory, and safe-area policy.
+and "Phase 2 owner request 3 — presentation layout editor v2" in
+`PROJECT_ROADMAP.md` for full evidence, `.scratch/layout-editor-v2/spec.md`
+for the v2 design spec, and `docs/UX_AND_LAYOUT.md` §10 for the operator-facing
+workflow, widget inventory, free elements, fonts, presets, and safe-area
+policy.
 
-**What v1 does.** A separate editor window, opened from the operator's
-Advanced drawer, lets an operator reposition, resize, recolor, realign,
+**What v1 did.** A separate editor window, opened from the operator's
+Advanced drawer, let an operator reposition, resize, recolor, realign,
 restack, and show or hide each of fifteen spectator-board widgets through
 numeric controls, validated against a safe-area margin and minimum widget
 size, with a live preview drawn by the same renderer as the real board.
-Layouts are named, saved locally in `layouts.json`, and can be reset to the
-built-in default per-widget or entirely. Every value a spectator sees is
-still produced in Python; the editor only changes where and how it is drawn.
+Layouts were named, saved locally in `layouts.json`, and could be reset to
+the built-in default per-widget or entirely. There was no drag-and-drop, no
+undo, no multi-select, no free text or images, no board background, no
+fonts, and no presets, and rename/duplicate/delete existed on the bridge but
+not in the UI — "stuck 20 years in the past," in the owner's words, which is
+what prompted v2 the same day.
 
-**What v1 deliberately does not do.** OBS, media playback, logos/images,
-animations, sponsor rotation, video, networking, cloud storage of a layout,
-physical controllers, a freeform canvas, or arbitrary custom text for an
-authoritative field. It does not edit the operator panel's own layout and
-does not support a different hand-tuned layout per screen resolution. There
-is **no drag-and-drop or drag-resize** in v1 — every geometry property is a
-numeric field with a documented range. The pregame/halftime event countdown
-board keeps its existing markup and styling and is **not editable in v1**.
+**What v2 adds, on the same window and the same window size (1220×780,
+minimum 980×620).** A real canvas editor: pointer-driven drag/resize with
+snapping and guides (carried over from the interim drag-enabled build),
+multi-select and group-drag, undo/redo over the last 100 drafts, up to 24
+free `text`/`image`/`box` elements layered with the widgets, a board
+background color, ten selectable system fonts plus letter-spacing/
+transform/shadow/outline text effects, fill/border/corner-radius/padding for
+any widget or element, four built-in presets (Classic, Broadcast bar, Big
+score, Tigers navy), and full library management (rename, duplicate, delete,
+reset-to-built-in) from inline popovers rather than browser dialogs. Schema
+version moved from 1 to 2; a v1-saved layout is accepted and silently
+upgraded with one warning rather than rejected. See `docs/UX_AND_LAYOUT.md`
+§10 for the complete workflow.
+
+**What v2 deliberately does not do.** OBS, media playback, animations,
+sponsor rotation, video, networking, cloud storage of a layout (images
+included — every image is embedded as a local `data:` URI, capped at 2 MB per
+image and 6 MB total per layout), physical controllers, a way to bind a free
+text element's wording to a game field, SVG images (an SVG can carry a
+script), a font that is not already installed on Windows, editing the
+operator panel's own layout, or a different hand-tuned layout per screen
+resolution. The pregame/halftime event countdown board keeps its existing
+markup and styling and is **not editable in v2**.
 
 **What this does not touch.** Phase 2 acceptance, Task 12 (sustained
 rehearsal), and every piece of hardware/stadium evidence this backlog and the
 roadmap track are unaffected — the editor changes only spectator-board
 presentation and cannot reach `scoreboard.db`, the action history, or the
-state revision. Phase 3's remaining workstreams (OBS, cutscenes, media,
-sponsor content, team themes/logos) also remain deferred; only the
-presentation-layout-editor line item of that list moved, and only because the
-owner asked for it ahead of the rest of Phase 3.
+state revision; the bridge's public surface is unchanged in shape (still no
+`command()` method and no method named after any game command) and grew only
+by the `rename_layout`/`duplicate_layout` pair the UI now exposes. Phase 3's
+remaining workstreams (OBS, cutscenes, media, sponsor content, team
+themes/logos) also remain deferred; only the presentation-layout-editor line
+item of that list moved, and only because the owner asked for it ahead of the
+rest of Phase 3.
+
+**Verification.** Focused suites: schema 95, persistence+bridge 58, renderer
+contract, and editor contract 25 all pass. The editor was driven in the
+preview browser against a stub bridge (boot, select, add text/image/box, drag
+with snapping, history back/forward, presets with inline confirm, library
+menu, context menu, multi-select, zoom) and in the real pywebview/WebView2
+runtime via `WindowHost` (editor opened, text and box elements added, history
+stepped, board background set, `Save` wrote a schema-2 `layouts.json`, and the
+practice spectator window received the push with elements, background, and
+text). Full discovery run after v2 (September 5, 2026, `SCOREBOARD_DATA_DIR` isolated): **703 tests, 16 failures, 3 errors** — the same inventory as the pre-v2 baseline; the one new failure the run surfaced (`test_the_build_script_requires_every_view_file`, because the editor gained three script files) was fixed by adding them to `tools/build_package.py` before this was recorded. Not verified: the
+`tests/ui/` Playwright browser suites (no Node.js on this machine), any
+hardware/LED/two-display evidence, and WebView2 file-picker behavior for the
+Image button on the operator laptop.
 
 ## Field Assistant — delivered for rehearsal, September 5, 2026
 
