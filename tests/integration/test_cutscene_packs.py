@@ -33,6 +33,22 @@ class EnsurePacksDirectoryTests(TemporaryDataDirectoryTest):
         self.assertTrue(readme.is_file())
         self.assertIn("manifest.json", readme.read_text(encoding="utf-8"))
 
+    def test_the_readme_documents_every_event_and_the_per_event_intro(self) -> None:
+        # The README is the only instruction a volunteer dropping a folder in
+        # ever reads, so it has to name all five events -- and say that
+        # leaving `intro` out means something different for a penalty or
+        # the crowd prompt.
+        packs.ensure_packs_directory(self.paths)
+
+        text = (self.paths.cutscenes / packs.PACK_README_FILENAME).read_text(encoding="utf-8")
+
+        for event in packs.CUTSCENE_EVENTS:
+            with self.subTest(event=event):
+                self.assertIn(f'"{event}"', text)
+        self.assertIn('"claw_scratch"', text)
+        self.assertIn('"none"', text)
+        self.assertIn("defaults per event", text)
+
     def test_never_overwrites_an_existing_readme(self) -> None:
         packs.ensure_packs_directory(self.paths)
         readme = self.paths.cutscenes / packs.PACK_README_FILENAME
@@ -302,10 +318,74 @@ class LibraryResolveTests(TemporaryDataDirectoryTest):
     def test_with_no_selection_every_event_resolves_to_its_builtin(self) -> None:
         library = packs.library(self.paths)
 
-        for event in ("first_down", "touchdown"):
-            pack, fell_back = library.resolve(event)
-            self.assertEqual(pack["id"], f"builtin:{event}")
-            self.assertFalse(fell_back)
+        for event in packs.CUTSCENE_EVENTS:
+            with self.subTest(event=event):
+                pack, fell_back = library.resolve(event)
+                self.assertEqual(pack["id"], f"builtin:{event}")
+                self.assertFalse(fell_back)
+
+    def test_a_penalty_pack_scans_and_resolves_like_any_other(self) -> None:
+        _write_manifest(
+            self.paths.cutscenes / "flag",
+            {
+                "schema_version": 1, "name": "Flag", "event": "penalty",
+                "scene": {"type": "builtin", "id": "penalty"},
+            },
+        )
+        packs.write_selection(self.paths, {"penalty": "flag"})
+
+        library = packs.library(self.paths)
+
+        pack, fell_back = library.resolve("penalty")
+        self.assertEqual(pack["id"], "flag")
+        self.assertFalse(fell_back)
+        # Nothing said about the intro, so the event's own default stands.
+        self.assertEqual(pack["intro"], "none")
+
+    def test_a_turnover_pack_scans_and_resolves_with_the_claw_default(self) -> None:
+        # Cutscenes v3: `turnover` is a home-team event whose omitted `intro`
+        # means the claw strike, and whose default run is 7 s.
+        _write_manifest(
+            self.paths.cutscenes / "takeaway",
+            {
+                "schema_version": 1, "name": "Takeaway", "event": "turnover",
+                "scene": {"type": "builtin", "id": "turnover"},
+            },
+        )
+        packs.write_selection(self.paths, {"turnover": "takeaway"})
+
+        library = packs.library(self.paths)
+
+        pack, fell_back = library.resolve("turnover")
+        self.assertEqual(pack["id"], "takeaway")
+        self.assertEqual(pack["event"], "turnover")
+        self.assertFalse(fell_back)
+        self.assertEqual(pack["intro"], "claw_scratch")
+        self.assertEqual(pack["duration_seconds"], 7.0)
+        builtin, _ = packs.library(self.paths).resolve("first_down")
+        self.assertEqual(builtin["event"], "first_down")
+
+    def test_a_make_some_noise_pack_scans_and_resolves_with_no_intro(self) -> None:
+        # Cutscenes v3: the 5 s crowd prompt takes `none` when `intro` is
+        # left out, exactly like the penalty -- the claw would eat a third
+        # of it.
+        _write_manifest(
+            self.paths.cutscenes / "loud",
+            {
+                "schema_version": 1, "name": "Loud", "event": "make_some_noise",
+                "scene": {"type": "builtin", "id": "make_some_noise"},
+            },
+        )
+        packs.write_selection(self.paths, {"make_some_noise": "loud"})
+
+        library = packs.library(self.paths)
+
+        pack, fell_back = library.resolve("make_some_noise")
+        self.assertEqual(pack["id"], "loud")
+        self.assertEqual(pack["event"], "make_some_noise")
+        self.assertFalse(fell_back)
+        self.assertEqual(pack["intro"], "none")
+        self.assertEqual(pack["duration_seconds"], 5.0)
 
     def test_library_lists_builtins_first_then_scanned_packs(self) -> None:
         _write_manifest(
@@ -316,9 +396,11 @@ class LibraryResolveTests(TemporaryDataDirectoryTest):
         library = packs.library(self.paths)
 
         ids = [pack["id"] for pack in library.packs]
-        self.assertEqual(ids[0], "builtin:first_down")
-        self.assertEqual(ids[1], "builtin:touchdown")
-        self.assertIn("roar", ids[2:])
+        self.assertEqual(
+            ids[: len(packs.CUTSCENE_EVENTS)],
+            [f"builtin:{event}" for event in packs.CUTSCENE_EVENTS],
+        )
+        self.assertIn("roar", ids[len(packs.CUTSCENE_EVENTS):])
 
     def test_a_selection_naming_a_real_pack_resolves_to_it(self) -> None:
         _write_manifest(

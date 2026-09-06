@@ -36,21 +36,64 @@ from typing import Any, Collection, Final, Mapping
 # --- Constants (spec section 2.1; exact names and values -- other agents
 # hard-code them) -------------------------------------------------------------
 
-CUTSCENE_EVENTS: Final[tuple[str, ...]] = ("first_down", "touchdown")
-EVENT_LABELS = {"first_down": "First down", "touchdown": "Touchdown"}
-EVENT_HEADLINES = {"first_down": "FIRST DOWN", "touchdown": "TOUCHDOWN"}
-#: Which side a cutscene is "for" when the operator does not say: a first
-#: down belongs to the side with possession; a touchdown defaults to home.
-EVENT_DEFAULT_TEAM = {"first_down": "possession", "touchdown": "home"}
-DEFAULT_DURATION_SECONDS = {"first_down": 7.0, "touchdown": 10.0}
+CUTSCENE_EVENTS: Final[tuple[str, ...]] = (
+    "first_down", "touchdown", "turnover", "penalty", "make_some_noise",
+)
+EVENT_LABELS = {
+    "first_down": "First down", "touchdown": "Touchdown", "turnover": "Turnover",
+    "penalty": "Penalty", "make_some_noise": "Make some noise",
+}
+EVENT_HEADLINES = {
+    "first_down": "FIRST DOWN", "touchdown": "TOUCHDOWN", "turnover": "TURNOVER",
+    "penalty": "FLAG ON THE PLAY", "make_some_noise": "MAKE SOME NOISE",
+}
+#: The side a cutscene is for. Always the home team (the Tigers); a penalty
+#: is nobody's -- it only says a flag is down. The owner asked for this
+#: directly: the wall is the Tigers' wall, so a cutscene never celebrates the
+#: visitors, and there is no home/away choice anywhere in the feature. A
+#: turnover is the Tigers *taking* the ball, and the crowd prompt is aimed
+#: at the Tigers' fans, so both are the home team's too.
+EVENT_TEAM = {
+    "first_down": "home", "touchdown": "home", "turnover": "home",
+    "penalty": None, "make_some_noise": "home",
+}
+#: The fixed identity painted by every Tigers-branded cutscene. This is
+#: intentionally independent of the configurable home-team name: the normal
+#: scoreboard may still say ``HOME`` (or name a visiting host), but these
+#: school graphics always say ``Tigers``.
+CUTSCENE_TEAM_NAME: Final[str] = "Tigers"
+#: The subline under the headline, as a template. ``{team}`` is the fixed
+#: cutscene identity above, upper-cased. A penalty remains team-neutral.
+EVENT_SUBLINE = {
+    "first_down": "{team}", "touchdown": "{team}", "turnover": "{team} BALL",
+    "penalty": "PENALTY", "make_some_noise": "{team} FANS",
+}
+DEFAULT_DURATION_SECONDS = {
+    "first_down": 7.0, "touchdown": 10.0, "turnover": 7.0,
+    "penalty": 7.0, "make_some_noise": 5.0,
+}
 MIN_DURATION_SECONDS: Final[float] = 2.0
 MAX_DURATION_SECONDS: Final[float] = 30.0
 INTRO_IDS: Final[tuple[str, ...]] = ("claw_scratch", "none")
-INTRO_DURATION_MS = {"claw_scratch": 1400, "none": 0}
+INTRO_DURATION_MS = {"claw_scratch": 1600, "none": 0}
+#: The intro each event's built-in pack uses, and the manifest default when a
+#: pack omits ``intro``: the claws are Tigers-branded, and a flag on the play
+#: is not a Tigers moment, so a penalty opens with no claw strike at all. The
+#: crowd prompt has none either, for a different reason: at 5 s a 1.6 s
+#: strike would eat a third of the scene, and "make some noise" wants to be
+#: on the wall *now*. A takeaway is the most Tigers thing a defence can do,
+#: so the turnover earns the claw.
+EVENT_DEFAULT_INTRO = {
+    "first_down": "claw_scratch", "touchdown": "claw_scratch", "turnover": "claw_scratch",
+    "penalty": "none", "make_some_noise": "none",
+}
 #: Milliseconds the outro (fade + restore) takes; the program carries it so
 #: the page and the host agree on when the board is back.
 OUTRO_DURATION_MS: Final[int] = 600
-BUILTIN_SCENE_IDS = {"first_down": "first_down", "touchdown": "touchdown"}
+BUILTIN_SCENE_IDS = {
+    "first_down": "first_down", "touchdown": "touchdown", "turnover": "turnover",
+    "penalty": "penalty", "make_some_noise": "make_some_noise",
+}
 SCENE_TYPES: Final[tuple[str, ...]] = ("builtin", "video", "image")
 MEDIA_EXTENSIONS = {
     "video": (".webm", ".mp4"),
@@ -65,9 +108,11 @@ THEME = {
     "navy": "#071B3A", "navy_elevated": "#0D2B5A", "blue": "#17468C",
     "red": "#C8242B", "blue_light": "#2C62AB", "white": "#FFFFFF",
     "mist": "#DDE7F4", "ink": "#030711", "gold": "#FFB703",
+    # Penalty yellow. Deliberately neither team's colour: the flag scene must
+    # not read as a graphic belonging to the Tigers or to the visitors.
+    "flag": "#FFD500",
 }
 MANIFEST_SCHEMA_VERSION: Final[int] = 1
-TEAM_SIDES: Final[tuple[str, ...]] = ("home", "away")
 
 BUILTIN_PACK_PREFIX: Final[str] = "builtin:"
 
@@ -275,16 +320,19 @@ def validate_manifest(payload: Any, *, files: Collection[str]) -> ManifestValida
         else:
             duration_seconds = number
 
+    # A missing intro takes the *event's* default rather than one fixed id:
+    # a penalty is team-agnostic, so it opens with no claw strike.
+    default_intro = EVENT_DEFAULT_INTRO[event_for_defaults]
     raw_intro = payload.get("intro")
     if raw_intro is None:
-        intro = "claw_scratch"
+        intro = default_intro
     elif raw_intro in INTRO_IDS:
         intro = raw_intro
     else:
         issues.append(
             CutsceneIssue("MANIFEST_INTRO", f"intro must be one of {list(INTRO_IDS)}; got {raw_intro!r}.")
         )
-        intro = "claw_scratch"
+        intro = default_intro
 
     scene, scene_issues = _validate_scene(payload.get("scene"), files)
     issues.extend(scene_issues)
@@ -311,7 +359,7 @@ def _fallback_manifest(event: str) -> dict[str, Any]:
         "name": "Untitled",
         "event": event,
         "duration_seconds": DEFAULT_DURATION_SECONDS[event],
-        "intro": "claw_scratch",
+        "intro": EVENT_DEFAULT_INTRO[event],
         "scene": {"type": "builtin", "id": BUILTIN_SCENE_IDS[event]},
     }
 
@@ -332,7 +380,7 @@ def builtin_pack(event: str) -> dict[str, Any]:
         "event": event,
         "builtin": True,
         "duration_seconds": DEFAULT_DURATION_SECONDS[event],
-        "intro": "claw_scratch",
+        "intro": EVENT_DEFAULT_INTRO[event],
         "scene": {"type": "builtin", "id": BUILTIN_SCENE_IDS[event]},
         "folder": None,
         "media_url": None,
@@ -363,29 +411,16 @@ def normalize_pack(
 # --- The program (spec section 2.4) -----------------------------------------
 
 
-def _resolve_team(event: str, team: str | None, spectator_view: Mapping[str, Any]) -> str:
-    if team in TEAM_SIDES:
-        return team  # type: ignore[return-value]
+def _resolve_team_name(team: str | None) -> str:
+    """Return the school identity for a branded event, or no identity for
+    the team-neutral penalty.
 
-    default = EVENT_DEFAULT_TEAM.get(event, "home")
-    if default != "possession":
-        return default
+    Cutscene copy is deliberately not read from the live scoreboard. That
+    keeps the default scoreboard label ``HOME`` -- and any opponent-specific
+    home name -- out of the Tigers' permanent graphics.
+    """
 
-    football = spectator_view.get("football") if isinstance(spectator_view, Mapping) else None
-    possession = football.get("possession") if isinstance(football, Mapping) else None
-    return possession if possession in TEAM_SIDES else "home"
-
-
-def _resolve_team_text(spectator_view: Mapping[str, Any], team: str) -> tuple[str, Any]:
-    teams = spectator_view.get("teams") if isinstance(spectator_view, Mapping) else None
-    block = teams.get(team) if isinstance(teams, Mapping) else None
-    name = block.get("name") if isinstance(block, Mapping) else None
-    score = block.get("score") if isinstance(block, Mapping) else None
-    if not isinstance(name, str):
-        name = ""
-    if score is None:
-        score = 0
-    return name, score
+    return "" if team is None else CUTSCENE_TEAM_NAME
 
 
 def _resolve_scene(event: str, pack: Mapping[str, Any]) -> dict[str, Any]:
@@ -418,19 +453,24 @@ def build_program(
     play_id: int,
     event: str,
     pack: Mapping[str, Any],
-    team: str | None,
     spectator_view: Mapping[str, Any],
     layout: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Build the one JSON document that tells the spectator page everything
     it needs to play one cutscene (spec section 2.4).
+
+    There is no ``team`` argument: which side a cutscene is for is a property
+    of the *event*, not a choice (:data:`EVENT_TEAM`). The wall belongs to
+    the Tigers, so a first down, a touchdown, a turnover, or a crowd prompt
+    is always theirs, and a penalty is nobody's -- it only says a flag is
+    down.
     """
 
-    resolved_team = _resolve_team(event, team, spectator_view)
-    team_name, score = _resolve_team_text(spectator_view, resolved_team)
+    team = EVENT_TEAM.get(event, "home")
+    team_name = _resolve_team_name(team)
 
     duration_seconds = pack.get("duration_seconds", DEFAULT_DURATION_SECONDS.get(event, MIN_DURATION_SECONDS))
-    intro_id = pack.get("intro", "claw_scratch")
+    intro_id = pack.get("intro", EVENT_DEFAULT_INTRO.get(event, "claw_scratch"))
 
     program_layout: dict[str, Any] = copy.deepcopy(dict(layout)) if isinstance(layout, Mapping) else {}
     program_layout["name"] = "Cutscene"
@@ -440,7 +480,7 @@ def build_program(
         "play_id": play_id,
         "event": event,
         "label": EVENT_LABELS.get(event, event),
-        "team": resolved_team,
+        "team": team,
         "pack_id": pack.get("id", builtin_pack_id(event)),
         "duration_ms": round(duration_seconds * 1000),
         "intro": {"id": intro_id, "duration_ms": INTRO_DURATION_MS.get(intro_id, 0)},
@@ -449,11 +489,15 @@ def build_program(
         "layout": program_layout,
         "scene": _resolve_scene(event, pack),
         "theme": dict(THEME),
+        # No score: the owner asked for it off the touchdown scene, and the
+        # Broadcast bar under the stage is already showing it the whole time.
+        # The subline is a per-event template over the fixed school identity
+        # (`TIGERS`, `TIGERS BALL`, `TIGERS FANS`, or the fixed `PENALTY`),
+        # while the team-neutral penalty carries no team name at all.
         "texts": {
             "headline": EVENT_HEADLINES.get(event, event.upper()),
-            "subline": team_name.upper(),
+            "subline": EVENT_SUBLINE.get(event, "{team}").format(team=team_name.upper()).strip(),
             "team_name": team_name,
-            "score": str(score),
         },
     }
 
@@ -469,7 +513,7 @@ def event_descriptors() -> list[dict[str, Any]]:
             "id": event,
             "label": EVENT_LABELS[event],
             "headline": EVENT_HEADLINES[event],
-            "default_team": EVENT_DEFAULT_TEAM[event],
+            "team": EVENT_TEAM[event],
             "default_duration_seconds": DEFAULT_DURATION_SECONDS[event],
             "builtin_pack_id": builtin_pack_id(event),
         }
@@ -480,11 +524,14 @@ def event_descriptors() -> list[dict[str, Any]]:
 __all__ = [
     "BUILTIN_PACK_PREFIX",
     "BUILTIN_SCENE_IDS",
+    "CUTSCENE_TEAM_NAME",
     "CUTSCENE_EVENTS",
     "DEFAULT_DURATION_SECONDS",
-    "EVENT_DEFAULT_TEAM",
+    "EVENT_DEFAULT_INTRO",
     "EVENT_HEADLINES",
     "EVENT_LABELS",
+    "EVENT_SUBLINE",
+    "EVENT_TEAM",
     "FIT_MODES",
     "INTRO_DURATION_MS",
     "INTRO_IDS",
@@ -495,7 +542,6 @@ __all__ = [
     "OUTRO_DURATION_MS",
     "SCENE_TYPES",
     "STAGE",
-    "TEAM_SIDES",
     "THEME",
     "CutsceneIssue",
     "ManifestValidation",

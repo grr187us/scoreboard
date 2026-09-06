@@ -6,7 +6,15 @@ an unknown event, a media file not actually in the pack folder, or an
 out-of-range duration produces an explicit, coded issue. And **nothing
 invalid can crash a trigger** -- :func:`validate_manifest` always returns a
 usable, normalized manifest, and :func:`build_program` never raises even
-when the spectator view is empty or a team's identity is missing.
+when the spectator view is empty.
+
+Since cutscenes v2 there is no team *choice* to test: which side a cutscene
+is for is a property of the event (:data:`EVENT_TEAM`), always the home team
+or, for a penalty, nobody. Cutscenes v3 added two more home-team events,
+``turnover`` and ``make_some_noise``, and the per-event subline template
+(:data:`EVENT_SUBLINE`) that gives them ``TIGERS BALL`` and ``TIGERS FANS``.
+The school identity is fixed: a configurable scoreboard label such as
+``HOME`` must never leak into these branded graphics.
 
 This module is pure: no file I/O, no clock, no window. The "does a real pack
 folder scan correctly" behavior lives in
@@ -24,10 +32,13 @@ from scoreboard.presentation.cutscenes import (
     BUILTIN_PACK_PREFIX,
     BUILTIN_SCENE_IDS,
     CUTSCENE_EVENTS,
+    CUTSCENE_TEAM_NAME,
     DEFAULT_DURATION_SECONDS,
-    EVENT_DEFAULT_TEAM,
+    EVENT_DEFAULT_INTRO,
     EVENT_HEADLINES,
     EVENT_LABELS,
+    EVENT_SUBLINE,
+    EVENT_TEAM,
     FIT_MODES,
     INTRO_DURATION_MS,
     INTRO_IDS,
@@ -38,7 +49,6 @@ from scoreboard.presentation.cutscenes import (
     OUTRO_DURATION_MS,
     SCENE_TYPES,
     STAGE,
-    TEAM_SIDES,
     THEME,
     build_program,
     builtin_pack,
@@ -212,6 +222,35 @@ class ManifestErrorCodeTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.manifest["intro"], "claw_scratch")
 
+    def test_manifest_intro_default_is_per_event_not_one_fixed_id(self) -> None:
+        # The claws are Tigers-branded, so a penalty pack that says nothing
+        # about an intro gets none at all rather than a claw strike.
+        for event in CUTSCENE_EVENTS:
+            with self.subTest(event=event):
+                payload = {
+                    "schema_version": 1,
+                    "name": "Minimal",
+                    "event": event,
+                    "scene": {"type": "builtin", "id": BUILTIN_SCENE_IDS[event]},
+                }
+                result = validate_manifest(payload, files=set())
+                self.assertTrue(result.ok)
+                self.assertEqual(result.manifest["intro"], EVENT_DEFAULT_INTRO[event])
+
+    def test_a_penalty_pack_is_accepted_with_its_builtin_scene(self) -> None:
+        payload = _good_manifest(
+            name="Flag", event="penalty", scene={"type": "builtin", "id": "penalty"}
+        )
+        del payload["duration_seconds"]
+        del payload["intro"]
+
+        result = validate_manifest(payload, files=set())
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.manifest["event"], "penalty")
+        self.assertEqual(result.manifest["intro"], "none")
+        self.assertEqual(result.manifest["duration_seconds"], DEFAULT_DURATION_SECONDS["penalty"])
+
     def test_manifest_scene_must_be_an_object(self) -> None:
         self.assertEqual(
             self._first_error_code(_good_manifest(scene="video"), files={"touchdown.webm"}),
@@ -292,7 +331,7 @@ class BuiltinPackTests(unittest.TestCase):
                 self.assertTrue(pack["builtin"])
                 self.assertEqual(pack["event"], event)
                 self.assertEqual(pack["duration_seconds"], DEFAULT_DURATION_SECONDS[event])
-                self.assertEqual(pack["intro"], "claw_scratch")
+                self.assertEqual(pack["intro"], EVENT_DEFAULT_INTRO[event])
                 self.assertEqual(pack["scene"], {"type": "builtin", "id": BUILTIN_SCENE_IDS[event]})
                 self.assertIsNone(pack["folder"])
                 self.assertIsNone(pack["media_url"])
@@ -323,7 +362,7 @@ class BuildProgramTests(unittest.TestCase):
         }
 
         program = build_program(
-            play_id=3, event="touchdown", pack=pack, team="home",
+            play_id=3, event="touchdown", pack=pack,
             spectator_view=view, layout=self._layout(),
         )
 
@@ -334,21 +373,23 @@ class BuildProgramTests(unittest.TestCase):
         self.assertEqual(program["team"], "home")
         self.assertEqual(program["pack_id"], "builtin:touchdown")
         self.assertEqual(program["duration_ms"], 10000)
-        self.assertEqual(program["intro"], {"id": "claw_scratch", "duration_ms": 1400})
+        self.assertEqual(program["intro"], {"id": "claw_scratch", "duration_ms": 1600})
         self.assertEqual(program["outro_ms"], OUTRO_DURATION_MS)
         self.assertEqual(program["stage"], STAGE)
         self.assertEqual(program["scene"], {"type": "builtin", "id": "touchdown"})
         self.assertEqual(program["theme"], THEME)
+        # No score anywhere: the owner asked for it off the scene, and the
+        # Broadcast bar under the stage carries it the whole time.
         self.assertEqual(
             program["texts"],
-            {"headline": "TOUCHDOWN", "subline": "TIGERS", "team_name": "Tigers", "score": "14"},
+            {"headline": "TOUCHDOWN", "subline": "TIGERS", "team_name": "Tigers"},
         )
         self.assertEqual(program["layout"]["name"], "Cutscene")
 
     def test_intro_and_outro_are_inside_duration_never_added(self) -> None:
         pack = builtin_pack("first_down")
         program = build_program(
-            play_id=1, event="first_down", pack=pack, team="home",
+            play_id=1, event="first_down", pack=pack,
             spectator_view={}, layout=self._layout(),
         )
 
@@ -361,7 +402,7 @@ class BuildProgramTests(unittest.TestCase):
         pack = builtin_pack("touchdown")
 
         program = build_program(
-            play_id=1, event="touchdown", pack=pack, team="home",
+            play_id=1, event="touchdown", pack=pack,
             spectator_view={}, layout=original_layout,
         )
         program["layout"]["widgets"]["quarter"]["mutated"] = True
@@ -369,81 +410,173 @@ class BuildProgramTests(unittest.TestCase):
         self.assertEqual(original_layout["name"], "Broadcast bar")
         self.assertNotIn("mutated", original_layout["widgets"]["quarter"])
 
-    def test_team_none_resolves_through_possession_for_first_down(self) -> None:
-        pack = builtin_pack("first_down")
+    def test_every_team_event_is_the_home_team_whoever_has_possession(self) -> None:
+        # The wall is the Tigers' wall: possession does not move a cutscene
+        # to the visitors, and there is no argument that could.
         view = {
-            "teams": {"away": {"name": "Hawks", "score": 7}},
+            "teams": {"home": {"name": "Tigers"}, "away": {"name": "Hawks"}},
             "football": {"possession": "away"},
         }
 
-        program = build_program(
-            play_id=1, event="first_down", pack=pack, team=None,
-            spectator_view=view, layout=self._layout(),
-        )
+        for event in ("first_down", "touchdown", "turnover", "make_some_noise"):
+            with self.subTest(event=event):
+                program = build_program(
+                    play_id=1, event=event, pack=builtin_pack(event),
+                    spectator_view=view, layout=self._layout(),
+                )
 
-        self.assertEqual(program["team"], "away")
-        self.assertEqual(program["texts"]["team_name"], "Hawks")
+                self.assertEqual(program["team"], EVENT_TEAM[event])
+                self.assertEqual(program["team"], "home")
+                self.assertEqual(program["texts"]["team_name"], "Tigers")
+                self.assertTrue(program["texts"]["subline"].startswith("TIGERS"))
 
-    def test_team_none_falls_back_to_home_when_possession_is_absent_or_none(self) -> None:
-        pack = builtin_pack("first_down")
+        for event in ("first_down", "touchdown"):
+            with self.subTest(event=event, subline="bare team name"):
+                program = build_program(
+                    play_id=1, event=event, pack=builtin_pack(event),
+                    spectator_view=view, layout=self._layout(),
+                )
+                self.assertEqual(program["texts"]["subline"], "TIGERS")
 
-        program_absent = build_program(
-            play_id=1, event="first_down", pack=pack, team=None,
-            spectator_view={}, layout=self._layout(),
-        )
-        self.assertEqual(program_absent["team"], "home")
-
-        program_none = build_program(
-            play_id=1, event="first_down", pack=pack, team=None,
-            spectator_view={"football": {"possession": None}}, layout=self._layout(),
-        )
-        self.assertEqual(program_none["team"], "home")
-
-    def test_team_none_for_touchdown_always_defaults_to_home(self) -> None:
-        pack = builtin_pack("touchdown")
-        view = {"football": {"possession": "away"}}
+    def test_a_turnover_is_the_tigers_taking_the_ball(self) -> None:
+        pack = builtin_pack("turnover")
+        view = {"teams": {"home": {"name": "Tigers"}, "away": {"name": "Hawks"}}}
 
         program = build_program(
-            play_id=1, event="touchdown", pack=pack, team=None,
+            play_id=4, event="turnover", pack=pack,
             spectator_view=view, layout=self._layout(),
         )
 
         self.assertEqual(program["team"], "home")
-
-    def test_explicit_team_overrides_the_default(self) -> None:
-        pack = builtin_pack("touchdown")
-
-        program = build_program(
-            play_id=1, event="touchdown", pack=pack, team="away",
-            spectator_view={"football": {"possession": "home"}}, layout=self._layout(),
+        self.assertEqual(program["label"], "Turnover")
+        self.assertEqual(program["duration_ms"], 7000)
+        # A takeaway earns the claw: it is the most Tigers thing a defence does.
+        self.assertEqual(program["intro"], {"id": "claw_scratch", "duration_ms": 1600})
+        self.assertEqual(program["scene"], {"type": "builtin", "id": "turnover"})
+        self.assertEqual(
+            program["texts"],
+            {"headline": "TURNOVER", "subline": "TIGERS BALL", "team_name": "Tigers"},
         )
 
-        self.assertEqual(program["team"], "away")
+    def test_make_some_noise_is_a_five_second_prompt_with_no_intro(self) -> None:
+        pack = builtin_pack("make_some_noise")
+        view = {"teams": {"home": {"name": "Tigers"}, "away": {"name": "Hawks"}}}
 
-    def test_empty_team_name_is_used_as_given_not_substituted(self) -> None:
+        program = build_program(
+            play_id=5, event="make_some_noise", pack=pack,
+            spectator_view=view, layout=self._layout(),
+        )
+
+        self.assertEqual(program["team"], "home")
+        self.assertEqual(program["label"], "Make some noise")
+        self.assertEqual(program["duration_ms"], 5000)
+        # No claw: at 5 s a 1.6 s strike would eat a third of the scene, and
+        # a crowd prompt wants to be on the wall now.
+        self.assertEqual(program["intro"], {"id": "none", "duration_ms": 0})
+        self.assertEqual(program["scene"], {"type": "builtin", "id": "make_some_noise"})
+        self.assertEqual(
+            program["texts"],
+            {"headline": "MAKE SOME NOISE", "subline": "TIGERS FANS", "team_name": "Tigers"},
+        )
+
+    def test_every_branded_scene_replaces_the_default_home_label_with_tigers(self) -> None:
+        # The user-facing bug was the default state name, HOME, leaking into
+        # all four branded cutscenes. Their school identity is fixed even
+        # when the normal scoreboard has no configured team name yet.
+        view = {"teams": {"home": {"name": "HOME"}}}
+        expected = {
+            "first_down": "TIGERS", "touchdown": "TIGERS",
+            "turnover": "TIGERS BALL", "penalty": "PENALTY",
+            "make_some_noise": "TIGERS FANS",
+        }
+
+        for event, subline in expected.items():
+            with self.subTest(event=event):
+                program = build_program(
+                    play_id=1, event=event, pack=builtin_pack(event),
+                    spectator_view=view, layout=self._layout(),
+                )
+                self.assertEqual(program["texts"]["subline"], subline)
+                self.assertNotIn("HOME", program["texts"].values())
+                self.assertEqual(
+                    program["texts"]["team_name"],
+                    "" if event == "penalty" else CUTSCENE_TEAM_NAME,
+                )
+
+    def test_a_configured_home_name_does_not_replace_the_school_identity(self) -> None:
+        view = {"teams": {"home": {"name": "St. Mary's Tigers"}}}
+
+        program = build_program(
+            play_id=1, event="turnover", pack=builtin_pack("turnover"),
+            spectator_view=view, layout=self._layout(),
+        )
+
+        self.assertEqual(program["texts"]["subline"], "TIGERS BALL")
+        self.assertEqual(program["texts"]["team_name"], CUTSCENE_TEAM_NAME)
+
+    def test_build_program_takes_no_team_argument(self) -> None:
+        with self.assertRaises(TypeError):
+            build_program(  # type: ignore[call-arg]
+                play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+                team="away", spectator_view={}, layout=self._layout(),
+            )
+
+    def test_a_penalty_belongs_to_nobody_and_says_so(self) -> None:
+        pack = builtin_pack("penalty")
+        view = {"teams": {"home": {"name": "Tigers"}, "away": {"name": "Hawks"}}}
+
+        program = build_program(
+            play_id=2, event="penalty", pack=pack,
+            spectator_view=view, layout=self._layout(),
+        )
+
+        self.assertIsNone(program["team"])
+        self.assertEqual(program["label"], "Penalty")
+        self.assertEqual(program["duration_ms"], 7000)
+        # No claw strike: the claws are Tigers-branded and a flag is not.
+        self.assertEqual(program["intro"], {"id": "none", "duration_ms": 0})
+        self.assertEqual(program["scene"], {"type": "builtin", "id": "penalty"})
+        self.assertEqual(
+            program["texts"],
+            {"headline": "FLAG ON THE PLAY", "subline": "PENALTY", "team_name": ""},
+        )
+
+    def test_no_program_carries_a_score(self) -> None:
+        view = {"teams": {"home": {"name": "Tigers", "score": 21}}}
+
+        for event in CUTSCENE_EVENTS:
+            with self.subTest(event=event):
+                program = build_program(
+                    play_id=1, event=event, pack=builtin_pack(event),
+                    spectator_view=view, layout=self._layout(),
+                )
+
+                self.assertEqual(set(program["texts"]), {"headline", "subline", "team_name"})
+                self.assertNotIn("21", program["texts"].values())
+
+    def test_empty_team_name_still_uses_the_school_identity(self) -> None:
         pack = builtin_pack("touchdown")
         view = {"teams": {"home": {"name": "", "score": 0}}}
 
         program = build_program(
-            play_id=1, event="touchdown", pack=pack, team="home",
+            play_id=1, event="touchdown", pack=pack,
             spectator_view=view, layout=self._layout(),
         )
 
-        self.assertEqual(program["texts"]["team_name"], "")
-        self.assertEqual(program["texts"]["subline"], "")
-        self.assertNotIn("TIGERS", program["texts"].values())
+        self.assertEqual(program["texts"]["team_name"], CUTSCENE_TEAM_NAME)
+        self.assertEqual(program["texts"]["subline"], "TIGERS")
 
     def test_missing_view_never_raises_and_uses_safe_defaults(self) -> None:
         pack = builtin_pack("touchdown")
 
         program = build_program(
-            play_id=1, event="touchdown", pack=pack, team=None,
+            play_id=1, event="touchdown", pack=pack,
             spectator_view={}, layout=self._layout(),
         )
 
         self.assertEqual(program["team"], "home")
-        self.assertEqual(program["texts"]["team_name"], "")
-        self.assertEqual(program["texts"]["score"], "0")
+        self.assertEqual(program["texts"]["team_name"], CUTSCENE_TEAM_NAME)
+        self.assertEqual(program["texts"]["subline"], "TIGERS")
 
     def test_media_pack_scene_carries_a_builtin_fallback(self) -> None:
         pack = {
@@ -454,7 +587,7 @@ class BuildProgramTests(unittest.TestCase):
         }
 
         program = build_program(
-            play_id=1, event="touchdown", pack=pack, team="home",
+            play_id=1, event="touchdown", pack=pack,
             spectator_view={}, layout=self._layout(),
         )
 
@@ -478,7 +611,7 @@ class BuildProgramTests(unittest.TestCase):
         }
 
         program = build_program(
-            play_id=1, event="touchdown", pack=pack, team="home",
+            play_id=1, event="touchdown", pack=pack,
             spectator_view={}, layout=self._layout(),
         )
 
@@ -496,7 +629,8 @@ class EventDescriptorTests(unittest.TestCase):
             event = descriptor["id"]
             self.assertEqual(descriptor["label"], EVENT_LABELS[event])
             self.assertEqual(descriptor["headline"], EVENT_HEADLINES[event])
-            self.assertEqual(descriptor["default_team"], EVENT_DEFAULT_TEAM[event])
+            self.assertEqual(descriptor["team"], EVENT_TEAM[event])
+            self.assertNotIn("default_team", descriptor)
             self.assertEqual(descriptor["default_duration_seconds"], DEFAULT_DURATION_SECONDS[event])
             self.assertEqual(descriptor["builtin_pack_id"], builtin_pack_id(event))
 
@@ -505,9 +639,11 @@ class ConstantSanityTests(unittest.TestCase):
     """A light net over the exact-name/value contract other agents build on."""
 
     def test_events_and_sides(self) -> None:
-        self.assertEqual(CUTSCENE_EVENTS, ("first_down", "touchdown"))
-        self.assertEqual(TEAM_SIDES, ("home", "away"))
+        self.assertEqual(
+            CUTSCENE_EVENTS, ("first_down", "touchdown", "turnover", "penalty", "make_some_noise")
+        )
         self.assertEqual(INTRO_IDS, ("claw_scratch", "none"))
+        self.assertEqual(CUTSCENE_TEAM_NAME, "Tigers")
         self.assertEqual(SCENE_TYPES, ("builtin", "video", "image"))
         self.assertEqual(FIT_MODES, ("cover", "contain"))
         self.assertEqual(BUILTIN_PACK_PREFIX, "builtin:")
@@ -516,11 +652,84 @@ class ConstantSanityTests(unittest.TestCase):
         self.assertEqual(MIN_DURATION_SECONDS, 2.0)
         self.assertEqual(MAX_DURATION_SECONDS, 30.0)
         self.assertEqual(STAGE, {"x": 0.0, "y": 0.0, "width": 1.0, "height": 0.70})
-        self.assertEqual(INTRO_DURATION_MS, {"claw_scratch": 1400, "none": 0})
+        self.assertEqual(INTRO_DURATION_MS, {"claw_scratch": 1600, "none": 0})
         self.assertEqual(
             MEDIA_EXTENSIONS,
             {"video": (".webm", ".mp4"), "image": (".png", ".gif", ".jpg", ".jpeg", ".webp", ".apng")},
         )
+
+    def test_per_event_tables_cover_exactly_the_events(self) -> None:
+        for table_name, table in (
+            ("EVENT_LABELS", EVENT_LABELS),
+            ("EVENT_HEADLINES", EVENT_HEADLINES),
+            ("EVENT_TEAM", EVENT_TEAM),
+            ("EVENT_SUBLINE", EVENT_SUBLINE),
+            ("EVENT_DEFAULT_INTRO", EVENT_DEFAULT_INTRO),
+            ("DEFAULT_DURATION_SECONDS", DEFAULT_DURATION_SECONDS),
+            ("BUILTIN_SCENE_IDS", BUILTIN_SCENE_IDS),
+        ):
+            with self.subTest(table=table_name):
+                self.assertEqual(tuple(table), CUTSCENE_EVENTS)
+
+    def test_the_home_only_and_penalty_values_other_agents_hard_code(self) -> None:
+        self.assertEqual(
+            EVENT_TEAM,
+            {"first_down": "home", "touchdown": "home", "turnover": "home",
+             "penalty": None, "make_some_noise": "home"},
+        )
+        self.assertEqual(
+            EVENT_DEFAULT_INTRO,
+            {"first_down": "claw_scratch", "touchdown": "claw_scratch", "turnover": "claw_scratch",
+             "penalty": "none", "make_some_noise": "none"},
+        )
+        self.assertEqual(EVENT_HEADLINES["penalty"], "FLAG ON THE PLAY")
+        self.assertEqual(DEFAULT_DURATION_SECONDS["penalty"], 7.0)
+        self.assertEqual(BUILTIN_SCENE_IDS["penalty"], "penalty")
+        self.assertEqual(THEME["flag"], "#FFD500")
+
+    def test_the_v3_values_other_agents_hard_code(self) -> None:
+        # Spec .scratch/cutscenes-v3/spec.md section 2.1, verbatim: the scene
+        # agents hard-code these ids, headlines, and timings.
+        self.assertEqual(
+            EVENT_LABELS,
+            {"first_down": "First down", "touchdown": "Touchdown", "turnover": "Turnover",
+             "penalty": "Penalty", "make_some_noise": "Make some noise"},
+        )
+        self.assertEqual(
+            EVENT_HEADLINES,
+            {"first_down": "FIRST DOWN", "touchdown": "TOUCHDOWN", "turnover": "TURNOVER",
+             "penalty": "FLAG ON THE PLAY", "make_some_noise": "MAKE SOME NOISE"},
+        )
+        self.assertEqual(
+            EVENT_SUBLINE,
+            {"first_down": "{team}", "touchdown": "{team}", "turnover": "{team} BALL",
+             "penalty": "PENALTY", "make_some_noise": "{team} FANS"},
+        )
+        self.assertEqual(
+            DEFAULT_DURATION_SECONDS,
+            {"first_down": 7.0, "touchdown": 10.0, "turnover": 7.0,
+             "penalty": 7.0, "make_some_noise": 5.0},
+        )
+        self.assertEqual(
+            BUILTIN_SCENE_IDS,
+            {"first_down": "first_down", "touchdown": "touchdown", "turnover": "turnover",
+             "penalty": "penalty", "make_some_noise": "make_some_noise"},
+        )
+
+    def test_event_subline_is_exported(self) -> None:
+        import scoreboard.presentation.cutscenes as module
+
+        self.assertIn("EVENT_SUBLINE", module.__all__)
+
+    def test_the_removed_team_choice_constants_are_gone(self) -> None:
+        # Home/away is not a cutscene concept any more; a stale import must
+        # fail loudly rather than silently resolve to something plausible.
+        import scoreboard.presentation.cutscenes as module
+
+        self.assertFalse(hasattr(module, "EVENT_DEFAULT_TEAM"))
+        self.assertFalse(hasattr(module, "TEAM_SIDES"))
+        self.assertNotIn("EVENT_DEFAULT_TEAM", module.__all__)
+        self.assertNotIn("TEAM_SIDES", module.__all__)
 
 
 class BuiltinSceneRegistryMirrorTests(unittest.TestCase):
@@ -529,17 +738,31 @@ class BuiltinSceneRegistryMirrorTests(unittest.TestCase):
     every built-in scene id this module defines, using the exact literal
     string Python already committed to. A grep, not a JS interpreter --
     this file has no JavaScript runtime available to it.
+
+    The scenes live in more than one file since cutscenes v2 (the intro and
+    the team-agnostic penalty in ``builtin.js``, the Tigers-branded first
+    down, touchdown, and -- since v3 -- turnover in ``tigers.js``, the crowd
+    prompt in ``crowd.js``), so this scans the whole folder rather than one
+    file: which file registers an id is a graphics decision, but *some* file
+    having registered every id is the contract. Five scene ids plus the claw
+    intro since v3.
     """
 
-    def test_builtin_js_registers_the_intro_and_every_scene_id(self) -> None:
-        path = (
+    def _registrations(self) -> str:
+        folder = (
             Path(__file__).resolve().parents[2]
-            / "src" / "scoreboard" / "views" / "spectator" / "cutscenes" / "builtin.js"
+            / "src" / "scoreboard" / "views" / "spectator" / "cutscenes"
         )
-        self.assertTrue(path.is_file(), f"expected {path} to exist")
-        text = path.read_text(encoding="utf-8")
+        self.assertTrue(folder.is_dir(), f"expected {folder} to exist")
+        scene_files = sorted(folder.glob("*.js"))
+        self.assertTrue(scene_files, f"expected at least one scene file under {folder}")
+        return "\n".join(path.read_text(encoding="utf-8") for path in scene_files)
+
+    def test_the_scene_files_register_the_intro_and_every_scene_id(self) -> None:
+        text = self._registrations()
 
         self.assertIn("register('claw_scratch'", text)
+        self.assertEqual(len(BUILTIN_SCENE_IDS), 5)
         for scene_id in BUILTIN_SCENE_IDS.values():
             with self.subTest(scene_id=scene_id):
                 self.assertIn(f"register('{scene_id}'", text)

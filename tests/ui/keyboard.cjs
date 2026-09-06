@@ -192,9 +192,13 @@ async function main(data) {
     const help=await page.locator('#shortcut-list tr').evaluateAll(rows=>rows.map(row=>Array.from(row.children).map(e=>e.textContent)));
     // Appended per .scratch/cutscenes/spec.md 7.2: four `host` bindings
     // (cutscenes trigger/cancel) that still show up in the shortcut table.
+    // Cutscenes v2 (.scratch/cutscenes-v2/spec.md 2.6): one key per event and
+    // no side to name, so Shift+T is gone and F plays the penalty flag.
+    // Cutscenes v3 (.scratch/cutscenes-v3/spec.md 2.5): O (turnover) and L
+    // (make some noise, "get Loud") join them, in binding order.
     assert.deepEqual(help,[...map.map(row=>[row[3],row[4]]),['Esc','Close dialog / drawer'],
-      ['D','Cutscene: First down'],['T','Cutscene: Touchdown (home)'],
-      ['Shift+T','Cutscene: Touchdown (away)'],['Shift+C','Cancel cutscene']]);
+      ['D','Cutscene: First down'],['T','Cutscene: Touchdown'],['O','Cutscene: Turnover'],
+      ['F','Cutscene: Penalty flag'],['L','Cutscene: Make some noise'],['Shift+C','Cancel cutscene']]);
     await page.keyboard.press('Escape');assert.equal(await page.locator('#shortcut-help').isVisible(),false);
     await page.locator('#open-advanced').click();
     assert.equal(await page.locator('#advanced-drawer').isVisible(),true);

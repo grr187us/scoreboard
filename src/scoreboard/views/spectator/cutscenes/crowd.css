@@ -1,0 +1,445 @@
+/* The crowd scene -- `make_some_noise` from crowd.js.
+ *
+ * Same two custom-property contracts as ../cutscene.css and tigers.css:
+ *
+ * - `--stage-w` / `--stage-h` are the stage's size in px, published by
+ *   cutscene.js and re-published on resize. Every length below is a fraction
+ *   of one of them, so the wall (1920x1080, a 756px-high stage) and the
+ *   practice window (640x360, a 252px-high stage) get the same picture.
+ *   Nothing here is sized from the viewport, and nothing is a bare px.
+ * - `--cs-navy`, `--cs-navy-elevated`, `--cs-blue`, `--cs-red`,
+ *   `--cs-blue-light`, `--cs-white`, `--cs-mist`, `--cs-ink`, `--cs-gold`
+ *   are the program's theme, copied onto the stage by the player. No brand
+ *   hex is written in this file; tints are `color-mix()` of those same
+ *   properties.
+ *
+ * This file loads after tigers.css and shares its crest: `.cs-crest`,
+ * `.cs-crest-panel`, `.cs-crest-window` and `.cs-crest-img` are defined
+ * there and only *placed* here, so the mark is pixel-identical across the
+ * Tigers' scenes and this one.
+ *
+ * The scene has no intro. It is on the wall at t = 0 while the board is still
+ * morphing to the bar underneath it, so the first frame is already the slabs
+ * landing: a navy-to-ink ground, a red plate slamming in from the left over
+ * an ink shadow plate, a blue plate sliding under it from the right. The
+ * picture is a live level meter -- the wall telling the stands it is
+ * listening -- and after 1.4 s nothing moves except the meter, the bass
+ * rings behind the word, and a 3.5 % punch on the beat.
+ */
+
+.cs-noise {
+  --cs-head-font: 'Bahnschrift', Impact, 'Arial Black', Arial, sans-serif;
+  --cs-beat: 500ms;
+  background: var(--cs-navy);
+  contain: paint;
+}
+
+.cs-noise * {
+  box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Ground, slabs, seam                                                    */
+/* ---------------------------------------------------------------------- */
+
+.cs-mn-ground {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 40% 42%,
+    var(--cs-navy-elevated) 0%,
+    var(--cs-navy) 50%,
+    var(--cs-ink) 100%);
+}
+
+/* Two plates on a skewed seam. Each is taller than the stage and skewed, so
+ * the join between them is a diagonal; the ink plate behind the red one is
+ * offset toward the seam and reads as the gap between two plates standing
+ * off the ground rather than one two-tone rectangle. */
+
+.cs-mn-slab-blue,
+.cs-mn-slab-shadow,
+.cs-mn-slab-red {
+  position: absolute;
+  top: -12%;
+  height: 124%;
+  transform: skewX(-12deg);
+}
+
+.cs-mn-slab-blue {
+  left: 47%;
+  width: 73%;
+  z-index: 1;
+  background: linear-gradient(255deg,
+    color-mix(in srgb, var(--cs-blue) 72%, var(--cs-ink)) 0%,
+    var(--cs-blue) 55%,
+    color-mix(in srgb, var(--cs-blue) 88%, var(--cs-ink)) 100%);
+  box-shadow: inset calc(var(--stage-w) * 0.004) 0 0 0
+    color-mix(in srgb, var(--cs-blue-light) 70%, transparent);
+  animation: cs-mn-in-right 360ms cubic-bezier(.1, .82, .24, 1) both;
+}
+
+.cs-mn-slab-shadow {
+  left: -12.6%;
+  width: 69%;
+  z-index: 2;
+  background: var(--cs-ink);
+  opacity: .92;
+  animation: cs-mn-in-left 330ms cubic-bezier(.1, .82, .24, 1) both;
+}
+
+.cs-mn-slab-red {
+  left: -14%;
+  width: 69%;
+  z-index: 3;
+  background: linear-gradient(105deg,
+    color-mix(in srgb, var(--cs-red) 80%, var(--cs-ink)) 0%,
+    var(--cs-red) 45%,
+    color-mix(in srgb, var(--cs-red) 84%, var(--cs-white)) 100%);
+  box-shadow: inset 0 calc(var(--stage-h) * -0.012) 0 0
+    color-mix(in srgb, var(--cs-ink) 40%, transparent);
+  animation: cs-mn-in-left 330ms 40ms cubic-bezier(.1, .82, .24, 1) both;
+}
+
+@keyframes cs-mn-in-left {
+  from { transform: skewX(-12deg) translateX(-108%); }
+  to { transform: skewX(-12deg) translateX(0); }
+}
+
+@keyframes cs-mn-in-right {
+  from { transform: skewX(-12deg) translateX(108%); }
+  to { transform: skewX(-12deg) translateX(0); }
+}
+
+/* The seam: a gold hairline lighting the far edge of the ink gap, which is
+ * what makes the gap read as a join between plates rather than a crack. */
+.cs-mn-seam {
+  position: absolute;
+  left: 56.4%;
+  top: -12%;
+  width: calc(var(--stage-w) * 0.0016);
+  height: 124%;
+  z-index: 3;
+  transform: skewX(-12deg);
+  background: linear-gradient(to bottom,
+    color-mix(in srgb, var(--cs-gold) 15%, transparent) 0%,
+    var(--cs-gold) 40%,
+    color-mix(in srgb, var(--cs-gold) 30%, transparent) 100%);
+  animation: cs-mn-in-left 330ms cubic-bezier(.1, .82, .24, 1) both;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Bass rings                                                             */
+/* ---------------------------------------------------------------------- */
+
+/* Three thin white rings born behind the word, one on every beat, each
+ * growing and fading out over 900 ms. They never reach a quarter of full
+ * white and their opacity only ever falls, so nothing here can strobe. */
+.cs-mn-rings {
+  position: absolute;
+  left: 24.5%;
+  top: 34%;
+  width: 0;
+  height: 0;
+  z-index: 4;
+}
+
+.cs-mn-ring {
+  position: absolute;
+  left: calc(var(--stage-h) * -0.34);
+  top: calc(var(--stage-h) * -0.34);
+  width: calc(var(--stage-h) * 0.68);
+  height: calc(var(--stage-h) * 0.68);
+  border-radius: 50%;
+  border: calc(var(--stage-h) * 0.018) solid var(--cs-white);
+  filter: blur(calc(var(--stage-h) * 0.013));
+  opacity: 0;
+  transform: scale(.3);
+  /* No fill mode on purpose: a ring waiting out its delay must show the
+   * element's own opacity (0), not the 0 % keyframe. */
+  animation: cs-mn-ring calc(var(--cs-beat) * 3) linear infinite;
+}
+
+@keyframes cs-mn-ring {
+  0% {
+    transform: scale(.3);
+    opacity: .28;
+    animation-timing-function: cubic-bezier(.2, .55, .4, 1);
+  }
+  60% { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Texture                                                                */
+/* ---------------------------------------------------------------------- */
+
+/* A carbon hatch over the plates: 5-7 % is the whole budget. Any more and it
+ * turns into moire on an LED wall seen from the bleachers. */
+.cs-mn-hatch {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  opacity: .062;
+  background: repeating-linear-gradient(135deg,
+    var(--cs-white) 0 calc(var(--stage-w) * 0.00085),
+    transparent calc(var(--stage-w) * 0.00085) calc(var(--stage-w) * 0.0044));
+}
+
+.cs-mn-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: radial-gradient(ellipse at 42% 46%,
+    transparent 38%,
+    color-mix(in srgb, var(--cs-ink) 80%, transparent) 100%);
+}
+
+/* ---------------------------------------------------------------------- */
+/* The meter                                                              */
+/* ---------------------------------------------------------------------- */
+
+/* Twelve chunky columns on the blue plate, each bouncing on its own period
+ * between the floor and ceiling crowd.js dealt it (`--cs-bar-lo`,
+ * `--cs-bar-hi`, on the track), with a gold peak cap that holds and falls
+ * slower than the bar under it. The whole meter rises into view at 500 ms;
+ * the bars themselves are already mid-motion (negative delays) so it never
+ * starts from flat. */
+.cs-mn-meter {
+  position: absolute;
+  left: 61%;
+  top: 14%;
+  width: 34.5%;
+  height: 70%;
+  z-index: 7;
+  display: flex;
+  align-items: flex-end;
+  gap: calc(var(--stage-w) * 0.0065);
+  animation: cs-mn-meter-in 520ms 500ms cubic-bezier(.2, .8, .3, 1) both;
+}
+
+@keyframes cs-mn-meter-in {
+  from { transform: translateY(6%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.cs-mn-track {
+  position: relative;
+  flex: 1 1 0;
+  height: 100%;
+  border-radius: calc(var(--stage-h) * 0.004);
+  background: linear-gradient(to top,
+    color-mix(in srgb, var(--cs-ink) 42%, transparent) 0%,
+    color-mix(in srgb, var(--cs-ink) 18%, transparent) 100%);
+}
+
+/* The column: blue-light at the foot, white at the tip, segmented by thin
+ * ink lines anchored at the foot (the gradient runs from the bottom, so the
+ * segments stay put as the bar moves). */
+.cs-mn-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--cs-bar-lo);
+  border-radius: calc(var(--stage-h) * 0.004) calc(var(--stage-h) * 0.004) 0 0;
+  background:
+    repeating-linear-gradient(to top,
+      transparent 0 calc(var(--stage-h) * 0.024),
+      color-mix(in srgb, var(--cs-ink) 60%, transparent) calc(var(--stage-h) * 0.024)
+        calc(var(--stage-h) * 0.029)),
+    linear-gradient(to top,
+      var(--cs-blue-light) 0%,
+      color-mix(in srgb, var(--cs-blue-light) 55%, var(--cs-white)) 55%,
+      var(--cs-white) 100%);
+  box-shadow: 0 0 calc(var(--stage-h) * 0.016)
+    color-mix(in srgb, var(--cs-blue-light) 55%, transparent);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+.cs-mn-bar-a { animation-name: cs-mn-bar-a; }
+.cs-mn-bar-b { animation-name: cs-mn-bar-b; }
+.cs-mn-bar-c { animation-name: cs-mn-bar-c; }
+
+/* Three bounce shapes. All peak at 45 % of the period so the cap (below)
+ * can meet the bar at its top; they differ in how they get there and back. */
+@keyframes cs-mn-bar-a {
+  0%, 100% { height: var(--cs-bar-lo); }
+  45% { height: var(--cs-bar-hi); }
+}
+
+@keyframes cs-mn-bar-b {
+  0%, 100% { height: var(--cs-bar-lo); }
+  45% { height: var(--cs-bar-hi); }
+  62% { height: calc(var(--cs-bar-lo) * .45 + var(--cs-bar-hi) * .55); }
+  78% { height: calc(var(--cs-bar-lo) * .25 + var(--cs-bar-hi) * .75); }
+}
+
+@keyframes cs-mn-bar-c {
+  0%, 100% { height: var(--cs-bar-lo); }
+  22% { height: calc(var(--cs-bar-lo) * .55 + var(--cs-bar-hi) * .45); }
+  45% { height: var(--cs-bar-hi); animation-timing-function: ease-in; }
+}
+
+/* The peak cap: gold, meets the bar at its peak, holds there for a third of
+ * the period, then falls -- and never falls all the way to the floor. */
+.cs-mn-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(var(--stage-h) * 0.014);
+  bottom: var(--cs-bar-lo);
+  background: var(--cs-gold);
+  box-shadow: 0 0 calc(var(--stage-h) * 0.014)
+    color-mix(in srgb, var(--cs-gold) 70%, transparent);
+  animation-name: cs-mn-cap;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+@keyframes cs-mn-cap {
+  0%, 100% { bottom: calc(var(--cs-bar-lo) * .65 + var(--cs-bar-hi) * .35); }
+  45%, 78% { bottom: var(--cs-bar-hi); animation-timing-function: ease-in; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* The word                                                               */
+/* ---------------------------------------------------------------------- */
+
+/* MAKE SOME NOISE is ONE text node. The box is narrower than any two of its
+ * words set at this size, so CSS breaks it into three lines -- nothing in
+ * crowd.js splits a string. The reveal is a clip-path inset moving top to
+ * bottom over the one block, so the lines arrive in order; the box itself
+ * carries the italic skew and, from the first second on, the beat punch. */
+.cs-mn-headline {
+  position: absolute;
+  left: 6.5%;
+  top: 2.5%;
+  width: calc(var(--stage-w) * 0.31);
+  height: 65%;
+  z-index: 8;
+  overflow: hidden;
+  transform-origin: 45% 55%;
+  transform: skewX(-8deg);
+  animation: cs-mn-punch var(--cs-beat) 1000ms cubic-bezier(.2, .8, .3, 1) infinite both;
+}
+
+.cs-mn-headline span {
+  display: block;
+  width: 100%;
+  padding-left: calc(var(--stage-w) * 0.006);
+  font-family: var(--cs-head-font);
+  font-weight: 700;
+  font-stretch: 75%;
+  font-size: calc(var(--stage-h) * 0.225);
+  line-height: .9;
+  letter-spacing: calc(var(--stage-w) * 0.0012);
+  white-space: normal;
+  text-wrap: balance;
+  text-align: left;
+  color: var(--cs-white);
+  text-shadow:
+    calc(var(--stage-w) * 0.0016) calc(var(--stage-h) * 0.004) 0 var(--cs-ink),
+    calc(var(--stage-w) * 0.0032) calc(var(--stage-h) * 0.008) 0 var(--cs-ink),
+    calc(var(--stage-w) * 0.0048) calc(var(--stage-h) * 0.012) 0 var(--cs-ink),
+    calc(var(--stage-w) * 0.0064) calc(var(--stage-h) * 0.016) 0 var(--cs-ink),
+    calc(var(--stage-w) * 0.0080) calc(var(--stage-h) * 0.020) 0
+      color-mix(in srgb, var(--cs-ink) 72%, transparent);
+  animation: cs-mn-reveal 750ms 250ms cubic-bezier(.3, .1, .3, 1) both;
+}
+
+/* Top to bottom. The extra room on every side but the leading one keeps the
+ * ink extrude and the skewed overhang from being shaved off as the mask
+ * passes. */
+@keyframes cs-mn-reveal {
+  from { clip-path: inset(-10% -14% 100% -10%); }
+  to { clip-path: inset(-10% -14% -16% -10%); }
+}
+
+/* 3.5 % on the beat, felt rather than seen. Ease-out, so it hits at once and
+ * then settles for the rest of the beat. */
+@keyframes cs-mn-punch {
+  0% { transform: skewX(-8deg) scale(1); }
+  18% { transform: skewX(-8deg) scale(1.035); }
+  100% { transform: skewX(-8deg) scale(1); }
+}
+
+/* One light sweep across the type, once. */
+.cs-mn-headline::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: 0;
+  width: 40%;
+  height: 140%;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+    transparent 0%,
+    color-mix(in srgb, var(--cs-white) 0%, transparent) 30%,
+    var(--cs-white) 50%,
+    transparent 74%);
+  opacity: 0;
+  animation: cs-mn-sweep 760ms 1300ms cubic-bezier(.4, 0, .5, 1) both;
+}
+
+@keyframes cs-mn-sweep {
+  from { transform: translateX(-60%) skewX(-14deg); opacity: 0; }
+  22% { opacity: .38; }
+  78% { opacity: .38; }
+  to { transform: translateX(300%) skewX(-14deg); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------- */
+/* The crest and the tag                                                  */
+/* ---------------------------------------------------------------------- */
+
+/* The crest lands at the lower left of the red plate, heavy: it comes from
+ * slightly above and larger, overshoots a hair, and settles. */
+.cs-mn-crest {
+  left: 5.5%;
+  top: 69.5%;
+  z-index: 10;
+  animation: cs-mn-crest-land 560ms 900ms cubic-bezier(.18, .9, .26, 1.04) both;
+}
+
+@keyframes cs-mn-crest-land {
+  from { transform: translateY(-22%) scale(1.32); opacity: 0; }
+  45% { opacity: 1; }
+  74% { transform: translateY(1.5%) scale(.975); }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* TIGERS FANS on an ink tag beside the crest. */
+.cs-mn-subline {
+  position: absolute;
+  left: 17%;
+  top: 76%;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  padding: calc(var(--stage-h) * 0.02) calc(var(--stage-w) * 0.018)
+    calc(var(--stage-h) * 0.02) calc(var(--stage-w) * 0.015);
+  background: var(--cs-ink);
+  border-left: calc(var(--stage-w) * 0.005) solid var(--cs-gold);
+  box-shadow: 0 calc(var(--stage-h) * 0.01) calc(var(--stage-h) * 0.026)
+    color-mix(in srgb, var(--cs-ink) 70%, transparent);
+  animation: cs-mn-tag-in 460ms 1000ms cubic-bezier(.2, .86, .28, 1.02) both;
+}
+
+.cs-mn-subline span {
+  font-family: var(--cs-head-font);
+  font-weight: 700;
+  font-stretch: 75%;
+  font-size: calc(var(--stage-h) * 0.08);
+  line-height: 1;
+  letter-spacing: .2em;
+  white-space: nowrap;
+  color: var(--cs-mist);
+}
+
+@keyframes cs-mn-tag-in {
+  from { transform: translateX(-24%); opacity: 0; clip-path: inset(0 100% 0 0); }
+  to { transform: translateX(0); opacity: 1; clip-path: inset(0 0 0 0); }
+}

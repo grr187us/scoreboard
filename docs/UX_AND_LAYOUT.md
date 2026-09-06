@@ -696,26 +696,64 @@ anything the helper does not cover.
 
 Implements the owner's "cutscenes" request: press a button in a small
 persistent window and the LED wall plays a branded animation, then returns
-to exactly what it was showing. Built against `.scratch/cutscenes/spec.md`.
+to exactly what it was showing. Built against `.scratch/cutscenes/spec.md`,
+for the September 6, 2026 redesign `.scratch/cutscenes-v2/spec.md`, and for
+the two scenes added the same day (v3) `.scratch/cutscenes-v3/spec.md`.
 
 ### 12.1 What it is and is not
 
-A cutscene is a manually-triggered ~10-second interruption of the spectator
-board: a claw-scratch intro rips across whatever is currently on screen, the
-board morphs into the built-in **Broadcast bar** layout (score and clock
-along the bottom), a FIRST DOWN or TOUCHDOWN scene plays on the freed-up
-upper stage, and the board morphs back to exactly what it was showing before
-— same layout, same screen (game, pre-game, or halftime). It is a host/
-presentation concern, exactly like the presentation layout and the saved
-teams: triggering, cancelling, selecting a pack, and rescanning the packs
-folder advance no state revision, submit no `Command`, and write nothing to
-`scoreboard.db` or its backup. It is **not** automatic — nothing in this
-feature fires from a score, a down, or any other game event; the operator
-always presses a button or a key. It is **not** an editor: there is no way
-to change what a scene draws from inside the app, only which pack plays for
-each event. The operator window and the Cutscenes window never show the
-animation itself, only a Python-computed status badge and countdown; only
+A cutscene is a manually-triggered 5–10 second interruption of the spectator
+board: a claw-strike intro rips across whatever is currently on screen (for
+the events that have one), the board morphs into the built-in **Broadcast
+bar** layout (score and clock along the bottom), a FIRST DOWN, TOUCHDOWN,
+TURNOVER, FLAG ON THE PLAY, or MAKE SOME NOISE scene plays on the freed-up
+upper stage, and the board morphs back to exactly what it was showing
+before — same layout, same screen (game, pre-game, or halftime). The five
+events, their durations, and their sublines:
+
+| Event (`event`) | Headline | Subline | Duration | Intro | Whose |
+|---|---|---|---|---|---|
+| `first_down` | FIRST DOWN | TIGERS | 7 s | claw strike | home |
+| `touchdown` | TOUCHDOWN | TIGERS | 10 s | claw strike | home |
+| `turnover` | TURNOVER | TIGERS BALL | 7 s | claw strike | home |
+| `penalty` | FLAG ON THE PLAY | PENALTY | 7 s | none | nobody |
+| `make_some_noise` | MAKE SOME NOISE | TIGERS FANS | 5 s | none | home |
+
+The two v3 additions: **TURNOVER** (the Tigers take the ball away — the
+defensive counterpart of the touchdown, and it earns the claw) and **MAKE
+SOME NOISE** (a 5 s crowd prompt with a live level meter; it has no intro
+because a 1.6 s claw would eat a third of it and a crowd prompt wants to be
+on the wall *now*).
+It is a host/presentation concern, exactly like the presentation layout and
+the saved teams: triggering, cancelling, selecting a pack, and rescanning the
+packs folder advance no state revision, submit no `Command`, and write
+nothing to `scoreboard.db` or its backup. It is **not** automatic — nothing
+in this feature fires from a score, a down, or any other game event; the
+operator always presses a button or a key. It is **not** an editor: there is
+no way to change what a scene draws from inside the app, only which pack
+plays for each event. The operator window and the Cutscenes window never show
+the animation itself, only a Python-computed status badge and countdown; only
 the spectator (and the practice test window) plays it.
+
+**Cutscenes are the home team's, and there is no home/away choice anywhere.**
+The wall is the Tigers' wall, so a first down, a touchdown, a turnover, and
+the crowd prompt always celebrate the home team whoever has possession, and
+a penalty is nobody's —
+it only says a flag is down, in penalty yellow rather than either team's
+colours. Which side a cutscene is for is a property of the event
+(`EVENT_TEAM` in `presentation/cutscenes.py`), not something an operator can
+get wrong under pressure: the window has no team toggle, the hotkeys name no
+side, and `trigger_cutscene(event)` takes no team argument. The touchdown
+scene also shows **no score** — the Broadcast bar underneath is already
+showing it, and it keeps updating throughout.
+
+The school name inside every branded cutscene is fixed as **TIGERS**. It is
+not copied from the configurable home-team name, so a fresh scoreboard that
+still says `HOME` — or a game whose host name was changed — cannot alter the
+school-branded scene copy. The subline is a per-event template
+(`EVENT_SUBLINE` in `presentation/cutscenes.py`): first down and touchdown
+read **TIGERS**, Turnover reads **TIGERS BALL**, Make Some Noise reads
+**TIGERS FANS**, and the team-neutral penalty remains **PENALTY**.
 
 ### 12.2 Opening it
 
@@ -736,22 +774,28 @@ panel built for a volunteer under time pressure:
 - A header reading `CUTSCENES`, a status line (`Ready`, or
   `PLAYING: TOUCHDOWN · 6.2s` with Python's own countdown), and an
   always-visible **CANCEL** button, disabled only while nothing is playing.
-- A team row — **HOME**/**AWAY** toggle buttons showing the current team
-  names — that decides who a **touchdown** is for; a **first down**
-  defaults to the side with possession unless the operator has explicitly
-  pressed a team button since the last trigger.
-- Two large (88 px+, full-width) trigger buttons: **FIRST DOWN** and
-  **TOUCHDOWN**. Pressing one calls the same small bridge the window's own
-  keys use and shows Python's plain-language result.
+- Five large full-width trigger buttons, in this order: **FIRST DOWN**
+  (blue), **TOUCHDOWN** (red), **TURNOVER** (navy with a red edge),
+  **PENALTY** (flag yellow on ink, deliberately neither team's colour), and
+  **MAKE SOME NOISE** (light blue with a gold edge). Pressing one calls the
+  same small bridge the window's own keys use and shows Python's
+  plain-language result. There is no team row and no side to pick: the
+  event decides (section 12.1). All five, plus the collapsed Packs summary
+  below them, fit the window's `520x640` default (and its `420x520`
+  minimum) without scrolling — measured in headless Edge at both sizes
+  with the buttons at their 64 px floor and 22 px face; at 520×640 each
+  button is 92 px tall and the Packs summary ends 12 px above the bottom
+  edge.
 - A collapsible **Packs** section: one pack picker per event (built-in
   first), **Rescan** (no restart needed after adding or editing a pack
   folder), **Open folder**, and a list of any pack problems found on the
   last scan.
 
 Keyboard, in both the operator window and the Cutscenes window: `D` plays
-First down, `T` plays Touchdown for the home team, `Shift+T` plays Touchdown
-for the away team, and `Shift+C` cancels whatever is playing. These are
-letter keys rather than function keys because F-keys are browser
+First down, `T` plays Touchdown, `O` plays Turnover, `F` plays the Penalty
+flag, `L` ("get Loud") plays Make some noise, and `Shift+C` cancels
+whatever is playing. One key per event, with no side to name. These
+are letter keys rather than function keys because F-keys are browser
 accelerators inside WebView2 and would not reach the page reliably. They
 appear in the operator's Shortcut Help table alongside every other binding.
 The operator toolbar also carries a `CUTSCENE: TOUCHDOWN 6.2s`-style badge,
@@ -767,9 +811,9 @@ times below are relative to the moment the program is applied:
 
 | When | What happens |
 |---|---|
-| t = 0 | The stage covers the full canvas; the claw-scratch intro plays over whatever board is currently showing (skipped entirely if the pack's intro is `none`). |
-| ≈ 40% of the intro | The board morphs into the Broadcast bar layout under a 600 ms transition, underneath the still-playing intro. |
-| End of the intro | The intro unmounts; the stage shrinks to the upper ~70% of the canvas (above the bar's status row); the main scene — FIRST DOWN or TOUCHDOWN, built-in or a dropped-in video/image — mounts. |
+| t = 0 | The stage covers the full canvas; the 1.6 s claw-strike intro plays over whatever board is currently showing. A **penalty** has no intro at all (its pack's `intro` defaults to `none`, since the claws are Tigers-branded and a flag is nobody's), and neither does **make some noise** (at 5 s the claw would eat a third of it), so those two scenes mount immediately with the bar already up. |
+| ≈ 45% of the intro | The board morphs into the Broadcast bar layout under a 600 ms transition, underneath the still-playing intro. |
+| End of the intro | The intro unmounts; the stage shrinks to the upper ~70% of the canvas (above the bar's status row); the main scene — FIRST DOWN, TOUCHDOWN, TURNOVER, FLAG ON THE PLAY, or MAKE SOME NOISE, built-in or a dropped-in video/image — mounts. |
 | Duration − outro (600 ms, or 300 ms on a cancel) | The stage fades. |
 | Full duration | The scene unmounts, the stage hides, the board morphs back to the operator's own layout, and the window is idle again. |
 | Duration + 1.5 s | A safety net: if the host somehow never sent the "end" signal, the spectator page ends the cutscene itself. The board always comes back, even if the host process were to vanish mid-cutscene. |
@@ -781,7 +825,7 @@ button/hotkey ends one early and restores the board at once.
 
 ### 12.5 Packs and the manifest
 
-Cutscenes ship with two code-authored built-in animations (one per event),
+Cutscenes ship with five code-authored built-in animations (one per event),
 so the feature works with no files dropped in at all. To replace one, an
 operator or volunteer creates a folder under the `cutscenes` folder inside
 the Scoreboard data directory (**Open folder** in the Packs section goes
@@ -798,12 +842,16 @@ straight there) containing a `manifest.json`:
 }
 ```
 
-The folder name becomes the pack's id. `event` is `first_down` or
-`touchdown`; `duration_seconds` is optional (2–30 seconds, clamped rather
-than rejected if out of range, defaulting per event if left out); `intro`
-is optional (`claw_scratch`, the default, or `none`); `scene` is required
-and is either a built-in animation (`{"type": "builtin", "id": "first_down"}`
-or `"touchdown"`) or a media file sitting right beside the manifest
+The folder name becomes the pack's id. `event` is `first_down`, `touchdown`,
+`turnover`, `penalty`, or `make_some_noise`; `duration_seconds` is optional
+(2–30 seconds, clamped rather than rejected if out of range, defaulting per
+event if left out: 7, 10, 7, 7, and 5); `intro` is optional (`claw_scratch`
+or `none`) and, left out, defaults **per event** — the claw strike for a
+first down, touchdown, or turnover, none for a penalty or make some noise;
+`scene` is required and is either a built-in animation
+(`{"type": "builtin", "id": "first_down"}`, `"touchdown"`, `"turnover"`,
+`"penalty"`, or `"make_some_noise"`)
+or a media file sitting right beside the manifest
 (`video`: `.webm`/`.mp4`; `image`: `.png`/`.gif`/`.jpg`/`.jpeg`/`.webp`/
 `.apng`; `fit` is `cover` or `contain`). A media file must be named
 directly — no subfolders, no `..` — and must actually be present in the
@@ -817,15 +865,18 @@ the first time it is created.
 
 ### 12.6 Not yet visually verified on the LED wall
 
-The three built-in scenes (`claw_scratch`, `first_down`, `touchdown`) are a
-first pass in code-authored DOM/CSS/SVG that the owner will iterate on —
-the claw intro in particular currently reads as glowing streaks rather than
-jagged claw marks. Sound is out of scope for v1 (video plays muted), and
-nothing auto-fires a cutscene from a score, a down, or any other game
-event — every trigger is a deliberate operator action. The feature has been
-verified against a stub bridge in a browser and, separately, in the real
-pywebview/WebView2 runtime on the development host (see
-`PROJECT_ROADMAP.md`, "Cutscenes — delivered for rehearsal"); it has not yet
+The six built-in scenes (`claw_scratch`, `first_down`, `touchdown`,
+`turnover`, `penalty`, `make_some_noise`) are code-authored DOM/CSS/SVG,
+redesigned in the v2 pass — and, for the two v3 additions, drawn as
+siblings of that pass — against a modern broadcast reference: TMSA colours,
+the TMSA crest (`views/spectator/cutscenes/tmsa-logo.png`, shown by the
+Tigers scenes and the crowd prompt alike), and no score on the touchdown.
+Sound is out of scope (video plays muted), and nothing auto-fires a cutscene
+from a score, a down, or any other game event — every trigger is a
+deliberate operator action. The feature has been verified against a stub
+bridge in a browser and, separately, in the real pywebview/WebView2 runtime
+on the development host (see `PROJECT_ROADMAP.md`, "Cutscenes — delivered
+for rehearsal" and the v2 and v3 entries that follow it); it has not yet
 been seen playing on the physical LED wall.
 
 ## Where the game is saved, and which display it is on

@@ -61,13 +61,23 @@ Rules:
 
 - schema_version must be 1.
 - name is text, 1-64 characters.
-- event is "first_down" or "touchdown".
+- event is "first_down", "touchdown", "turnover", "penalty" or
+  "make_some_noise".
 - duration_seconds is optional (2-30 seconds; out-of-range values are
-  clamped rather than rejected); if left out, a sensible default is used.
-- intro is optional: "claw_scratch" (the default) or "none".
+  clamped rather than rejected); if left out, a sensible default is used
+  (7 s first_down, 10 s touchdown, 7 s turnover, 7 s penalty,
+  5 s make_some_noise).
+- intro is optional: "claw_scratch" (the Tigers claw strike) or "none".
+  Left out, it defaults per event: "claw_scratch" for first_down,
+  touchdown and turnover, "none" for penalty (a flag on the play is
+  nobody's moment) and make_some_noise (a 5 s crowd prompt has no time
+  for a strike).
 - scene is required:
-    - a built-in animation: {"type": "builtin", "id": "first_down"} or
-      {"type": "builtin", "id": "touchdown"}
+    - a built-in animation: {"type": "builtin", "id": "first_down"},
+      {"type": "builtin", "id": "touchdown"},
+      {"type": "builtin", "id": "turnover"},
+      {"type": "builtin", "id": "penalty"} or
+      {"type": "builtin", "id": "make_some_noise"}
     - a video: {"type": "video", "src": "<filename>.webm or .mp4",
       "fit": "cover" or "contain", "loop": true or false}
     - an image: {"type": "image", "src": "<filename>.png/.gif/.jpg/.jpeg/

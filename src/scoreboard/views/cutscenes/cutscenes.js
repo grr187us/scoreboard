@@ -4,10 +4,12 @@
  * countdown, and no duration. Python owns the whole program: the status line
  * and the badge on this window are copied verbatim from `cutscenes.playing`
  * in the operator view that the host pushes here ten times a second through
- * `window.applyView`. The only "decision" made in this file is which team
- * button the operator has explicitly pressed since the last trigger, which
- * is a raw UI choice, not a rule -- Python still resolves a first down's
- * `null` team through possession on its own.
+ * `window.applyView`. Since cutscenes v2 this window makes no decision at
+ * all -- there is no home/away choice to make. A cutscene is always the
+ * Tigers' (or, for a penalty, nobody's); the event id alone tells Python
+ * which side it is for (`EVENT_TEAM` in presentation/cutscenes.py). Five
+ * events since cutscenes v3: first_down, touchdown, turnover, penalty,
+ * make_some_noise -- one button, one key, and one pack picker each.
  *
  * The bridge is the small `CutscenesBridge`: get_snapshot, state, trigger,
  * cancel, rescan, select_pack, open_folder. There is no `command` here and
@@ -19,8 +21,6 @@
   var api = null;
   var model = null; // the full operator view, pushed by applyView
   var stateData = null; // api.state(): events/packs/issues/folder
-  var selectedTeam = 'home';
-  var teamExplicit = false; // has the operator pressed a team button since the last trigger?
 
   var statusEl = document.getElementById('status');
   var cancelButton = document.getElementById('cancel');
@@ -29,21 +29,6 @@
 
   function notice(message) {
     noticeEl.textContent = message || '';
-  }
-
-  function teamName(side) {
-    var teams = model && model.teams;
-    return teams && teams[side] ? teams[side].name : String(side || '').toUpperCase();
-  }
-
-  function fillTeamNames() {
-    document.getElementById('team-home').textContent = teamName('home');
-    document.getElementById('team-away').textContent = teamName('away');
-  }
-
-  function updateTeamButtons() {
-    document.getElementById('team-home').setAttribute('aria-pressed', selectedTeam === 'home' ? 'true' : 'false');
-    document.getElementById('team-away').setAttribute('aria-pressed', selectedTeam === 'away' ? 'true' : 'false');
   }
 
   // Python computes `remaining_display`; this line only copies the two
@@ -63,8 +48,7 @@
   function render(view) {
     if (!view) return;
     model = view;
-    fillTeamNames();
-    renderStatus(view.cutscenes || {});
+    renderStatus(model.cutscenes || {});
   }
 
   function renderPackSelect(event) {
@@ -98,13 +82,15 @@
     stateData = state;
     renderPackSelect('first_down');
     renderPackSelect('touchdown');
+    renderPackSelect('turnover');
+    renderPackSelect('penalty');
+    renderPackSelect('make_some_noise');
     renderIssues(state.issues || []);
   }
 
-  function trigger(event, team) {
+  function trigger(event) {
     if (!api) return;
-    Promise.resolve(api.trigger(event, team)).then(function (result) {
-      teamExplicit = false;
+    Promise.resolve(api.trigger(event)).then(function (result) {
       notice(result && result.message);
     }).catch(function (error) { notice('Could not trigger: ' + error); });
   }
@@ -116,18 +102,20 @@
     }).catch(function (error) { notice('Could not cancel: ' + error); });
   }
 
-  document.getElementById('team-home').addEventListener('click', function () {
-    selectedTeam = 'home'; teamExplicit = true; updateTeamButtons();
-  });
-  document.getElementById('team-away').addEventListener('click', function () {
-    selectedTeam = 'away'; teamExplicit = true; updateTeamButtons();
-  });
-
   document.getElementById('trigger-first-down').addEventListener('click', function () {
-    trigger('first_down', teamExplicit ? selectedTeam : null);
+    trigger('first_down');
   });
   document.getElementById('trigger-touchdown').addEventListener('click', function () {
-    trigger('touchdown', selectedTeam);
+    trigger('touchdown');
+  });
+  document.getElementById('trigger-turnover').addEventListener('click', function () {
+    trigger('turnover');
+  });
+  document.getElementById('trigger-penalty').addEventListener('click', function () {
+    trigger('penalty');
+  });
+  document.getElementById('trigger-make-some-noise').addEventListener('click', function () {
+    trigger('make_some_noise');
   });
   cancelButton.addEventListener('click', cancel);
 
@@ -153,19 +141,21 @@
     });
   });
 
-  // This window's own hotkeys (spec 7.1): D / T / Shift+T / Shift+C, ignored
-  // while focus is in a select or input so typing a folder path, say, never
-  // fires a trigger. T and Shift+T name a fixed team, exactly like the
-  // operator window's four `host` keyboard bindings -- the team toggle above
-  // only changes what the two big buttons send.
+  // This window's own hotkeys: D / T / O / F / L / Shift+C, the same six the
+  // operator window's `host` keyboard bindings use, ignored while focus is in
+  // a select or input so typing a folder path, say, never fires a trigger.
+  // Each key names an event and nothing else -- there is no team to choose.
+  // `L` is "get Loud" (the crowd prompt); `O` is the turnover.
   document.addEventListener('keydown', function (event) {
     if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
     var target = event.target;
     if (target && target.closest && target.closest('select, input, textarea, [contenteditable]')) return;
     var key = event.key.toLowerCase();
-    if (key === 'd' && !event.shiftKey) { event.preventDefault(); trigger('first_down', null); return; }
-    if (key === 't' && !event.shiftKey) { event.preventDefault(); trigger('touchdown', 'home'); return; }
-    if (key === 't' && event.shiftKey) { event.preventDefault(); trigger('touchdown', 'away'); return; }
+    if (key === 'd' && !event.shiftKey) { event.preventDefault(); trigger('first_down'); return; }
+    if (key === 't' && !event.shiftKey) { event.preventDefault(); trigger('touchdown'); return; }
+    if (key === 'o' && !event.shiftKey) { event.preventDefault(); trigger('turnover'); return; }
+    if (key === 'f' && !event.shiftKey) { event.preventDefault(); trigger('penalty'); return; }
+    if (key === 'l' && !event.shiftKey) { event.preventDefault(); trigger('make_some_noise'); return; }
     if (key === 'c' && event.shiftKey) { event.preventDefault(); cancel(); return; }
   });
 

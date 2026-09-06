@@ -165,23 +165,93 @@ class TriggerTests(CutsceneDirectorTestCase):
         self.assertEqual(link.published, [])
         self.assertEqual(scheduler.calls, [])
 
-    def test_invalid_team_is_rejected_without_changing_state(self) -> None:
+    def test_trigger_takes_no_team_argument(self) -> None:
+        # Home/away is not a choice any more: the event decides. A caller
+        # that still passes a team must fail loudly, not be quietly ignored.
         director, _monotonic, scheduler, link = self.make_director()
 
-        result = director.trigger("touchdown", team="visitors")
+        with self.assertRaises(TypeError):
+            director.trigger("touchdown", "away")  # type: ignore[call-arg]
 
-        self.assertFalse(result["ok"])
         self.assertIsNone(director.status())
         self.assertEqual(link.published, [])
         self.assertEqual(scheduler.calls, [])
 
-    def test_a_valid_explicit_team_is_honored(self) -> None:
-        director, _monotonic, _scheduler, link = self.make_director()
+    def test_tigers_copy_replaces_home_even_when_the_visitors_have_possession(self) -> None:
+        director, _monotonic, _scheduler, link = self.make_director(
+            view={
+                "teams": {"home": {"name": "HOME", "score": 0}, "away": {"name": "Hawks", "score": 7}},
+                "football": {"possession": "away"},
+            }
+        )
 
-        result = director.trigger("touchdown", team="away")
+        self.assertTrue(director.trigger("first_down")["ok"])
+
+        self.assertEqual(link.published[0]["team"], "home")
+        self.assertEqual(link.published[0]["texts"]["team_name"], "Tigers")
+        self.assertEqual(link.published[0]["texts"]["subline"], "TIGERS")
+
+    def test_a_penalty_plays_for_nobody_and_notes_a_null_team(self) -> None:
+        diagnostics = self.make_diagnostics()
+        director, _monotonic, scheduler, link = self.make_director(diagnostics=diagnostics)
+
+        result = director.trigger("penalty")
+        diagnostics.flush()
 
         self.assertTrue(result["ok"])
-        self.assertEqual(link.published[0]["team"], "away")
+        self.assertEqual(result["message"], "Playing Penalty (7 s).")
+        program = link.published[0]
+        self.assertIsNone(program["team"])
+        self.assertEqual(program["texts"]["subline"], "PENALTY")
+        self.assertEqual(program["intro"], {"id": "none", "duration_ms": 0})
+        self.assertEqual(scheduler.calls[0].delay_seconds, 7.0)
+        self.assertIsNone(director.status()["team"])
+        self.assertIn("CUTSCENE_STARTED", self.log_text())
+        self.assertIn("cutscene_event=penalty", self.log_text())
+
+    def test_a_turnover_is_the_tigers_taking_the_ball_with_the_claw(self) -> None:
+        # Cutscenes v3 (.scratch/cutscenes-v3/spec.md 2.1): a takeaway is a
+        # home-team event with the claw intro and a 7 s run.
+        diagnostics = self.make_diagnostics()
+        director, _monotonic, scheduler, link = self.make_director(diagnostics=diagnostics)
+
+        result = director.trigger("turnover")
+        diagnostics.flush()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["message"], "Playing Turnover (7 s).")
+        program = link.published[0]
+        self.assertEqual(program["event"], "turnover")
+        self.assertEqual(program["team"], "home")
+        self.assertEqual(program["label"], "Turnover")
+        self.assertEqual(program["duration_ms"], 7000)
+        self.assertEqual(program["intro"], {"id": "claw_scratch", "duration_ms": 1600})
+        self.assertEqual(program["texts"]["subline"], "TIGERS BALL")
+        self.assertEqual(scheduler.calls[0].delay_seconds, 7.0)
+        self.assertEqual(director.status()["team"], "home")
+        self.assertIn("cutscene_event=turnover", self.log_text())
+
+    def test_make_some_noise_is_a_five_second_home_prompt_with_no_intro(self) -> None:
+        # v3 2.1: at 5 s a 1.6 s claw would eat a third of the scene, and a
+        # crowd prompt wants to be on the wall now -- so `intro` is `none`.
+        diagnostics = self.make_diagnostics()
+        director, _monotonic, scheduler, link = self.make_director(diagnostics=diagnostics)
+
+        result = director.trigger("make_some_noise")
+        diagnostics.flush()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["message"], "Playing Make some noise (5 s).")
+        program = link.published[0]
+        self.assertEqual(program["event"], "make_some_noise")
+        self.assertEqual(program["team"], "home")
+        self.assertEqual(program["label"], "Make some noise")
+        self.assertEqual(program["duration_ms"], 5000)
+        self.assertEqual(program["intro"], {"id": "none", "duration_ms": 0})
+        self.assertEqual(program["texts"]["subline"], "TIGERS FANS")
+        self.assertEqual(scheduler.calls[0].delay_seconds, 5.0)
+        self.assertEqual(director.status()["team"], "home")
+        self.assertIn("cutscene_event=make_some_noise", self.log_text())
 
 
 class ExpireTests(CutsceneDirectorTestCase):
@@ -327,7 +397,7 @@ class FailureContainmentTests(CutsceneDirectorTestCase):
         result = director.trigger("touchdown")
 
         self.assertTrue(result["ok"])
-        self.assertEqual(link.published[0]["texts"]["team_name"], "")
+        self.assertEqual(link.published[0]["texts"]["team_name"], "Tigers")
 
 
 class LockOrderingTests(CutsceneDirectorTestCase):
@@ -415,7 +485,7 @@ class SelectPackAndRescanTests(CutsceneDirectorTestCase):
     def test_rescan_sees_a_newly_dropped_folder(self) -> None:
         director, _monotonic, _scheduler, _link = self.make_director()
         state_before = director.state()
-        self.assertEqual(len(state_before["packs"]), 2)  # the two built-ins only
+        self.assertEqual(len(state_before["packs"]), 5)  # the five built-ins only (v3)
 
         folder = self.paths.cutscenes / "roar"
         folder.mkdir(parents=True)
@@ -428,7 +498,7 @@ class SelectPackAndRescanTests(CutsceneDirectorTestCase):
 
         result = director.rescan()
 
-        self.assertEqual(len(result["packs"]), 3)
+        self.assertEqual(len(result["packs"]), 6)
         self.assertIn("roar", [p["id"] for p in result["packs"]])
 
 

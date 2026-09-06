@@ -173,15 +173,16 @@ class CutsceneDirector:
             "playing": self._status_locked(current, play_id),
         }
 
-    def trigger(self, event: Any, team: Any = None) -> dict[str, Any]:
-        """Play ``event`` (optionally for ``team``), replacing anything
-        already playing. Never raises.
+    def trigger(self, event: Any) -> dict[str, Any]:
+        """Play ``event``, replacing anything already playing. Never raises.
+
+        There is no ``team`` argument: a cutscene is always the home team's
+        (or, for a penalty, nobody's) -- see
+        :data:`~scoreboard.presentation.cutscenes.EVENT_TEAM`.
         """
 
         if event not in cutscenes_module.CUTSCENE_EVENTS:
             return {"ok": False, "message": f"Unknown cutscene event: {event!r}."}
-        if team is not None and team not in cutscenes_module.TEAM_SIDES:
-            return {"ok": False, "message": f"Unknown team: {team!r}."}
 
         # Read the spectator view *before* taking this object's lock. The
         # read goes through the bridge, which takes the command lock, and the
@@ -189,8 +190,9 @@ class CutsceneDirector:
         # to fill every operator view. Holding this lock across the read
         # would order the two locks both ways, and one collision between a
         # trigger and a tick would hang both windows for the rest of the
-        # game. The view can be a tick stale; the program only copies a team
-        # name and a score from it.
+        # game. The view can be a tick stale. The current branded copy is
+        # fixed as Tigers, but keeping this read outside the lock preserves
+        # the program-builder seam without reintroducing the lock inversion.
         spectator_view = self._resolve_view()
         layout = self._resolve_layout()
         with self._lock:
@@ -207,7 +209,6 @@ class CutsceneDirector:
                 play_id=play_id,
                 event=event,
                 pack=pack,
-                team=team,
                 spectator_view=spectator_view,
                 layout=layout,
             )
@@ -421,8 +422,8 @@ class CutscenesBridge:
     def state(self) -> dict[str, Any]:
         return self._director.state()
 
-    def trigger(self, event: Any, team: Any = None) -> dict[str, Any]:
-        return self._director.trigger(event, team)
+    def trigger(self, event: Any) -> dict[str, Any]:
+        return self._director.trigger(event)
 
     def cancel(self) -> dict[str, Any]:
         return self._director.cancel()

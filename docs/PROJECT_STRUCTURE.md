@@ -92,8 +92,9 @@ scoreboard/
 │  │  ├─ startup/                  # recovery preview and explicit choices
 │  │  ├─ layout/                   # editor shell plus layout.js, editor-state.js, editor-canvas.js, editor-panels.js
 │  │  ├─ field_assistant/          # helper window: index.html, field_assistant.js, field_assistant.css (added September 5, 2026)
-│  │  ├─ cutscenes/                # persistent trigger window: index.html, cutscenes.js, cutscenes.css (added September 6, 2026)
-│  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer; cutscene.js, cutscene.css, and the cutscenes/builtin.js scene registry play the animation (added September 6, 2026)
+│  │  ├─ cutscenes/                # persistent trigger window: index.html, cutscenes.js, cutscenes.css — five event buttons, no team choice (added September 6, 2026; five since v3)
+│  │  └─ spectator/                # 16:9 game/event page, proportional CSS and renderer; cutscene.js and cutscene.css play the animation (added September 6, 2026)
+│  │     └─ cutscenes/             # scene registry: builtin.js (claw intro, penalty), tigers.js/tigers.css (branded first down, touchdown, turnover), crowd.js/crowd.css (MAKE SOME NOISE crowd prompt, v3), tmsa-logo.png (the crest they show)
 │  └─ integrations/                # empty/uncreated until a later phase needs it
 │     ├─ obs.py                    # future output adapter, not MVP
 │     └─ controller.py             # future optional input adapter, not MVP
@@ -124,7 +125,7 @@ The `integrations/` files are illustrative and should **not** be created in Phas
 | `domain/formatting.py` | Pure upward display rounding for every clock readout | Stored time, state, or persistence policy |
 | `domain/field_assistant.py` | Pure Field Assistant rules: coordinate conversion, series/line-to-gain, penalty and transition calculations | Files, UI objects, clocks, persistence, or the composite command's revision check |
 | `presentation/layout.py` | Spectator-widget/layout schema, defaults, and validation, including the safe-area policy | Files, UI objects, timers, or authoritative game state |
-| `presentation/cutscenes.py` | The cutscene event registry, pack-manifest validation with a plain-language fallback, and building the one program document a cutscene plays from | Files, UI objects, timers, clocks, or authoritative game state |
+| `presentation/cutscenes.py` | The cutscene event registry (`first_down`, `touchdown`, `turnover`, `penalty`, `make_some_noise`; which side each is for — always home, or nobody — and its subline template), pack-manifest validation with a plain-language fallback, and building the one program document a cutscene plays from | Files, UI objects, timers, clocks, or authoritative game state |
 | `application/service.py` | Command order, state revision, snapshots, publication | Rendering or OS display APIs |
 | `application/recovery.py` | Validated startup restore as stopped, owner choice | Silent auto-resume |
 | `infrastructure/persistence.py` | One SQLite transaction per accepted command, the last-known-good backup, the append-only action history, and the single-instance lock | Deciding game rules or producing a revision |

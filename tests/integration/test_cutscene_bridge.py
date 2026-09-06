@@ -158,6 +158,49 @@ class TriggerAndCancelHostActionTests(CutsceneBridgeTestCase):
         self.assertIsNone(result["view"]["cutscenes"]["playing"])
         self.assertEqual(self.scheduler.calls, [])
 
+    def test_the_penalty_event_reaches_the_badge_with_no_team(self) -> None:
+        result = self.bridge.trigger_cutscene("penalty")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["message"], "Playing Penalty (7 s).")
+        playing = result["view"]["cutscenes"]["playing"]
+        self.assertEqual(playing["event"], "penalty")
+        self.assertIsNone(playing["team"])
+
+    def test_the_turnover_event_reaches_the_badge_as_the_home_teams(self) -> None:
+        # Cutscenes v3: a takeaway is the Tigers', 7 s, with the claw intro.
+        result = self.bridge.trigger_cutscene("turnover")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["message"], "Playing Turnover (7 s).")
+        playing = result["view"]["cutscenes"]["playing"]
+        self.assertEqual(playing["event"], "turnover")
+        self.assertEqual(playing["label"], "Turnover")
+        self.assertEqual(playing["team"], "home")
+        self.assertEqual(playing["duration_ms"], 7000)
+        self.assertEqual(self.scheduler.calls[0].delay_seconds, 7.0)
+        self.assertEqual(self.director.current_program()["intro"]["id"], "claw_scratch")
+
+    def test_the_make_some_noise_event_reaches_the_badge_as_a_five_second_home_prompt(self) -> None:
+        # Cutscenes v3: the crowd prompt is the Tigers', 5 s, with no intro.
+        result = self.bridge.trigger_cutscene("make_some_noise")
+
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["message"], "Playing Make some noise (5 s).")
+        playing = result["view"]["cutscenes"]["playing"]
+        self.assertEqual(playing["event"], "make_some_noise")
+        self.assertEqual(playing["label"], "Make some noise")
+        self.assertEqual(playing["team"], "home")
+        self.assertEqual(playing["duration_ms"], 5000)
+        self.assertEqual(self.scheduler.calls[0].delay_seconds, 5.0)
+        self.assertEqual(self.director.current_program()["intro"], {"id": "none", "duration_ms": 0})
+
+    def test_trigger_cutscene_takes_no_team_argument(self) -> None:
+        # The hotkeys and the window pass an event and nothing else; a caller
+        # that still names a side must fail loudly rather than be ignored.
+        with self.assertRaises(TypeError):
+            self.bridge.trigger_cutscene("touchdown", "away")  # type: ignore[call-arg]
+
 
 class OffCommandLockTests(CutsceneBridgeTestCase):
     """C4 for cutscenes: the director's publish reaches a window's
@@ -191,14 +234,14 @@ class OffCommandLockTests(CutsceneBridgeTestCase):
             self._lock_free_seen_from_another_thread()
         )
 
-        result = self.bridge.trigger_cutscene("touchdown", "home")
+        result = self.bridge.trigger_cutscene("touchdown")
 
         self.assertTrue(result["ok"])
         self.assertEqual(observed, [True])
         self.assertIn("cutscenes", result["view"])
 
     def test_cancel_cutscene_ends_with_the_command_lock_free(self) -> None:
-        self.bridge.trigger_cutscene("touchdown", "home")
+        self.bridge.trigger_cutscene("touchdown")
         observed: list[bool] = []
         self.director.link.end = lambda play_id: observed.append(  # type: ignore[method-assign]
             self._lock_free_seen_from_another_thread()

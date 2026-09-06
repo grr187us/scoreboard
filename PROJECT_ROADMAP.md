@@ -1092,7 +1092,7 @@ cleans it up with the other owned windows.
 | Open phase gate | Personal laptop HDMI test on the complete LED wall |
 | Confidence in preferred outcome | Approximately 90%, still unverified |
 | Implementation status | Phase 2 Tasks 1-11 are substantially implemented; Task 12 remains. Task 10's policy is verified only against injected screen lists, not real two-display hardware. Current working-tree additions include C5, the presets half of F4, I4's bounded undo history, and F3's crowd-facing status message and countdown end to end. **C4 is reopened as partially implemented:** webview calls no longer hold the command lock, but the September 6 reconciliation found a cross-thread stale-offer race and one shared publisher worker can delay otherwise healthy windows. See [the current-project audit](docs/CURRENT_PROJECT_AUDIT_2026-09-06.md). |
-| Automated suite | **Green at 1084 tests, 0 failures, 0 errors, 3 skipped** (September 6, 2026, after the Cutscenes feature), in ~57 s from the repository `.venv` with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`. The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier runs are kept below for lineage. **Green.** The F3/I4 run the same day reported **913 tests, 0 failures, 0 errors, 3 skipped** in 50.8 s, with `compileall` passed and 0 broken relative links across 24 Markdown files. **Green.** The September 6 reconciliation run from a clean temporary Python 3.11.9 environment, with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`, reported **853 tests, 0 failures, 0 errors, 3 skipped** in 48.448 seconds. `compileall` passed, `uv pip check` found all 17 installed packages compatible, the repository checker found 0 broken relative links across 24 Markdown files, and `git diff --check` passed (line-ending notices only). The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier 750- and 837-test runs remain historical milestones below. The repository-local `.venv` is currently broken because its configured base-interpreter path is stale; it was not used as evidence for this result. |
+| Automated suite | **Green at 1114 tests, 0 failures, 0 errors, 3 skipped** (September 6, 2026, after Cutscenes v3: MAKE SOME NOISE and TURNOVER), in ~60 s from the repository `.venv` with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`; `compileall` passed and 0 broken relative links across 24 Markdown files. The previous run the same day, after the Cutscenes feature, was **1084 tests, 0 failures, 0 errors, 3 skipped** in ~57 s from the repository `.venv` with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`. The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier runs are kept below for lineage. **Green.** The F3/I4 run the same day reported **913 tests, 0 failures, 0 errors, 3 skipped** in 50.8 s, with `compileall` passed and 0 broken relative links across 24 Markdown files. **Green.** The September 6 reconciliation run from a clean temporary Python 3.11.9 environment, with Node.js on `PATH` and an isolated `SCOREBOARD_DATA_DIR`, reported **853 tests, 0 failures, 0 errors, 3 skipped** in 48.448 seconds. `compileall` passed, `uv pip check` found all 17 installed packages compatible, the repository checker found 0 broken relative links across 24 Markdown files, and `git diff --check` passed (line-ending notices only). The 3 skips explicitly name open question A-1 and are not a pass on it. Earlier 750- and 837-test runs remain historical milestones below. The repository-local `.venv` is currently broken because its configured base-interpreter path is stale; it was not used as evidence for this result. |
 | Repository status | Work is on `feature/field-status` at `e1e3b04`, tracking `origin/feature/field-status`. The C4/C5/F4 pass and partial F3/implemented I4 pass are uncommitted working-tree work, including their new modules, tests, and active `.scratch/` specifications. The audit preserved every unrelated and in-progress change. |
 | Testing follow-ups | All five findings under [`.scratch/testing-followups`](.scratch/testing-followups/spec.md) are resolved and retained as historical issue evidence. The approved pregame-to-first-quarter confirmation workflow is implemented; question A-1 is separate and still open. |
 | Deep-dive audit | The September 5 fifteen-finding audit remains the original inventory. As reconciled September 6: C1-C3, C5, F3, I1-I3, and I4 are implemented; C4 is partial/reopened; F4's presets half is implemented while spectator visual identity remains open; F1, F2, F5, and I5 remain open. The point-in-time evidence and safe-removal review are in [the current-project audit](docs/CURRENT_PROJECT_AUDIT_2026-09-06.md). |
@@ -1496,6 +1496,74 @@ exist only in the session scratchpad, not committed to the repository.
 - An image pack (`cutscenes/td-image/manifest.json` + a generated 64x36 PNG) was picked up by Rescan, selected with `Pack selection saved.`, and played: the stage held a `[data-scene="media"]` `<img>` whose `naturalWidth` was 64, proving a `file:///` subresource loads inside WebView2. No `ffmpeg` on the development machine, so a real `.webm` pack was not exercised; the missing-file → built-in fallback is covered by `tests/ui/cutscene_player.cjs`.
 - The diagnostics log carried `CUTSCENE_STARTED` / `CUTSCENE_ENDED` / `CUTSCENE_REPLACED` / `CUTSCENE_CANCELLED` lines and no `UNHANDLED_ERROR`.
 - Two review fixes landed after the agents finished, each with a regression test: the director now reads the spectator view before taking its own lock (`LockOrderingTests`), and the operator bridge calls the director outside the command lock so a stalled wall never holds up a score command (`OffCommandLockTests`, C4).
+
+### 6. Cutscenes v2 — graphics redesign, home-only, penalty flag, September 6, 2026
+
+Seeing v1 on screen, the owner asked for five changes: cutscenes are
+**always the Tigers'** (drop the home/away choice everywhere), the claw
+intro "looks pretty lame", the touchdown scene "looks like 2010 PowerPoint
+clip art" (redesign both it and the first down with TMSA colours and the
+TMSA logo), **no score** on the touchdown scene, and a new **penalty**
+cutscene — "flag on the play", team-agnostic, about 7 s. Built against
+`.scratch/cutscenes-v2/spec.md` by three agents against disjoint file
+ownership.
+
+**Home-only, and a third event.** `CUTSCENE_EVENTS` is now
+`("first_down", "touchdown", "penalty")`, and a new `EVENT_TEAM` table
+(`home`/`home`/`None`) replaces the old `EVENT_DEFAULT_TEAM`/`TEAM_SIDES`
+pair, which are gone. Which side a cutscene is for is a property of the
+event rather than an argument, so `build_program`,
+`CutsceneDirector.trigger`, `CutscenesBridge.trigger`, and
+`ScoreboardBridge.trigger_cutscene` all take an event and nothing else —
+there is no team to name and none to get wrong under pressure. The
+Cutscenes window lost its HOME/AWAY row and gained a third full-width
+**PENALTY** button in flag yellow plus a third pack picker; the hotkeys, in
+both windows, are now `D` first down, `T` touchdown, `F` penalty flag, and
+`Shift+C` cancel (`Shift+T` is gone). `program["texts"]` carries
+`headline`/`subline`/`team_name` and no `score` — the Broadcast bar under
+the stage is already showing it and never stops updating. A penalty's
+subline is the word `PENALTY`, its team is `None`, and its pack's `intro`
+defaults to `none` through the new per-event `EVENT_DEFAULT_INTRO` table,
+because the claw strike is Tigers-branded and a flag is nobody's. The claw
+intro is 1600 ms (was 1400), and `THEME` gained `flag: #FFD500`.
+
+**Fixed Tigers copy (owner correction, September 6, 2026).** Branded
+cutscene text no longer inherits the configurable home-team name. Every
+Tigers scene now uses the fixed school identity `Tigers`, so the default
+scoreboard label `HOME` cannot appear in First Down, Touchdown, Turnover, or
+Make Some Noise; the team-neutral penalty still says `PENALTY`. The scene
+text boxes are sized for `TIGERS`, `TIGERS BALL`, and `TIGERS FANS`.
+
+**Graphics.** The scene registry split in two: `cutscenes/builtin.js` keeps
+the claw intro and the new penalty scene, while the Tigers-branded first
+down and touchdown moved to `cutscenes/tigers.js` + `tigers.css`, both
+redrawn against a modern broadcast reference (diagonal slabs, kinetic type,
+a light sweep, a burst that opens once, a calm hold) and showing the TMSA
+crest from `cutscenes/tmsa-logo.png`. The scene-registry mirror test now
+scans every `*.js` under `views/spectator/cutscenes/` rather than one file.
+
+**Verification performed.** Full suite after the feature: **1114 tests,
+0 failures, 0 errors, 3 skipped** in ~60 s (`compileall` passed, 0 broken
+relative links across 24 Markdown files), including the browser player
+test's six registered ids and its first-frame check for the no-intro
+`make_some_noise` program, and one new case per new event in the packs,
+director, bridge, UI-contract and player-contract suites. Both new scenes
+were reviewed frame by frame (six moments each at 1920x1080, three at the
+640x360 practice size; Bahnschrift at 75 % stretch confirmed as the painted
+face). Then the real pywebview/WebView2 run on the development host:
+operator window, practice spectator window and Cutscenes window open;
+`O` and `L` on the operator keyboard play TURNOVER (claw intro first, then
+the scene, words `TURNOVER` / `TIGERS BALL`, crest loaded at 218x174) and
+MAKE SOME NOISE (on the stage from the first frame, `MAKE SOME NOISE` /
+`TIGERS FANS`); the operator badge reads `CUTSCENE: TURNOVER 4.0s` /
+`CUTSCENE: MAKE SOME NOISE 3.8s` from Python's countdown; the window's
+TURNOVER and MAKE SOME NOISE buttons play the same scenes and CANCEL
+restores the board within a second; the five buttons fit the window without
+a scrollbar; the game revision is unchanged after every trigger and cancel;
+the application log carries no `UNHANDLED_ERROR`.
+
+**Still open.** As for v2: the physical LED wall has never shown a
+cutscene, and nothing auto-fires one from game state.
 
 ## Next Action
 

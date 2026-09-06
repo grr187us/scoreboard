@@ -1,10 +1,14 @@
-/* The built-in, code-authored cutscene scenes, and the registry that holds
- * them.
+/* The scene registry, and the two scenes that belong to no team: the tiger
+ * claw intro and the penalty flag.
  *
  * A *scene* is a factory: `factory(stageEl, program) -> {mount(), unmount()}`.
  * `mount()` builds its DOM and appends it to `stageEl`; `unmount()` takes it
  * back off and cancels anything it started. `cutscene.js` owns the timeline
  * and calls both; a scene owns nothing but its own pixels.
+ *
+ * The Tigers' own scenes (`first_down`, `touchdown`) live in `tigers.js`,
+ * which loads after this file and reuses the helpers exposed here as
+ * `ScoreboardCutsceneScenes.helpers`.
  *
  * House rules a scene must keep:
  *
@@ -18,13 +22,13 @@
  *   the 640-wide practice window.
  * - Nothing is loaded: no font, no image, no stylesheet, no network of any
  *   kind. All CSS these scenes need lives in `../cutscene.css`; inline SVG
- *   markup here is static text, and never carries operator-supplied words.
+ *   markup here is a static `*_MARKUP` constant, and never carries
+ *   operator-supplied words.
  *
- * The three registrations at the bottom use literal string ids on purpose:
- * `tests/unit/test_cutscene_schema.py` greps this file for
- * `register('claw_scratch'`, `register('first_down'`, and
- * `register('touchdown'` to prove the Python id constants and these scenes
- * cannot drift apart.
+ * The two registrations below use literal string ids on purpose:
+ * `tests/unit/test_cutscene_schema.py` greps this folder for
+ * `register('claw_scratch'` and `register('penalty'` to prove the Python id
+ * constants and these scenes cannot drift apart.
  */
 
 (function (global) {
@@ -113,50 +117,181 @@
     /** Every registered id, in registration order. */
     ids: function () {
       return order.slice();
+    },
+    /** The four helpers a scene file needs. `cutscenes/tigers.js` loads after
+     * this file and builds its scenes out of exactly these, so the two scene
+     * files cannot drift apart on how a root is marked or how a word reaches
+     * the screen. */
+    helpers: {
+      sceneRoot: sceneRoot,
+      addText: addText,
+      textOf: textOf,
+      simpleScene: simpleScene
     }
   };
 
   var register = global.ScoreboardCutsceneScenes.register;
-
-  /* ------------------------------------------------------------------ */
-  /* claw_scratch -- the intro                                           */
-  /* ------------------------------------------------------------------ */
-
-  /* Four tiger claw slashes rake across whatever board is showing, in quick
-   * succession: a wide red glow with a bright white core, drawn on with
-   * `stroke-dasharray` (pathLength="100" makes every path's dash maths
-   * identical regardless of its real length). The canvas takes a short shake
-   * on the first slash. The whole group then fades as the board morphs to the
-   * bar underneath it -- the fade's length is the intro's own duration, which
-   * Python put in the program, so a shorter intro does not leave the slashes
-   * hanging.
-   *
-   * The SVG below is static markup with no operator text anywhere in it,
-   * which is why it may be assigned as a string at all. */
-  var CLAW_MARKUP = [
-    '<svg class="cs-claw-svg" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">',
-    '<g class="cs-claw-glow">',
-    '<path class="cs-slash" pathLength="100" d="M 6 -12 C 26 20, 44 52, 58 104"/>',
-    '<path class="cs-slash" pathLength="100" d="M 40 -12 C 60 20, 78 52, 92 104"/>',
-    '<path class="cs-slash" pathLength="100" d="M 74 -12 C 94 20, 112 52, 126 104"/>',
-    '<path class="cs-slash" pathLength="100" d="M 108 -12 C 128 20, 146 52, 160 104"/>',
-    '</g>',
-    '<g class="cs-claw-core">',
-    '<path class="cs-slash" pathLength="100" d="M 6 -12 C 26 20, 44 52, 58 104"/>',
-    '<path class="cs-slash" pathLength="100" d="M 40 -12 C 60 20, 78 52, 92 104"/>',
-    '<path class="cs-slash" pathLength="100" d="M 74 -12 C 94 20, 112 52, 126 104"/>',
-    '<path class="cs-slash" pathLength="100" d="M 108 -12 C 128 20, 146 52, 160 104"/>',
-    '</g>',
-    '</svg>'
-  ].join('');
 
   /** How long the intro runs, straight from the program (Python's
    * INTRO_DURATION_MS). Falls back to a value only if the program omits it. */
   function introMs(program) {
     var intro = isPlainObject(program) && isPlainObject(program.intro) ? program.intro : {};
     var value = intro.duration_ms;
-    return typeof value === 'number' && isFinite(value) && value > 0 ? value : 1400;
+    return typeof value === 'number' && isFinite(value) && value > 0 ? value : 1600;
   }
+
+  /* ------------------------------------------------------------------ */
+  /* claw_scratch -- the intro                                           */
+  /* ------------------------------------------------------------------ */
+
+  /* A strike, not four neon streaks.
+   *
+   * A big dark paw silhouette swipes diagonally across the whole wall in
+   * 180 ms, dragging two blurred ghost copies behind it. In its wake four
+   * uneven gouges *tear* open -- each one a filled tapered wedge with a
+   * jagged inner edge, wiped on along its own length, white-hot for a
+   * quarter of a second and then a red-and-gold rip with an ink outline, as
+   * if light were coming through the board. One white impact flash, one
+   * short heavy shake, and a spray of debris flung along the swipe. Around
+   * the moment the board morphs to the Broadcast bar underneath (the
+   * player's MORPH_AT_FRACTION, 45 %), the gouges widen and their glow
+   * brightens -- the strike has opened the board onto the scene behind it.
+   * Everything then fades out together, ending exactly at the intro's own
+   * duration, which Python put in the program.
+   *
+   * The two SVG strings below are static markup with no operator text
+   * anywhere in them, which is why they may be assigned as strings at all. */
+
+  /** The paw: pad, four toes, four unsheathed claws, as one filled path with
+   * nine subpaths. Authored upright in viewBox units around (22, 22); CSS
+   * rotates it onto the swipe's heading and the swipe animation carries it
+   * across. */
+  var PAW_PATH = [
+    // Four toes in an arc, each *overlapping* the pad -- a gap between them
+    // and it reads as a spider rather than a paw, which is what a screenshot
+    // caught the first time round, ...
+    'M 0.5 20.5 C 0.5 13.9, 10.5 13.9, 10.5 20.5 C 10.5 27.1, 0.5 27.1, 0.5 20.5 Z',
+    'M 11.0 13.5 C 11.0 6.5, 21.0 6.5, 21.0 13.5 C 21.0 20.7, 11.0 20.7, 11.0 13.5 Z',
+    'M 23.0 13.5 C 23.0 6.5, 33.0 6.5, 33.0 13.5 C 33.0 20.7, 23.0 20.7, 23.0 13.5 Z',
+    'M 33.5 21.0 C 33.5 14.4, 43.5 14.4, 43.5 21.0 C 43.5 27.6, 33.5 27.6, 33.5 21.0 Z',
+    // ... each with a hooked claw out of its leading edge, ...
+    'M 2.0 16.0 C -1.4 11.1, -5.0 6.9, -9.0 3.1 C -5.6 4.5, -0.6 8.1, 4.4 13.1 Z',
+    'M 12.6 8.1 C 11.4 2.5, 10.2 -2.9, 9.0 -8.1 C 12.0 -3.9, 14.8 0.9, 16.6 5.9 Z',
+    'M 27.6 5.9 C 29.4 0.9, 32.2 -3.9, 35.2 -8.1 C 34.0 -2.9, 32.8 2.5, 31.6 8.1 Z',
+    'M 39.6 13.1 C 44.6 8.1, 49.6 4.5, 53.0 3.1 C 49.0 6.9, 45.4 11.1, 42.0 16.0 Z',
+    // ... over the pad.
+    'M 8.5 28.0 C 8.5 23.0, 15.0 20.0, 22.0 20.0 C 29.0 20.0, 35.5 23.0, 35.5 28.0'
+      + ' C 35.5 37.0, 29.5 44.5, 22.0 44.5 C 14.5 44.5, 8.5 37.0, 8.5 28.0 Z'
+  ].join(' ');
+
+  /** One gouge, authored in its own space: 100 long along +x, pointed at both
+   * ends, widest a third of the way in, and torn (five notches) down the
+   * inner edge. Every gouge in the markup is this same shape placed by a
+   * `translate/rotate/scale` -- which is what makes their lengths, angles and
+   * spacing uneven without four hand-drawn paths. */
+  var GOUGE_PATH = [
+    'M 0 0',
+    'C 9 -0.35, 23 -0.95, 33 -1.2',
+    'C 52 -1.5, 76 -0.9, 100 0',
+    'C 90 0.85, 86 2.4, 80 1.15',
+    'C 75 0.35, 73 2.6, 66 1.5',
+    'C 60 0.75, 58 2.9, 51 1.85',
+    'C 45 1.15, 43 3.0, 36 1.9',
+    'C 30 1.15, 27 2.6, 21 1.35',
+    'C 14 0.7, 6 0.55, 0 0',
+    'Z'
+  ].join(' ');
+
+  /** Where the four gouges sit: `translate(x, y) rotate(deg) scale(length /
+   * 100)`, in the 160x90 viewBox. Their top ends are 17.6, 14.4 and 20.8
+   * units apart -- 11 %, 9 % and 13 % of the width -- their angles differ by
+   * a few degrees and their lengths by a third, so nothing about the rake
+   * looks ruled. All four start above the wall and three of them finish past
+   * its bottom edge: a claw does not stop politely inside the frame. */
+  var GOUGE_PLACES = [
+    'translate(26, -14) rotate(58) scale(1.30)',
+    'translate(43.6, 6) rotate(61) scale(1.05)',
+    'translate(58, -8) rotate(59) scale(1.42)',
+    'translate(78.8, 4) rotate(62) scale(1.12)'
+  ];
+
+  function gougeMarkup() {
+    var parts = [];
+    for (var index = 0; index < GOUGE_PLACES.length; index += 1) {
+      parts.push(
+        '<g class="cs-gouge" transform="' + GOUGE_PLACES[index] + '">',
+        '<g class="cs-gouge-open">',
+        '<path class="cs-gouge-lip" d="' + GOUGE_PATH + '"/>',
+        '<path class="cs-gouge-rip" d="' + GOUGE_PATH + '"/>',
+        '<path class="cs-gouge-core" d="' + GOUGE_PATH + '"/>',
+        '</g>',
+        '</g>'
+      );
+    }
+    return parts.join('');
+  }
+
+  var CLAW_MARKUP = [
+    '<div class="cs-claw-flash"></div>',
+    '<svg class="cs-claw-svg cs-claw-paw-svg" viewBox="0 0 160 90"',
+    ' preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">',
+    '<g class="cs-paw-swipe cs-paw-ghost-b"><g class="cs-paw-fit">',
+    '<path class="cs-paw" d="' + PAW_PATH + '"/></g></g>',
+    '<g class="cs-paw-swipe cs-paw-ghost-a"><g class="cs-paw-fit">',
+    '<path class="cs-paw" d="' + PAW_PATH + '"/></g></g>',
+    '<g class="cs-paw-swipe cs-paw-lead"><g class="cs-paw-fit">',
+    '<path class="cs-paw" d="' + PAW_PATH + '"/></g></g>',
+    '</svg>',
+    '<svg class="cs-claw-svg cs-claw-tear-svg" viewBox="0 0 160 90"',
+    ' preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">',
+    '<defs><linearGradient id="cs-rip-fill" x1="0" y1="0" x2="0" y2="1">',
+    '<stop class="cs-rip-edge" offset="0"/>',
+    '<stop class="cs-rip-edge" offset="0.30"/>',
+    '<stop class="cs-rip-hot" offset="0.44"/>',
+    '<stop class="cs-rip-edge" offset="0.62"/>',
+    '<stop class="cs-rip-edge" offset="1"/>',
+    '</linearGradient></defs>',
+    gougeMarkup(),
+    '</svg>'
+  ].join('');
+
+  /** How many fragments the strike throws. Enough to read as debris off a
+   * struck board, few enough that none of them is a distraction. */
+  var DEBRIS_COUNT = 18;
+
+  /** The debris. Built here rather than in the markup constant because each
+   * fragment carries its own start point, throw vector and spin -- geometry,
+   * not words, and never a value the crowd reads. The three multipliers below
+   * are only there to spread eighteen fragments deterministically; nothing
+   * about them is random, so every replay looks the same. */
+  function addDebris(root) {
+    var box = doc.createElement('div');
+    box.className = 'cs-claw-debris';
+    for (var index = 0; index < DEBRIS_COUNT; index += 1) {
+      var a = ((index * 37) % 100) / 100;
+      var b = ((index * 61) % 100) / 100;
+      var c = ((index * 83) % 100) / 100;
+      var bit = doc.createElement('div');
+      var kind = index % 3;
+      bit.className = 'cs-claw-bit '
+        + (kind === 0 ? 'cs-claw-bit-navy' : (kind === 1 ? 'cs-claw-bit-white' : 'cs-claw-bit-red'))
+        + (index % 4 === 3 ? ' cs-claw-bit-tri' : '');
+      bit.style.left = (10 + a * 64) + '%';
+      bit.style.top = (8 + b * 62) + '%';
+      bit.style.setProperty('--cs-bit-size', (0.012 + c * 0.020).toFixed(4));
+      bit.style.setProperty('--cs-bit-dx', (0.09 + c * 0.24).toFixed(4));
+      bit.style.setProperty('--cs-bit-dy', (0.14 + a * 0.38).toFixed(4));
+      bit.style.setProperty('--cs-bit-rot', (140 + ((index * 53) % 47) * 11) + 'deg');
+      bit.style.animationDelay = (40 + ((index * 29) % 15) * 10) + 'ms';
+      box.appendChild(bit);
+    }
+    root.appendChild(box);
+  }
+
+  /** How long the `shake` class stays on #canvas. A little past the shake
+   * animation itself so nothing is caught mid-swing; `cutscene.js` also takes
+   * the class off on every path out, so this timer is only the tidy case. */
+  var SHAKE_CLEAR_MS = 400;
 
   register('claw_scratch', function (stageEl, program) {
     var root = null;
@@ -171,6 +306,7 @@
         root = sceneRoot('claw_scratch', 'cs-claw');
         root.style.setProperty('--cs-intro-ms', introMs(program) + 'ms');
         root.innerHTML = CLAW_MARKUP;
+        addDebris(root);
         stageEl.appendChild(root);
         var canvas = canvasNode();
         if (canvas) {
@@ -178,7 +314,7 @@
           shakeTimer = global.setTimeout(function () {
             shakeTimer = null;
             canvas.classList.remove('shake');
-          }, 520);
+          }, SHAKE_CLEAR_MS);
         }
       },
       unmount: function () {
@@ -199,77 +335,80 @@
   });
 
   /* ------------------------------------------------------------------ */
-  /* first_down                                                          */
+  /* penalty                                                             */
   /* ------------------------------------------------------------------ */
 
-  /* A wide navy stage: yard-line stripes slide steadily sideways behind a red
-   * chevron that sweeps left to right, and the headline slams in over both
-   * with a gold outline. The team name settles underneath, and the whole
-   * thing then holds still -- the calm hold is what makes it readable from
-   * the far end of the stands. */
-  register('first_down', simpleScene('first_down', 'cs-firstdown', function (root, program) {
-    var field = doc.createElement('div');
-    field.className = 'cs-fd-field';
-    root.appendChild(field);
+  /* Nobody's colours but the flag's. A penalty is not the Tigers' moment and
+   * must not look like one: no red, no blue panel, no crest -- a yellow flag
+   * arcing in over a navy vignette, landing with a bounce and a puff of dust,
+   * two yellow slabs sliding in behind the words, and then a long calm hold.
+   *
+   * The headline is `program.texts.headline` as ONE text node. `FLAG` reads
+   * as its own line because `::first-line` is sized so the second word cannot
+   * fit beside it -- CSS does the breaking. Splitting the string in
+   * JavaScript would be this file formatting a value, which is Python's job. */
 
-    var glow = doc.createElement('div');
-    glow.className = 'cs-fd-glow';
-    root.appendChild(glow);
+  var PENALTY_FLAG_MARKUP = [
+    '<svg class="cs-pen-flag-svg" viewBox="0 0 100 80" aria-hidden="true" focusable="false">',
+    // A square of cloth with four corners and rippled edges -- a thrown flag,
+    // not a beanbag. The weighted knot sits on the left-hand corner.
+    '<path class="cs-pen-cloth" d="M 10 30',
+    ' C 20 19, 32 9, 52 6 C 68 11, 79 27, 92 44',
+    ' C 83 59, 63 61, 46 74 C 33 68, 15 51, 10 30 Z"/>',
+    '<path class="cs-pen-fold" d="M 17 32 C 36 36, 58 41, 86 45"/>',
+    '<path class="cs-pen-fold" d="M 51 11 C 50 30, 49 51, 47 69"/>',
+    '<path class="cs-pen-fold" d="M 27 20 C 38 33, 52 47, 68 55"/>',
+    '<circle class="cs-pen-knot" cx="11" cy="30" r="8"/>',
+    '</svg>'
+  ].join('');
 
-    var chevron = doc.createElement('div');
-    chevron.className = 'cs-fd-chevron';
-    root.appendChild(chevron);
+  /** How many dust ellipses puff up where the flag lands. */
+  var PENALTY_DUST = 3;
 
-    var bar = doc.createElement('div');
-    bar.className = 'cs-fd-bar';
-    root.appendChild(bar);
+  register('penalty', simpleScene('penalty', 'cs-penalty', function (root, program) {
+    var hatch = doc.createElement('div');
+    hatch.className = 'cs-pen-hatch';
+    root.appendChild(hatch);
 
-    addText(root, 'cs-fd-headline', textOf(program, 'headline'));
-    addText(root, 'cs-fd-subline', textOf(program, 'subline'));
-  }));
+    var slabBack = doc.createElement('div');
+    slabBack.className = 'cs-pen-slab cs-pen-slab-back';
+    root.appendChild(slabBack);
 
-  /* ------------------------------------------------------------------ */
-  /* touchdown                                                           */
-  /* ------------------------------------------------------------------ */
+    var slabFront = doc.createElement('div');
+    slabFront.className = 'cs-pen-slab cs-pen-slab-front';
+    root.appendChild(slabFront);
 
-  /** How many rays the touchdown burst draws. Enough to read as a burst,
-   * few enough that none of them flickers. */
-  var TOUCHDOWN_RAYS = 16;
+    var rule = doc.createElement('div');
+    rule.className = 'cs-pen-rule';
+    root.appendChild(rule);
 
-  /* Bigger and bolder: a slow navy-to-blue gradient drift behind a burst of
-   * gold and red rays from the centre, the headline scaling in with one
-   * bounce, and the team name and current score settling below it. No strobe
-   * and no fast alternation -- the rays fan out once and then hold. */
-  register('touchdown', simpleScene('touchdown', 'cs-touchdown', function (root, program) {
-    var drift = doc.createElement('div');
-    drift.className = 'cs-td-drift';
-    root.appendChild(drift);
+    addText(root, 'cs-pen-tag', textOf(program, 'subline'));
+    addText(root, 'cs-pen-head', textOf(program, 'headline'));
 
-    var rays = doc.createElement('div');
-    rays.className = 'cs-td-rays';
-    for (var index = 0; index < TOUCHDOWN_RAYS; index += 1) {
-      var ray = doc.createElement('div');
-      ray.className = index % 2 === 0 ? 'cs-td-ray cs-td-ray-gold' : 'cs-td-ray cs-td-ray-red';
-      // Geometry, not a displayed value: fan the rays evenly and stagger
-      // their start so the burst opens rather than snapping on. The angle is
-      // a custom property, not an inline `transform`, because the opening
-      // animation animates `transform` and would otherwise replace it.
-      ray.style.setProperty('--cs-ray-angle', (index * (360 / TOUCHDOWN_RAYS)) + 'deg');
-      ray.style.animationDelay = (index * 28) + 'ms';
-      rays.appendChild(ray);
+    var dust = doc.createElement('div');
+    dust.className = 'cs-pen-dust';
+    for (var index = 0; index < PENALTY_DUST; index += 1) {
+      var puff = doc.createElement('div');
+      puff.className = 'cs-pen-puff';
+      // Geometry only: three overlapping ellipses of different sizes so the
+      // puff is not a single expanding circle.
+      puff.style.setProperty('--cs-puff-scale', (1.0 + index * 0.55).toFixed(2));
+      puff.style.setProperty('--cs-puff-shift', (index - 1) * 0.035 + '');
+      puff.style.animationDelay = (700 + index * 60) + 'ms';
+      dust.appendChild(puff);
     }
-    root.appendChild(rays);
+    root.appendChild(dust);
 
-    var burst = doc.createElement('div');
-    burst.className = 'cs-td-burst';
-    root.appendChild(burst);
+    var shadow = doc.createElement('div');
+    shadow.className = 'cs-pen-shadow';
+    root.appendChild(shadow);
 
-    addText(root, 'cs-td-headline', textOf(program, 'headline'));
-
-    var line = doc.createElement('div');
-    line.className = 'cs-td-line';
-    addText(line, 'cs-td-team', textOf(program, 'team_name'));
-    addText(line, 'cs-td-score', textOf(program, 'score'));
-    root.appendChild(line);
+    var fly = doc.createElement('div');
+    fly.className = 'cs-pen-flag';
+    var spin = doc.createElement('div');
+    spin.className = 'cs-pen-flag-spin';
+    spin.innerHTML = PENALTY_FLAG_MARKUP;
+    fly.appendChild(spin);
+    root.appendChild(fly);
   }));
 })(window);

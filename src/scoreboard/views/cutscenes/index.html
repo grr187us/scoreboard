@@ -13,6 +13,13 @@
     wall. There is no Command here and no revision; the bridge is the small
     CutscenesBridge (get_snapshot/state/trigger/cancel/rescan/select_pack/
     open_folder) described in .scratch/cutscenes/spec.md section 4.
+
+    There is no home/away choice (cutscenes v2, .scratch/cutscenes-v2/spec.md
+    section 2.5): the wall is the Tigers' wall, so a first down, a touchdown,
+    a turnover, and the crowd prompt are always theirs and a penalty is
+    nobody's. One button per event (five since cutscenes v3,
+    .scratch/cutscenes-v3/spec.md section 2.4), and the event alone tells
+    Python which side it is for.
   -->
   <header class="topbar">
     <strong>CUTSCENES</strong>
@@ -22,15 +29,12 @@
 
   <p id="notice" class="notice" role="status" aria-live="polite"></p>
 
-  <section class="team-row" role="group" aria-label="Team for the next cutscene">
-    <span class="row-label">TEAM</span>
-    <button type="button" id="team-home" class="team-toggle" data-team="home" aria-pressed="true">HOME</button>
-    <button type="button" id="team-away" class="team-toggle" data-team="away" aria-pressed="false">AWAY</button>
-  </section>
-
   <main class="triggers">
     <button type="button" id="trigger-first-down" class="trigger trigger-first-down" data-event="first_down">FIRST DOWN</button>
     <button type="button" id="trigger-touchdown" class="trigger trigger-touchdown" data-event="touchdown">TOUCHDOWN</button>
+    <button type="button" id="trigger-turnover" class="trigger trigger-turnover" data-event="turnover">TURNOVER</button>
+    <button type="button" id="trigger-penalty" class="trigger trigger-penalty" data-event="penalty">PENALTY</button>
+    <button type="button" id="trigger-make-some-noise" class="trigger trigger-make-some-noise" data-event="make_some_noise">MAKE SOME NOISE</button>
   </main>
 
   <details class="packs" id="packs">
@@ -40,6 +44,15 @@
     </label>
     <label class="pack-row">Touchdown
       <select data-pack-for="touchdown" aria-label="Touchdown pack"></select>
+    </label>
+    <label class="pack-row">Turnover
+      <select data-pack-for="turnover" aria-label="Turnover pack"></select>
+    </label>
+    <label class="pack-row">Penalty
+      <select data-pack-for="penalty" aria-label="Penalty pack"></select>
+    </label>
+    <label class="pack-row">Make some noise
+      <select data-pack-for="make_some_noise" aria-label="Make some noise pack"></select>
     </label>
     <div class="pack-actions">
       <button type="button" id="rescan">Rescan</button>

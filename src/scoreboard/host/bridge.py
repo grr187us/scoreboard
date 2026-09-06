@@ -1278,8 +1278,12 @@ class ScoreboardBridge:
                 self._diagnostics.unhandled_error(context="open_cutscenes", error=exc)
                 return {"message": f"The Cutscenes window could not be opened: {exc}"}
 
-    def trigger_cutscene(self, event: Any, team: Any = None) -> dict[str, Any]:
+    def trigger_cutscene(self, event: Any) -> dict[str, Any]:
         """Play one cutscene, or report unavailable. No revision, no history.
+
+        The event alone decides which side the cutscene is for (always the
+        home team, or nobody for a penalty), so there is no team argument to
+        get wrong from a hotkey or a window button.
 
         Like every host action in this group, a failure is contained and
         reported rather than raised; the returned dict also carries the
@@ -1300,7 +1304,7 @@ class ScoreboardBridge:
         # across it would put a stalled wall back in the path of every clock
         # and score command. The director is thread-safe on its own.
         try:
-            result = dict(self._cutscenes.trigger(event, team))
+            result = dict(self._cutscenes.trigger(event))
         except Exception as exc:  # noqa: BLE001 - a cutscene must never stop the game
             self._diagnostics.unhandled_error(context="trigger_cutscene", error=exc)
             result = {"ok": False, "message": f"The cutscene could not be triggered: {exc}"}

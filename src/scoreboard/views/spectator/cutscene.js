@@ -18,7 +18,7 @@
  *
  *   t = 0                       stage full-canvas, class `intro`, intro scene
  *                               mounts over whatever board is showing
- *   t = 40% of intro duration   the board morphs to program.layout (the
+ *   t = 45% of intro duration   the board morphs to program.layout (the
  *                               Broadcast bar) under a 600 ms transition
  *   t = intro duration          intro unmounts; the stage shrinks to
  *                               program.stage; the main scene mounts
@@ -55,8 +55,12 @@
   /** When the `morphing` class comes back off #canvas -- a little after the
    * transition ends so nothing is caught mid-glide. */
   var MORPH_CLEAR_MS = 700;
-  /** The intro is ~40 % done when the board starts morphing underneath it. */
-  var MORPH_AT_FRACTION = 0.4;
+  /** The intro is ~45 % done when the board starts morphing underneath it.
+   * Picked by screenshot rather than by arithmetic: the claw intro's gouges
+   * widen at the same fraction (`cs-gouge-widen` in cutscene.css), so the
+   * tears appear to open *onto* the Broadcast bar as it arrives. Moving this
+   * without moving that keyframe breaks the illusion, not the timeline. */
+  var MORPH_AT_FRACTION = 0.45;
   /** The safety net: if the timeline above somehow did not finish, end here. */
   var SAFETY_NET_MS = 1500;
   /** A cancelled cutscene fades out faster than a completed one. */
@@ -191,7 +195,8 @@
    * built-in scene paints from these, so the brand colours arrive from Python
    * and are never written into this page's CSS. */
   function applyTheme(theme) {
-    var names = ['navy', 'navy_elevated', 'blue', 'red', 'blue_light', 'white', 'mist', 'ink', 'gold'];
+    var names = ['navy', 'navy_elevated', 'blue', 'red', 'blue_light', 'white', 'mist', 'ink',
+                 'gold', 'flag'];
     for (var index = 0; index < names.length; index += 1) {
       var name = names[index];
       var value = isPlainObject(theme) ? theme[name] : null;
@@ -534,7 +539,7 @@
 
     if (playsIntro && !replacing) {
       // Fresh: the intro owns the whole canvas, and the board morphs to the
-      // bar underneath it 40 % of the way through.
+      // bar underneath it 45 % of the way through.
       stage.classList.add('intro');
       placeStage(FULL_CANVAS);
       current.introScene = mountBuiltin(introId, program);

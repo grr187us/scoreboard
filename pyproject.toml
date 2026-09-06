@@ -42,5 +42,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 # Every file a window loads. An earlier pattern listed only "*.html", which
-# would have shipped the pages without their stylesheets or scripts.
-scoreboard = ["views/**/*.html", "views/**/*.css", "views/**/*.js"]
+# would have shipped the pages without their stylesheets or scripts. The
+# image pattern is for the TMSA crest a cutscene shows (added September 6,
+# 2026): a page-relative <img> the packaged build must actually contain.
+scoreboard = ["views/**/*.html", "views/**/*.css", "views/**/*.js", "views/**/*.png"]

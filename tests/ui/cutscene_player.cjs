@@ -34,6 +34,9 @@ const PROGRAM_FIXTURE = () => {
       x: 0.0, y: 0.78, width: 1.0, height: 0.18,
       background: '#101820', corner_radius: 0.012, z_index: 0,
     }];
+    // The v2 program shape: `team` is "home" or null (a penalty is nobody's),
+    // `texts` has no `score` (the score stays on the Broadcast bar), and the
+    // theme carries the penalty flag's yellow.
     const program = {
       schema_version: 1,
       play_id: 1,
@@ -50,9 +53,9 @@ const PROGRAM_FIXTURE = () => {
       theme: {
         navy: '#071B3A', navy_elevated: '#0D2B5A', blue: '#17468C',
         red: '#C8242B', blue_light: '#2C62AB', white: '#FFFFFF',
-        mist: '#DDE7F4', ink: '#030711', gold: '#FFB703',
+        mist: '#DDE7F4', ink: '#030711', gold: '#FFB703', flag: '#FFD500',
       },
-      texts: { headline: 'TOUCHDOWN', subline: 'TIGERS', team_name: 'Tigers', score: '14' },
+      texts: { headline: 'TOUCHDOWN', subline: 'TIGERS', team_name: 'Tigers' },
     };
     return Object.assign(program, overrides || {});
   };
@@ -95,8 +98,16 @@ async function main(data) {
     assert.deepEqual(await playerState(page), {
       playing: false, play_id: null, phase: 'idle', event: null, scene_id: null, resumed: false,
     });
+    // Registration order across the three scene files, in load order:
+    // builtin.js (team-agnostic), tigers.js (the Tigers' branding), then
+    // crowd.js (the v3 crowd prompt).
     assert.deepEqual(await page.evaluate(() => window.ScoreboardCutsceneScenes.ids()),
-      ['claw_scratch', 'first_down', 'touchdown']);
+      ['claw_scratch', 'penalty', 'first_down', 'touchdown', 'turnover', 'make_some_noise']);
+    // tigers.js and crowd.js build their scenes out of builtin.js's helpers
+    // by these names.
+    assert.deepEqual(await page.evaluate(() =>
+      Object.keys(window.ScoreboardCutsceneScenes.helpers).sort()),
+      ['addText', 'sceneRoot', 'simpleScene', 'textOf']);
     checks.push('idle baseline');
 
     // ---------------------------------------------------------------
@@ -107,6 +118,7 @@ async function main(data) {
     const atStart = await page.evaluate(() => {
       const accepted = window.applyCutscene(window.__makeProgram());
       const stage = document.querySelector('#cutscene-stage');
+      const count = selector => stage.querySelectorAll(selector).length;
       return {
         accepted,
         hidden: stage.hidden,
@@ -114,6 +126,15 @@ async function main(data) {
         scenes: Array.from(stage.querySelectorAll('[data-scene]')).map(n => n.getAttribute('data-scene')),
         canvasHeight: document.querySelector('#canvas').getBoundingClientRect().height,
         stageHeight: stage.getBoundingClientRect().height,
+        // The strike's three parts: the paw that swipes through (a lead copy
+        // and two motion-trail ghosts), the four gouges it tears open, and
+        // the debris it throws off the board.
+        paws: count('.cs-paw-swipe'),
+        gouges: count('.cs-gouge'),
+        bits: count('.cs-claw-bit'),
+        flashes: count('.cs-claw-flash'),
+        shaking: document.querySelector('#canvas').classList.contains('shake'),
+        flag: stage.style.getPropertyValue('--cs-flag'),
       };
     });
     assert.equal(atStart.accepted, true);
@@ -125,6 +146,15 @@ async function main(data) {
     // The intro covers the whole canvas before the board morphs under it.
     assert.ok(Math.abs(atStart.stageHeight - atStart.canvasHeight) <= 1,
       `the intro stage must cover the canvas: ${JSON.stringify(atStart)}`);
+    assert.equal(atStart.paws, 3, 'the paw swipes through with two motion-trail ghosts');
+    assert.equal(atStart.gouges, 4, 'four claws, four gouges');
+    assert.ok(atStart.bits >= 14 && atStart.bits <= 20, `debris count: ${atStart.bits}`);
+    // Exactly one flash: the brand rule against strobing lives in the DOM as
+    // well as in the keyframes.
+    assert.equal(atStart.flashes, 1, 'the strike flashes once, never twice');
+    assert.equal(atStart.shaking, true, 'the board takes the hit');
+    // The whole theme reaches the stage, including v2's penalty yellow.
+    assert.equal(atStart.flag, '#FFD500');
     checks.push('intro mounts full canvas');
 
     // Past the intro: the override layout is on the board and the main scene
@@ -148,10 +178,13 @@ async function main(data) {
       document.querySelector('#cutscene-stage').style.getPropertyValue('--stage-w'));
     assert.ok(/^[0-9.]+px$/.test(stageWidth), `--stage-w must be px: ${stageWidth}`);
     // The words on the stage are the program's, verbatim.
-    assert.equal(await page.evaluate(() =>
-      document.querySelector('.cs-td-headline span').textContent), 'TOUCHDOWN');
-    assert.equal(await page.evaluate(() =>
-      document.querySelector('.cs-td-score span').textContent), '14');
+    const words = await page.evaluate(() =>
+      document.querySelector('#cutscene-stage [data-scene="touchdown"]').textContent);
+    assert.ok(words.includes('TOUCHDOWN'), `the headline must be on the stage: ${words}`);
+    // The score is gone from the scene in v2: it stays on the Broadcast bar
+    // under the stage, which is up and ticking the whole time. `14` is the
+    // home score in the fixture snapshot, so its absence here is the check.
+    assert.ok(!words.includes('14'), `the scene must show no score: ${words}`);
     checks.push('override applied and scene mounted');
 
     // The natural end (1500 ms) hands the board back on its own.
@@ -214,7 +247,7 @@ async function main(data) {
       event: 'first_down',
       duration_ms: 8000,
       scene: { type: 'builtin', id: 'first_down' },
-      texts: { headline: 'FIRST DOWN', subline: 'TIGERS', team_name: 'Tigers', score: '14' },
+      texts: { headline: 'FIRST DOWN', subline: 'TIGERS', team_name: 'Tigers' },
     })));
     const replaced = await playerState(page);
     assert.equal(replaced.play_id, 5);
@@ -222,8 +255,8 @@ async function main(data) {
     await page.waitForFunction(() => document.querySelector('#cutscene-stage [data-scene="first_down"]') !== null,
       undefined, { timeout: 2000 });
     assert.deepEqual(await sceneIds(page), ['first_down'], 'a replaced cutscene must leave no scene behind');
-    assert.equal(await page.evaluate(() =>
-      document.querySelector('.cs-fd-headline span').textContent), 'FIRST DOWN');
+    assert.ok((await page.evaluate(() =>
+      document.querySelector('#cutscene-stage [data-scene="first_down"]').textContent)).includes('FIRST DOWN'));
     // The board never went back to the operator's layout in between.
     assert.equal(await layoutName(page), 'Cutscene');
     // The old cutscene's end is stale now and must be ignored.
@@ -293,7 +326,103 @@ async function main(data) {
     checks.push('a layout push during a cutscene lands on restore');
 
     // ---------------------------------------------------------------
-    // 7. The page has gained no operator control and no game command.
+    // 7. A penalty has no claw intro: it is on the stage from t=0.
+    // ---------------------------------------------------------------
+    // Python gives `penalty` `intro: none` (the claws are Tigers-branded and
+    // a flag is nobody's), so there is no full-canvas moment to wait through:
+    // the override and the scene both have to be up on the first frame.
+    const penalty = await page.evaluate(() => {
+      const accepted = window.applyCutscene(window.__makeProgram({
+        play_id: 7,
+        event: 'penalty',
+        label: 'Penalty',
+        team: null,
+        pack_id: 'builtin:penalty',
+        duration_ms: 8000,
+        intro: { id: 'none', duration_ms: 0 },
+        scene: { type: 'builtin', id: 'penalty' },
+        texts: { headline: 'FLAG ON THE PLAY', subline: 'PENALTY', team_name: '' },
+      }));
+      const stage = document.querySelector('#cutscene-stage');
+      return {
+        accepted,
+        hidden: stage.hidden,
+        state: window.ScoreboardCutscenePlayer.state(),
+        scenes: Array.from(stage.querySelectorAll('[data-scene]')).map(n => n.getAttribute('data-scene')),
+        words: stage.textContent,
+        bar: Boolean(document.querySelector('#game-board [data-item="broadcast_bar"]')),
+        canvasHeight: document.querySelector('#canvas').getBoundingClientRect().height,
+        stageHeight: stage.getBoundingClientRect().height,
+      };
+    });
+    assert.equal(penalty.accepted, true);
+    assert.equal(penalty.hidden, false);
+    assert.equal(penalty.state.phase, 'scene', 'a penalty never enters the intro phase');
+    assert.deepEqual(penalty.scenes, ['penalty']);
+    assert.equal(penalty.bar, true, 'the bar is up on the first frame, with no intro to wait for');
+    // Straight to the program's rectangle: no full-canvas intro moment.
+    assert.ok(Math.abs(penalty.stageHeight - penalty.canvasHeight * 0.70) <= 1,
+      `the penalty stage must be the program's rectangle: ${JSON.stringify(penalty)}`);
+    // Both words, verbatim from the program, and no team name anywhere.
+    assert.ok(penalty.words.includes('FLAG ON THE PLAY'), penalty.words);
+    assert.ok(penalty.words.includes('PENALTY'), penalty.words);
+    assert.ok(!penalty.words.includes('Tigers'), `a penalty is nobody's: ${penalty.words}`);
+    await page.evaluate(() => window.endCutscene(7));
+    await waitIdle(page, 2000);
+    assert.equal(await layoutName(page), 'Saved during the cutscene');
+    checks.push('a penalty plays with no intro');
+
+    // ---------------------------------------------------------------
+    // 8. MAKE SOME NOISE has no claw intro either: on the stage from t=0.
+    // ---------------------------------------------------------------
+    // Cutscenes v3 (.scratch/cutscenes-v3/spec.md 2.1): at 5 s a 1.6 s claw
+    // would eat a third of the scene, so Python gives `make_some_noise`
+    // `intro: none`. Same first-frame contract as the penalty, plus the one
+    // thing the crowd scene owns: its headline box (`.cs-mn-headline`) holds
+    // the program's headline as a single text node, verbatim.
+    const noise = await page.evaluate(() => {
+      const accepted = window.applyCutscene(window.__makeProgram({
+        play_id: 8,
+        event: 'make_some_noise',
+        label: 'Make some noise',
+        team: 'home',
+        pack_id: 'builtin:make_some_noise',
+        duration_ms: 8000,
+        intro: { id: 'none', duration_ms: 0 },
+        scene: { type: 'builtin', id: 'make_some_noise' },
+        texts: { headline: 'MAKE SOME NOISE', subline: 'TIGERS FANS', team_name: 'Tigers' },
+      }));
+      const stage = document.querySelector('#cutscene-stage');
+      const headline = stage.querySelector('.cs-mn-headline span');
+      return {
+        accepted,
+        hidden: stage.hidden,
+        state: window.ScoreboardCutscenePlayer.state(),
+        scenes: Array.from(stage.querySelectorAll('[data-scene]')).map(n => n.getAttribute('data-scene')),
+        words: stage.textContent,
+        headline: headline ? headline.textContent : null,
+        bar: Boolean(document.querySelector('#game-board [data-item="broadcast_bar"]')),
+        canvasHeight: document.querySelector('#canvas').getBoundingClientRect().height,
+        stageHeight: stage.getBoundingClientRect().height,
+      };
+    });
+    assert.equal(noise.accepted, true);
+    assert.equal(noise.hidden, false);
+    assert.equal(noise.state.phase, 'scene', 'make some noise never enters the intro phase');
+    assert.equal(noise.state.event, 'make_some_noise');
+    assert.deepEqual(noise.scenes, ['make_some_noise']);
+    assert.equal(noise.bar, true, 'the bar is up on the first frame, with no intro to wait for');
+    assert.ok(Math.abs(noise.stageHeight - noise.canvasHeight * 0.70) <= 1,
+      `the make-some-noise stage must be the program's rectangle: ${JSON.stringify(noise)}`);
+    assert.equal(noise.headline, 'MAKE SOME NOISE', `.cs-mn-headline span must hold the headline verbatim: ${noise.headline}`);
+    assert.ok(noise.words.includes('TIGERS FANS'), noise.words);
+    await page.evaluate(() => window.endCutscene(8));
+    await waitIdle(page, 2000);
+    assert.equal(await layoutName(page), 'Saved during the cutscene');
+    checks.push('make some noise plays with no intro');
+
+    // ---------------------------------------------------------------
+    // 9. The page has gained no operator control and no game command.
     // ---------------------------------------------------------------
     assert.equal(await page.locator('button,input,dialog,[data-command],[data-action]').count(), 0);
     checks.push('no controls');

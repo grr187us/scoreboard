@@ -358,8 +358,10 @@ atomic-write, never-raise, never-stop-the-scoreboard contract.
 
 A **pack** is a folder under `cutscenes/` holding a `manifest.json` and,
 optionally, one media file (`.webm`/`.mp4` video or `.png`/`.gif`/`.jpg`/
-`.jpeg`/`.webp`/`.apng` image); the folder name is the pack's id. Two
-code-authored **built-in** packs (`builtin:first_down`, `builtin:touchdown`)
+`.jpeg`/`.webp`/`.apng` image); the folder name is the pack's id. Five
+code-authored **built-in** packs (`builtin:first_down`, `builtin:touchdown`,
+`builtin:turnover`, `builtin:penalty`, `builtin:make_some_noise` — one per
+entry in `CUTSCENE_EVENTS`)
 ship with no files at all, so the feature works before an operator ever
 drops anything in. `ensure_packs_directory` creates the folder and writes a
 `README.txt` into it the first time, explaining the manifest shape in plain
@@ -378,12 +380,34 @@ exception) and written atomically (temp file plus `os.replace`).
 with a recorded fallback when the selection names a pack that is missing or
 belongs to a different event.
 
+There are five events (`CUTSCENE_EVENTS`: `first_down`, `touchdown`,
+`turnover`, `penalty`, `make_some_noise` — the last two added September 6,
+2026, cutscenes v3) and **no home/away choice anywhere in the feature**
+(September 6, 2026, cutscenes v2). Which side a cutscene is for is a
+property of the event, not an argument: `EVENT_TEAM` maps every event to
+`"home"` except `penalty`, which maps to `None`, and `build_program()`,
+`CutsceneDirector.trigger()`, `CutscenesBridge.trigger()`, and
+`ScoreboardBridge.trigger_cutscene()` all take an event and nothing else.
+The sibling tables `EVENT_DEFAULT_INTRO` and `DEFAULT_DURATION_SECONDS`
+give the claw strike and 7/10/7 s to first down, touchdown, and turnover,
+and no intro at all to the 7 s penalty and the 5 s make-some-noise crowd
+prompt (at 5 s a 1.6 s claw would eat a third of the scene). `EVENT_SUBLINE`
+is the per-event subline template — `{team}`, `{team}`, `{team} BALL`,
+`PENALTY`, `{team} FANS` — formatted with the fixed school identity.
+
 Triggering a cutscene builds one JSON **program** — `build_program()` in
 `presentation/cutscenes.py` — carrying everything the spectator page needs:
 the duration, the stage rectangle, a deep copy of the resolved Broadcast bar
 layout (renamed `"Cutscene"`) that becomes a temporary override, the intro
-and scene descriptors, theme colours, and text pulled from the live
-spectator snapshot. `CutsceneDirector.trigger()` reads that snapshot
+and scene descriptors, theme colours, and the three text values
+(`headline`, `subline`, `team_name`) — no score, which the Broadcast bar
+under the stage is already showing. For every branded event, `team_name` is
+the fixed school identity `Tigers` rather than the configurable home-team
+name, and `subline` is `EVENT_SUBLINE[event]` formatted with `TIGERS`
+(`TIGERS`, `TIGERS BALL`, `TIGERS FANS`), so the scoreboard's initial
+`HOME` label cannot leak into a cutscene; the penalty remains team-neutral
+with subline `PENALTY` and an empty `team_name`. `CutsceneDirector.trigger()` reads the
+live spectator snapshot
 *before* taking its own lock, deliberately avoiding a lock-ordering
 collision with the 10 Hz tick, which already holds that lock when it calls
 `status()` to fill every operator view (see the comment in `trigger()`).

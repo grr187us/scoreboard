@@ -1,13 +1,19 @@
 """Cutscenes window and operator hooks (source contract), per
-``.scratch/cutscenes/spec.md`` section 7.
+``.scratch/cutscenes/spec.md`` section 7, ``.scratch/cutscenes-v2/spec.md``
+sections 2.5-2.6, and ``.scratch/cutscenes-v3/spec.md`` sections 2.4-2.5.
 
 Like ``test_crowd_status_ui.py`` and ``test_team_presets_ui.py``, this proves
 the markup and scripts carry the right shape without a live webview: the
 Cutscenes window is a small persistent trigger panel (the Field Assistant's
 pattern) and the operator window gains a footer button, a status badge, and
-four keyboard hotkeys that go through a new ``host`` binding kind rather than
+six keyboard hotkeys (five events plus cancel) that go through a ``host`` binding kind rather than
 the ordinary ``Command`` path -- cutscenes are a host concern (spec section
 1) with no ``CommandType`` value of their own.
+
+The v2 rule this file guards hardest: **there is no home/away choice
+anywhere.** One button and one hotkey per event, no team toggles, and no
+``data-team`` in the window at all -- so a future edit cannot quietly
+reintroduce a side the owner asked us to remove.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ VIEWS = Path(__file__).resolve().parents[2] / "src" / "scoreboard" / "views"
 
 
 class OperatorCutsceneHooksTests(unittest.TestCase):
-    """Spec 7.2: the footer button, the badge, and the four hotkeys."""
+    """Spec 7.2 (v3 2.5): the footer button, the badge, and the six hotkeys."""
 
     def setUp(self) -> None:
         self.html = (VIEWS / "operator" / "index.html").read_text(encoding="utf-8")
@@ -62,28 +68,40 @@ class OperatorCutsceneHooksTests(unittest.TestCase):
         self.assertNotIn(".cutscene-badge { grid-row", self.css)
         self.assertNotIn(".cutscene-badge {\n  grid-row", self.css)
 
-    def test_the_four_hotkeys_exist_with_the_exact_keys_and_host_names(self) -> None:
-        self.assertIn(
+    def test_the_six_hotkeys_exist_with_the_exact_keys_host_names_and_order(self) -> None:
+        # Exactly the six `host` bindings of .scratch/cutscenes-v3/spec.md
+        # section 2.5, in that order: five events, then cancel.
+        bindings = (
             "{key: 'd', label: 'D', action: 'Cutscene: First down', "
-            "host: 'trigger_cutscene', args: ['first_down', null]}",
-            self.keyboard,
-        )
-        self.assertIn(
-            "{key: 't', label: 'T', action: 'Cutscene: Touchdown (home)', "
-            "host: 'trigger_cutscene', args: ['touchdown', 'home']}",
-            self.keyboard,
-        )
-        self.assertIn(
-            "{key: 't', shift: true, label: 'Shift+T', "
-            "action: 'Cutscene: Touchdown (away)', "
-            "host: 'trigger_cutscene', args: ['touchdown', 'away']}",
-            self.keyboard,
-        )
-        self.assertIn(
+            "host: 'trigger_cutscene', args: ['first_down']}",
+            "{key: 't', label: 'T', action: 'Cutscene: Touchdown', "
+            "host: 'trigger_cutscene', args: ['touchdown']}",
+            "{key: 'o', label: 'O', action: 'Cutscene: Turnover', "
+            "host: 'trigger_cutscene', args: ['turnover']}",
+            "{key: 'f', label: 'F', action: 'Cutscene: Penalty flag', "
+            "host: 'trigger_cutscene', args: ['penalty']}",
+            "{key: 'l', label: 'L', action: 'Cutscene: Make some noise', "
+            "host: 'trigger_cutscene', args: ['make_some_noise']}",
             "{key: 'c', shift: true, label: 'Shift+C', "
             "action: 'Cancel cutscene', host: 'cancel_cutscene'}",
-            self.keyboard,
         )
+        positions = []
+        for binding in bindings:
+            with self.subTest(binding=binding):
+                self.assertIn(binding, self.keyboard)
+                positions.append(self.keyboard.index(binding))
+        self.assertEqual(positions, sorted(positions), "the cutscene bindings are out of order")
+
+    def test_no_cutscene_hotkey_names_a_side_and_shift_t_is_gone(self) -> None:
+        cutscene_bindings = [
+            line for line in self.keyboard.splitlines() if "trigger_cutscene" in line
+        ]
+        self.assertEqual(len(cutscene_bindings), 5)
+        for line in cutscene_bindings:
+            with self.subTest(binding=line.strip()):
+                self.assertNotIn("'home'", line)
+                self.assertNotIn("'away'", line)
+        self.assertNotIn("Shift+T", self.keyboard)
 
     def test_a_host_binding_goes_through_the_same_guards_as_a_command(self) -> None:
         install = self.keyboard.split("function install(options)", 1)[1]
@@ -114,11 +132,43 @@ class CutscenesWindowTests(unittest.TestCase):
         self.js = (base / "cutscenes.js").read_text(encoding="utf-8")
         self.css = (base / "cutscenes.css").read_text(encoding="utf-8")
 
-    def test_the_trigger_buttons_exist_with_their_events(self) -> None:
-        self.assertIn('id="trigger-first-down"', self.html)
-        self.assertIn('data-event="first_down"', self.html)
-        self.assertIn('id="trigger-touchdown"', self.html)
-        self.assertIn('data-event="touchdown"', self.html)
+    def test_the_five_trigger_buttons_exist_with_their_events_in_order(self) -> None:
+        # .scratch/cutscenes-v3/spec.md section 2.4: five buttons, this order.
+        buttons = (
+            ("trigger-first-down", "first_down"),
+            ("trigger-touchdown", "touchdown"),
+            ("trigger-turnover", "turnover"),
+            ("trigger-penalty", "penalty"),
+            ("trigger-make-some-noise", "make_some_noise"),
+        )
+        positions = []
+        for button_id, event in buttons:
+            with self.subTest(event=event):
+                self.assertIn(f'id="{button_id}"', self.html)
+                self.assertIn(f'data-event="{event}"', self.html)
+                positions.append(self.html.index(f'id="{button_id}"'))
+        self.assertEqual(positions, sorted(positions), "the trigger buttons are out of order")
+        self.assertEqual(self.html.count("data-event="), 5)
+
+    def test_each_button_triggers_its_event_with_no_second_argument(self) -> None:
+        for event in ("first_down", "touchdown", "turnover", "penalty", "make_some_noise"):
+            with self.subTest(event=event):
+                self.assertIn(f"trigger('{event}');", self.js)
+        self.assertIn("api.trigger(event)", self.js)
+
+    def test_the_penalty_button_wears_the_flag_yellow_not_a_team_colour(self) -> None:
+        rule = self.css.split(".trigger-penalty {", 1)[1].split("}", 1)[0]
+        self.assertIn("#FFD500", rule)  # THEME["flag"]
+        self.assertIn("#030711", rule)  # THEME["ink"]
+
+    def test_the_window_hotkeys_are_d_t_o_f_l_and_shift_c(self) -> None:
+        # v3 section 2.4: `O` turnover and `L` ("get Loud") make some noise
+        # join D/T/F; Shift+C still cancels and Shift+T is still gone.
+        for key in ("d", "t", "o", "f", "l"):
+            with self.subTest(key=key):
+                self.assertIn(f"if (key === '{key}' && !event.shiftKey)", self.js)
+        self.assertIn("if (key === 'c' && event.shiftKey)", self.js)
+        self.assertNotIn("key === 't' && event.shiftKey", self.js)
 
     def test_cancel_is_always_visible_and_starts_disabled(self) -> None:
         cancel = re.search(r'<button[^>]*id="cancel"[^>]*>', self.html)
@@ -127,16 +177,24 @@ class CutscenesWindowTests(unittest.TestCase):
         # Not inside a hidden/collapsible container: it is always on screen.
         self.assertNotIn("<details", self.html.split('id="cancel"', 1)[0][-200:])
 
-    def test_the_team_toggles_exist(self) -> None:
-        self.assertIn('id="team-home"', self.html)
-        self.assertIn('data-team="home"', self.html)
-        self.assertIn('id="team-away"', self.html)
-        self.assertIn('data-team="away"', self.html)
+    def test_the_window_offers_no_team_choice_at_all(self) -> None:
+        # Cutscenes v2: the wall is the Tigers' wall, so there is no side to
+        # pick -- not a toggle, not a data attribute, not a variable.
+        self.assertNotIn("data-team", self.html)
+        self.assertNotIn('id="team-home"', self.html)
+        self.assertNotIn('id="team-away"', self.html)
+        self.assertNotIn("team-toggle", self.html)
+        self.assertNotIn("team-toggle", self.css)
+        for name in ("selectedTeam", "teamExplicit", "fillTeamNames"):
+            with self.subTest(name=name):
+                self.assertNotIn(name, self.js)
 
     def test_one_pack_select_per_event(self) -> None:
-        for event in ("first_down", "touchdown"):
+        for event in ("first_down", "touchdown", "turnover", "penalty", "make_some_noise"):
             with self.subTest(event=event):
                 self.assertIn(f'data-pack-for="{event}"', self.html)
+                self.assertIn(f"renderPackSelect('{event}')", self.js)
+        self.assertEqual(self.html.count("data-pack-for="), 5)
 
     def test_the_packs_section_is_collapsible(self) -> None:
         self.assertIn("<details", self.html)
@@ -160,9 +218,6 @@ class CutscenesWindowTests(unittest.TestCase):
         self.assertIn("playing.remaining_display", self.js)
         self.assertNotIn("remaining_ms -", self.js)
         self.assertNotIn("setInterval", self.js)
-
-    def test_a_first_down_sends_null_team_unless_explicitly_pressed(self) -> None:
-        self.assertIn("teamExplicit ? selectedTeam : null", self.js)
 
     def test_none_of_the_three_files_reference_the_command_api(self) -> None:
         files = (

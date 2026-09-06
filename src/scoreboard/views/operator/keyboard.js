@@ -21,10 +21,16 @@
     {key: 'escape', label: 'Esc', action: 'Close dialog / drawer', close: true},
     // Cutscenes are a host concern, not a Command: these route through
     // `options.host(name, args)` instead of `options.submit`, but otherwise
-    // pass through the exact same editable/repeat/held guards below.
-    {key: 'd', label: 'D', action: 'Cutscene: First down', host: 'trigger_cutscene', args: ['first_down', null]},
-    {key: 't', label: 'T', action: 'Cutscene: Touchdown (home)', host: 'trigger_cutscene', args: ['touchdown', 'home']},
-    {key: 't', shift: true, label: 'Shift+T', action: 'Cutscene: Touchdown (away)', host: 'trigger_cutscene', args: ['touchdown', 'away']},
+    // pass through the exact same editable/repeat/held guards below. Each
+    // key names an event only -- a cutscene is always the home team's (or,
+    // for the penalty flag, nobody's), so there is no side to pick. `O` is
+    // the turnover and `L` is "get Loud"; both were free letters (N/M are
+    // away scores, P/S the play clock).
+    {key: 'd', label: 'D', action: 'Cutscene: First down', host: 'trigger_cutscene', args: ['first_down']},
+    {key: 't', label: 'T', action: 'Cutscene: Touchdown', host: 'trigger_cutscene', args: ['touchdown']},
+    {key: 'o', label: 'O', action: 'Cutscene: Turnover', host: 'trigger_cutscene', args: ['turnover']},
+    {key: 'f', label: 'F', action: 'Cutscene: Penalty flag', host: 'trigger_cutscene', args: ['penalty']},
+    {key: 'l', label: 'L', action: 'Cutscene: Make some noise', host: 'trigger_cutscene', args: ['make_some_noise']},
     {key: 'c', shift: true, label: 'Shift+C', action: 'Cancel cutscene', host: 'cancel_cutscene'}
   ];
 

@@ -8,6 +8,15 @@ cutscene, a media file that will not open, a malformed program -- and checks
 after every one of them that ``#canvas`` carries the operator's layout again
 and ``#cutscene-stage`` is hidden and empty.
 
+It also pins the two shapes v2 added: the claw intro's strike (a paw with two
+motion-trail ghosts, four gouges, debris, and exactly one flash -- one, because
+nothing on this wall may strobe), and a ``penalty`` program whose intro is
+``none``, which must put the bar and the scene up on the very first frame
+rather than waiting through a full-canvas moment that will never come. v3
+adds the same first-frame check for ``make_some_noise`` (the 5 s crowd prompt
+also has no intro) and pins the registry's six ids across the three scene
+files in load order.
+
 Same Playwright/Edge setup as ``test_spectator_browser.py``: the page is
 loaded from ``file://`` with a stub ``window.pywebview.api`` built from a real
 :func:`spectator_view_model` snapshot, and ``tests/ui/browser_support.py``
@@ -46,6 +55,8 @@ class CutscenePlayerBrowserTests(unittest.TestCase):
             "a second cutscene replaces the first",
             "malformed program ignored",
             "a layout push during a cutscene lands on restore",
+            "a penalty plays with no intro",
+            "make some noise plays with no intro",
             "no controls",
         ])
 
@@ -53,7 +64,8 @@ class CutscenePlayerBrowserTests(unittest.TestCase):
         # The browser run proves behaviour; this proves the two things a
         # behavioural test cannot see, on the same files it just exercised.
         root = Path(__file__).resolve().parents[2] / "src/scoreboard/views/spectator"
-        for name in ("cutscene.js", "cutscenes/builtin.js"):
+        for name in ("cutscene.js", "cutscenes/builtin.js", "cutscenes/tigers.js",
+                     "cutscenes/crowd.js"):
             source = (root / name).read_text(encoding="utf-8")
             for forbidden in ("fetch(", "XMLHttpRequest", "api.command", "http://", "https://"):
                 self.assertNotIn(forbidden, source, f"{forbidden!r} found in {name}")

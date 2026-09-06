@@ -1,7 +1,8 @@
 /* Cutscenes window: dark, big, built for a volunteer to hit without looking
  * twice. Flex column, not a fixed-row grid -- the notice line and the issues
- * list are often empty/hidden, and the two trigger buttons should claim
- * whatever room that frees up. */
+ * list are often empty/hidden, and the five trigger buttons should claim
+ * whatever room that frees up. There is no team row: since cutscenes v2 a
+ * cutscene is always the Tigers' (or, for the penalty flag, nobody's). */
 body { display:flex; flex-direction:column; gap:10px; padding:12px; overflow:hidden; }
 
 .topbar { display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); }
@@ -13,16 +14,18 @@ body { display:flex; flex-direction:column; gap:10px; padding:12px; overflow:hid
 .notice { margin:0; padding:6px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:14px; font-size:12px; }
 .notice:empty { display:none; }
 
-.team-row { display:flex; align-items:center; gap:10px; padding:6px 10px; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); }
-.row-label { font-size:11px; letter-spacing:.1em; color:var(--ink-dim); font-weight:700; }
-.team-toggle { flex:1; min-height:48px; font-weight:800; font-size:15px; }
-.team-toggle[aria-pressed="true"] { border-color:var(--accent); border-width:2px; background:var(--panel-raised); box-shadow:inset 0 0 0 1px var(--accent); }
-
-/* The whole point of the window: two unmissable buttons. */
-.triggers { display:flex; flex-direction:column; gap:12px; flex:1 1 auto; min-height:0; }
-.trigger { min-height:88px; font-size:26px; font-weight:900; letter-spacing:.04em; border-radius:10px; flex:1 1 auto; }
+/* The whole point of the window: five unmissable buttons. Penalty wears the
+ * flag yellow (THEME["flag"]) with ink text, so it reads as neither team's.
+ * Five buttons plus the collapsed Packs summary have to fit the 520x640
+ * window without scrolling (cutscenes v3), hence the 64px floor and the
+ * 22px face; the flex:1 still lets them grow into a taller window. */
+.triggers { display:flex; flex-direction:column; gap:10px; flex:1 1 auto; min-height:0; }
+.trigger { min-height:64px; font-size:22px; font-weight:900; letter-spacing:.04em; border-radius:10px; flex:1 1 auto; }
 .trigger-first-down { background:#17468C; border-color:#2C62AB; color:#FFFFFF; }
 .trigger-touchdown { background:#C8242B; border-color:#FFB703; color:#FFFFFF; }
+.trigger-turnover { background:#071B3A; border-color:#C8242B; color:#FFFFFF; }
+.trigger-penalty { background:#FFD500; border-color:#FFB703; color:#030711; }
+.trigger-make-some-noise { background:#2C62AB; border-color:#FFB703; color:#FFFFFF; }
 .trigger:hover:not(:disabled) { filter:brightness(1.12); }
 .trigger:active { filter:brightness(0.92); }
 

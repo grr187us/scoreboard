@@ -54,7 +54,7 @@ Presentation and integrations must not become authoritative state owners. Option
 - Update the relevant requirement/architecture/UX document when a decision changes.
 - Do not mark an item complete based only on files existing; record the verification performed.
 - Before committing, review the complete diff, validate relative Markdown links, and report every remaining uncommitted file.
-- The discovered suite is green as of the September 6, 2026 Cutscenes work (1084 tests, 0 failures, 0 errors, 3 skipped). Run it; the 3 skips are `@unittest.skip`s naming open question A-1 (whether a game-clock Start should always blank the play clock) and are expected, not a pass on that question. Anything else failing or erroring is a regression — see "Automated suite failure inventory" in `PROJECT_ROADMAP.md` for how the suite got here.
+- The discovered suite is green as of the September 6, 2026 Cutscenes v3 work (1114 tests, 0 failures, 0 errors, 3 skipped). Run it; the 3 skips are `@unittest.skip`s naming open question A-1 (whether a game-clock Start should always blank the play clock) and are expected, not a pass on that question. Anything else failing or erroring is a regression — see "Automated suite failure inventory" in `PROJECT_ROADMAP.md` for how the suite got here.
 
 ## Agent skills
 
