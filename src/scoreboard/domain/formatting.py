@@ -10,16 +10,21 @@ expanded football state: Python renders the human-readable text once, so the
 operator readout and the spectator board can never disagree about it either.
 
 Every visible value rounds **upward**, so the board never understates the time
-remaining (roadmap decision, September 4, 2026):
+remaining (roadmap decision, September 4, 2026; whole-seconds-only revision,
+September 7, 2026):
 
-* Game clock: whole seconds while the rounded-tenths value is at least 60.0,
-  then tenths. ``60.0`` and ``59.99`` both display ``1:00``; ``59.9`` displays
-  ``59.9``; ``12:25.1`` displays ``12:26`` (F-039).
-* Play clock: whole seconds until the rounded-tenths value is below 5.0, then
-  tenths. ``5.0`` and ``4.99`` both display ``5``; ``4.9`` displays ``4.9``;
-  ``4.01`` displays ``4.1`` (F-047).
+* Game clock: whole seconds always, shown as ``M:SS`` even below a minute
+  (``0:30``, not ``30``). ``60.0``, ``59.99``, and ``59.9`` all display
+  ``1:00`` (any fractional remainder rounds up to the next whole second, so
+  the board never shows a number lower than what truly remains); ``59.0``
+  displays ``0:59``; ``12:25.1`` displays ``12:26`` (F-039).
+* Play clock: whole seconds always, same rounding. ``5.0``, ``4.99``, and
+  ``4.9`` all display ``5``; ``4.0`` displays ``4`` (F-047).
 * Event countdowns display ``M:SS`` whole seconds rounded up at every value
   (F-025, F-026).
+
+Football clocks read in whole seconds; tenths are a basketball convention and
+are no longer shown at any precision on either clock.
 
 All rounding runs through :func:`ceil_tenths`, which folds away binary
 floating-point noise before rounding up. Without that guard ``4.9 * 10`` is
@@ -30,12 +35,6 @@ from __future__ import annotations
 
 import math
 from typing import Final
-
-#: Tenths at or above which the game clock shows whole seconds (F-039).
-GAME_CLOCK_TENTHS_THRESHOLD: Final[int] = 600
-
-#: Tenths at or above which the play clock shows whole seconds (F-047).
-PLAY_CLOCK_TENTHS_THRESHOLD: Final[int] = 50
 
 #: Decimal places kept before rounding up. Ten significant sub-second digits are
 #: far finer than any clock the operator can observe, and coarse enough to
@@ -94,38 +93,33 @@ def displayed_second(seconds: float) -> int:
     return ceil_seconds(seconds)
 
 
-def _tenths_display(tenths: int) -> str:
-    return f"{tenths // 10}.{tenths % 10}"
-
-
 def _minutes_display(total_seconds: int) -> str:
     minutes, remainder = divmod(total_seconds, 60)
     return f"{minutes}:{remainder:02d}"
 
 
 def format_game_clock(seconds: float) -> str:
-    """Format the game clock: ``M:SS`` above a minute, then ``S.T`` (F-039)."""
+    """Format the game clock as rounded-up whole-second ``M:SS`` (F-039).
 
-    tenths = ceil_tenths(seconds)
-    if tenths >= GAME_CLOCK_TENTHS_THRESHOLD:
-        return _minutes_display(-(-tenths // 10))
-    return _tenths_display(tenths)
+    Football clocks read in whole seconds only; tenths are a basketball
+    convention this board does not use.
+    """
+
+    return _minutes_display(ceil_seconds(seconds))
 
 
 def format_play_clock(seconds: float, *, blank_at_zero: bool = False) -> str:
-    """Format the play clock: whole seconds, then ``S.T`` below 5.0 (F-047).
+    """Format the play clock as rounded-up whole seconds (F-047).
 
     ``blank_at_zero`` renders a cleared play clock as an empty area rather than
-    ``0``; an *expired* play clock stays visible at ``0.0`` and must not use it
+    ``0``; an *expired* play clock stays visible at ``0`` and must not use it
     (F-045, F-050).
     """
 
-    tenths = ceil_tenths(seconds)
-    if blank_at_zero and tenths == 0:
+    whole_seconds = ceil_seconds(seconds)
+    if blank_at_zero and whole_seconds == 0:
         return BLANK_DISPLAY
-    if tenths >= PLAY_CLOCK_TENTHS_THRESHOLD:
-        return str(-(-tenths // 10))
-    return _tenths_display(tenths)
+    return str(whole_seconds)
 
 
 def format_event_countdown(seconds: float) -> str:
@@ -261,9 +255,7 @@ def format_ball_on(team: str, yard_line: int, team_name: str) -> str:
 
 __all__ = [
     "BLANK_DISPLAY",
-    "GAME_CLOCK_TENTHS_THRESHOLD",
     "GOAL_TO_GO_DISPLAY",
-    "PLAY_CLOCK_TENTHS_THRESHOLD",
     "FormattingError",
     "ceil_seconds",
     "ceil_tenths",

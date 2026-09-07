@@ -2,7 +2,7 @@
 
 > **Document purpose:** This is the living command-center document for the scoreboard project. It records the current plan, phase status, major decisions, unanswered questions, and the next concrete action.
 >
-> **Last updated:** September 6, 2026
+> **Last updated:** September 7, 2026
 
 ## How to Use This Document
 
@@ -1005,6 +1005,7 @@ Record decisions here so later implementation work does not silently reverse the
 | September 6, 2026 | Bound the last-known-good backup to at most one refresh per 2 seconds (first commit, shutdown, and close always refresh; a pending refresh is flushed by the next checkpoint). | A full SQLite copy inside every accepted command ran under the command lock. The policy remains "refresh only after a verified commit"; only the cadence changed. | Revisit if a recovery rehearsal ever finds the backup more than one checkpoint behind the primary. |
 | September 6, 2026 | Give the spectator display its own drawer, opened from an always-visible 44 px `Display…` button beside a 44 px `Reopen Display`, and take the selector out of Corrections (audit C5). | Recovering a dark wall is the one thing a volunteer must find in two seconds; it does not belong one panel from destructive Apply buttons at a size below the project's own floor. | Revisit after the physical 1366×768 check and the two-display checklist; the data-folder row still lives in Corrections and is the remaining Settings-surface revisit. |
 | September 6, 2026 | Keep team identity out of `GameState`: saved teams are a laptop preference in `teams.json`, applying one is the existing `set_team_name` command, and colours/short names ride along in the view models only (audit F4, presets half). | It gives the weekly retyping problem a one-click fix without a state-schema change, a migration, or a presentation value becoming authoritative. Binding board widgets to team colours is a layout-editor feature and stays deferred. | Revisit when the layout editor gains colour bindings or logos, which would decide whether identity needs a stronger key than the team name. |
+| September 7, 2026 | Supersede the September 4, 2026 tenths-of-a-second display rule (F-039/F-047): both the game clock and the play clock now show whole seconds only, always rounded up, at every value (the game clock keeps its `M:SS` form below a minute, e.g. `0:30`). | Owner decision: tenths read as a basketball convention, not football, on this board. | Revisit only with explicit owner direction. |
 
 ## Test and Evidence Log
 
@@ -1564,6 +1565,51 @@ the application log carries no `UNHANDLED_ERROR`.
 
 **Still open.** As for v2: the physical LED wall has never shown a
 cutscene, and nothing auto-fires one from game state.
+
+### 7. Tigers Stadium presentation preset — September 7, 2026
+
+**Delivered at the owner's request:** improvement 1 from the crowd-facing
+design suggestions. A fifth **Tigers Stadium** preset on each editor screen
+uses a navy background, oversized white scores, red/blue team panels, a
+dominant central clock, a subdued three-slash header motif, and a dedicated
+down/distance/field-position strip. Matching pregame and halftime screens
+keep both team names and scores below their countdown; halftime keeps the
+phase and warmup line. All parts are existing editable schema-v3 widgets,
+text, and boxes, with no media assets, dependencies, or renderer changes.
+The existing Default and saved layouts remain intact. Apply the preset on
+each of the three screens, then Save as Tigers Stadium; see
+[the operator workflow](docs/UX_AND_LAYOUT.md#1010-tigers-stadium-preset-september-7-2026).
+
+**Verification:** full discovered suite **1115 tests, 0 failures, 0 errors,
+3 expected A-1 skips**, 67.931 seconds. The new offline Playwright/Edge test
+checks 60 rendered cases at 1920×1080, 1366×768, 1280×720, 640×360, and
+390×844: normal and 24-character names, 0/99/100/199 scores, whole-second and
+tenths clocks, cleared/expired play clock, crowd status, possession, missing
+field values, pregame, halftime, and warmup boundaries. Text fits its widget
+and safe area with no overlap or page scrolling. It drives all three preset
+choices in the real editor page, validates and saves the resulting draft
+through Python, reloads it from disk, and checks cutscene cancellation restores
+the chosen game/event layout. Existing preset validation and compatibility
+checks remain green. Screenshots of the game, pregame, and worst-case halftime
+were visually inspected in `captures/stadium/` (ignored local evidence).
+
+**Environment:** `.venv` still points at a missing python.org interpreter.
+Verification used the available Blender CPython 3.11.11 executable with
+`src` and the existing pinned `.venv/Lib/site-packages` on `PYTHONPATH`, plus
+installed Node/Edge and repo-local Playwright. The virtual environment was
+not rewritten. The one-folder Windows package was rebuilt with that runtime
+and verified at `dist/Scoreboard` (version 0.1.0, 823 files, 31.0 MB); its
+readiness check used isolated data under ignored `captures/stadium/`.
+The frozen executable also ran for eight seconds against an isolated saved
+Tigers Stadium layout, exited 0, and logged clean startup/shutdown; this is a
+process smoke check, not an observation of the physical LED or proof of
+second-display placement. `compileall`, `git diff --check`, and the relative
+Markdown link checker passed (24 files, zero broken links).
+
+**Limits:** this static preset does not implement suggestions 2 or 3 (routine
+motion or a field-position graphic), saved-team colour bindings, or new game
+rules. Phase 0 HDMI evidence, target-laptop readability/brightness, C4, and
+Task 12 remain open. A successful build is not stadium-release acceptance.
 
 ## Next Action
 

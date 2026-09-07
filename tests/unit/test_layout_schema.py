@@ -648,15 +648,15 @@ class ScreenTests(unittest.TestCase):
         by_screen = screen_preset_descriptors()
 
         self.assertEqual(set(by_screen), set(EVENT_SCREEN_IDS))
-        self.assertEqual(len(by_screen["pregame"]), 4)
-        self.assertEqual(len(by_screen["halftime"]), 4)
+        self.assertEqual(len(by_screen["pregame"]), 5)
+        self.assertEqual(len(by_screen["halftime"]), 5)
         self.assertEqual(
             [p["id"] for p in by_screen["pregame"]],
-            ["pregame_classic", "pregame_matchup", "pregame_broadcast", "pregame_tigers"],
+            ["pregame_classic", "pregame_matchup", "pregame_broadcast", "pregame_tigers", "pregame_stadium"],
         )
         self.assertEqual(
             [p["id"] for p in by_screen["halftime"]],
-            ["halftime_classic", "halftime_score_first", "halftime_broadcast", "halftime_tigers"],
+            ["halftime_classic", "halftime_score_first", "halftime_broadcast", "halftime_tigers", "halftime_stadium"],
         )
 
         game_preset_ids = {p["id"] for p in preset_descriptors()}
@@ -1568,8 +1568,8 @@ class PresetTests(unittest.TestCase):
     def test_every_preset_validates_clean_with_unique_ids(self) -> None:
         presets = preset_descriptors()
 
-        self.assertEqual(len(presets), 4)
-        self.assertEqual([p["id"] for p in presets], ["classic", "broadcast", "big_score", "tigers"])
+        self.assertEqual(len(presets), 5)
+        self.assertEqual([p["id"] for p in presets], ["classic", "broadcast", "big_score", "tigers", "stadium"])
         seen_ids = set()
         for preset in presets:
             with self.subTest(preset=preset["id"]):
@@ -1618,6 +1618,8 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(presets["big_score"]["screens"]["halftime"], halftime_by_id["halftime_score_first"])
         self.assertEqual(presets["tigers"]["screens"]["pregame"], pregame_by_id["pregame_tigers"])
         self.assertEqual(presets["tigers"]["screens"]["halftime"], halftime_by_id["halftime_tigers"])
+        self.assertEqual(presets["stadium"]["screens"]["pregame"], pregame_by_id["pregame_stadium"])
+        self.assertEqual(presets["stadium"]["screens"]["halftime"], halftime_by_id["halftime_stadium"])
 
     def test_the_tigers_preset_uses_the_brand_baseline_colours(self) -> None:
         tigers = next(p for p in preset_descriptors() if p["id"] == "tigers")

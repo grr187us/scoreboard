@@ -1,11 +1,23 @@
 # Windows packaging and offline launch
 
-**Status:** Task 11 build path was verified on the development host. The recorded September 5 build is historical: `dist/` is currently absent and that build predates the C4/C5/F3/F4/I4 working-tree changes. Rebuild before clean-machine, network-disabled, or target-laptop checks.
-**Last updated:** September 6, 2026
+**Status:** Rebuilt and verified on the development host September 7, 2026,
+including Tigers Stadium and the current cutscenes. `dist/Scoreboard` contains
+version 0.1.0, 823 files, 31.0 MB. Asset and frozen `--check` verification
+passed with isolated data. Clean-machine, network-disabled, stadium, and
+target-laptop acceptance remain open.
+An eight-second frozen-process smoke check against an isolated saved Tigers
+Stadium layout exited 0 and logged clean startup/shutdown. This does not
+establish physical display placement or readability.
+**Last updated:** September 7, 2026
 
 This document covers how the offline package is built, what it contains, what the operator's laptop must already have, and which acceptance checks still need a person.
 
-The versions below describe the last verified package build; they are not a claim that a current artifact exists. The September 6 repository audit used a clean temporary Python 3.11.9 development environment for tests. That does not replace the packaged-build record or waive a fresh PyInstaller build.
+The September 7 build used the available Blender CPython 3.11.11 runtime
+with `src` and the pinned dependencies in `.venv/Lib/site-packages` on
+`PYTHONPATH`; the repository `.venv` launcher currently points at a missing
+python.org installation. Restore the documented Python 3.11 environment
+before following the usual build command below. The full discovered suite
+passed 1115 tests with 3 expected A-1 skips on the build runtime.
 
 ## What the package is
 

@@ -1,7 +1,17 @@
 # Phase 2 Implementation Backlog
 
 **Status:** Tasks 1-11 are substantially implemented; after the September 6, 2026 F3/I4 work the full discovered suite is green — **913 tests, 0 failures, 0 errors, 3 skipped** from a clean temporary Python 3.11.9 environment with Node.js on `PATH` and isolated operator data. The 3 skips are blocked on question A-1 and are not a pass. Task 10's two-display and stadium acceptance is outstanding; Task 12 is not started. Current working-tree work also implements I4's 20-entry Undo stack, F3's crowd-facing status message and countdown end to end, and the presets half of F4, while C4 is reopened for a cross-thread delivery-ordering gap. See `../PROJECT_ROADMAP.md` and `CURRENT_PROJECT_AUDIT_2026-09-06.md`. Historical discovery counts remain in the roadmap for lineage.
-**Last updated:** September 6, 2026
+**Last updated:** September 7, 2026
+
+**Owner-requested presentation follow-up, September 7:** Tigers Stadium is
+implemented as a fifth editable preset for each of Game, Pre-game, and
+Halftime. Full suite: **1115 tests, zero failures/errors, 3 expected A-1 skips**;
+the new browser test covers 60 layout cases and editor save/reopen and cutscene
+restoration. The Windows package was rebuilt and verified. See
+[the workflow](UX_AND_LAYOUT.md#1010-tigers-stadium-preset-september-7-2026)
+and `PROJECT_ROADMAP.md` for evidence. This presentation-only owner request
+does not advance Task 12 or any hardware gate; suggestions 2 and 3 (motion
+and a field graphic) remain outside this task.
 
 The September 5 audit found no acceptance criterion in Tasks 1-9 unmet by code, and two requirement-level defects that the task-by-task verification had missed because each sat between two tasks. Both are fixed and recorded in the roadmap: clock expiration was never written to the durable action history (F-037, F-046), and the application version was a hard compatibility gate on saved games, so the Task 11 version bump would have made every existing game unrecoverable (P-004, P-006).
 
@@ -84,7 +94,7 @@ Each task is intended for one focused Codex session. Before starting, read the r
 - 25 and 40 commands load their exact documented values while stopped.
 - No play-clock command changes game-clock state.
 - Delayed callbacks and pause/resume behave without cumulative drift.
-- A play clock that reaches zero remains at `0.0` unless cleared or changed; it creates no alarm.
+- A play clock that reaches zero remains at `0` unless cleared or changed; it creates no alarm.
 
 ## Task 5 — Command service: scores, quarters, lifecycle, and undo
 

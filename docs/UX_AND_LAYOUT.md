@@ -280,7 +280,7 @@ scoreboard.
 - The authoritative state changes once, the status text changes immediately, and the action is logged.
 - Start while running and Stop while stopped are harmless no-ops.
 - A stalled UI repaint does not affect the authoritative elapsed-time calculation.
-- The display never understates time remaining: whole seconds are rounded up at normal precision, and tenths are rounded up below one minute. `1:00` remains visible until the rounded tenths value can display `59.9`.
+- The display never understates time remaining: whole seconds are always rounded up, shown as `M:SS` even below a minute; neither clock displays tenths of a second (September 7, 2026). `1:00` remains visible until the clock truly reaches `0:59`.
 - `Edit Current Time` stops the game clock if needed, validates the entered minutes/seconds, and then offers `Start after applying?`; `Remain stopped` is selected by default.
 
 ### 6.3 Reset play clock to 25 or 40
@@ -289,10 +289,10 @@ scoreboard.
 - The requested value loads while stopped; use the separate play-clock Start command when the official signals ready for play.
 - Click the visibly distinct `25 + START` / `40 + START` controls to load that preset and begin its countdown in one atomic action. The plain load controls remain available for a stopped setup.
 - The game clock is unchanged.
-- The play clock uses the same upward presentation rule and changes to tenths only once its rounded tenths value is below `5.0`; it stays at `5` until it can display `4.9`.
+- The play clock uses the same upward, whole-seconds-only presentation rule; it stays at `5` until it truly reaches `4`.
 - This is the stadium's only play-clock display, so the active value must remain prominent and display recovery must preserve it.
 - In `1st`–`4th`/`OT`, Game Clock start/stop coupling clears the play clock as documented. In PRE, Start/Stop/expiry control only the kickoff countdown.
-- No clock expiration produces an alarm. A play clock that reaches `0.0` while the game clock is already running remains visible there until the operator uses the deliberate clear control or issues another play-clock command.
+- No clock expiration produces an alarm. A play clock that reaches `0` while the game clock is already running remains visible there until the operator uses the deliberate clear control or issues another play-clock command.
 - `Edit Current Time` lives in Corrections: it stops the play clock if needed, validates the value, and offers `Start after applying?`; `Remain stopped` is the default.
 
 ### 6.4 Update scores
@@ -627,6 +627,33 @@ Applying a screen preset replaces only that screen's mini-document (`safe_area`,
 A validation issue now names the screen it belongs to: a game-screen issue reads exactly as it did before this change (for example "Countdown must sit inside the safe area."), while a pre-game or halftime issue is prefixed with its screen's label (for example "Halftime: Countdown must sit inside the safe area."). The status-bar issue count and the issues drawer cover all three screens at once; selecting an issue from a screen other than the one showing switches to it first. Everything in 10.6 and 10.7 — the safe-area boundary, strict rejection of an out-of-bounds widget or element, and the "never silently clamped" rule — applies independently to each screen.
 
 **One stored layout, three screens.** `layouts.json` still holds one library of named layouts; each layout is one document that now carries the game screen at its top level (unchanged shape, so every existing layout keeps opening) plus a `screens.pregame` and `screens.halftime` mini-document. Saving, duplicating, renaming, or deleting a layout always acts on the whole three-screen document — there is no way to save or share a single screen independently of the layout it belongs to. See `docs/ARCHITECTURE.md` §9 for the on-disk schema.
+
+### 10.10 Tigers Stadium preset (September 7, 2026)
+
+The owner-requested stadium redesign adds a fifth **Tigers Stadium** preset
+to each of the Game, Pre-game, and Halftime galleries. Game uses oversized
+white scores on red/blue team panels, a large central game clock, a separate
+play-clock readout, gold possession and crowd status, and a bottom strip for
+down, distance, and field position. Pregame and halftime use a large central
+countdown with both names and scores below; halftime retains its phase and
+warmup line. All three share a navy background and a subdued three-slash
+header motif. The game-clock label is visible in this preset; timeouts remain
+hidden. Existing running-clock colours and cleared/expired values still apply.
+
+To use the complete design, open **Advanced → Presentation layout…**, choose
+**Presets → Tigers Stadium → Apply** on **Game**, then repeat on **Pre-game**
+and **Halftime**, and use **Save as…** to name the layout **Tigers Stadium**.
+The existing inline replacement confirmation applies to a dirty draft.
+Each Apply affects only the selected screen; Save stores all three together.
+Existing layouts and the built-in Default are not replaced by installing the
+update. The preset uses fixed design colours, not saved-team colour bindings.
+
+Everything is an ordinary editable widget, text element, or box in schema v3.
+No downloaded asset, special renderer, new dependency, animation, or game-state
+mutation is introduced. The automated browser matrix checks all three screens
+at five viewports, maximum-length names and three-digit scores, plus clock,
+status, warmup, editor save/reopen, and cutscene restoration. Stadium viewing
+distance, brightness, HDMI geometry, and target-laptop evidence remain open.
 
 ## 11. Field Assistant window (added September 5, 2026)
 

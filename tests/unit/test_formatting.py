@@ -23,13 +23,13 @@ from scoreboard.domain.formatting import (
 
 
 class GameClockDisplayTests(unittest.TestCase):
-    """F-039: whole seconds down to a rounded 60.0, then tenths, always up."""
+    """F-039: whole seconds only, always rounded up, shown as M:SS."""
 
     def test_documented_boundaries(self) -> None:
         cases = [
             (60.0, "1:00"),
             (59.99, "1:00"),
-            (59.9, "59.9"),
+            (59.9, "1:00"),
             (12 * 60 + 25.1, "12:26"),
         ]
         for seconds, expected in cases:
@@ -41,18 +41,24 @@ class GameClockDisplayTests(unittest.TestCase):
             with self.subTest(seconds=seconds):
                 self.assertEqual(format_game_clock(seconds), "1:00")
 
-    def test_tenths_below_one_minute_round_upward(self) -> None:
+    def test_sub_minute_fractions_round_up_to_the_next_whole_second(self) -> None:
         cases = [
-            (59.89, "59.9"),
-            (59.81, "59.9"),
-            (30.04, "30.1"),
-            (30.0, "30.0"),
-            (0.01, "0.1"),
-            (0.0, "0.0"),
+            (59.89, "1:00"),
+            (59.81, "1:00"),
+            (30.04, "0:31"),
+            (30.0, "0:30"),
+            (0.01, "0:01"),
+            (0.0, "0:00"),
         ]
         for seconds, expected in cases:
             with self.subTest(seconds=seconds):
                 self.assertEqual(format_game_clock(seconds), expected)
+
+    def test_sub_minute_values_always_show_the_leading_minutes_digit(self) -> None:
+        # Football clocks read "0:30", never a bare "30" (that reads as a
+        # basketball-style shot clock).
+        self.assertEqual(format_game_clock(30.0), "0:30")
+        self.assertEqual(format_game_clock(5.0), "0:05")
 
     def test_whole_minutes_and_zero_padding(self) -> None:
         cases = [
@@ -73,14 +79,15 @@ class GameClockDisplayTests(unittest.TestCase):
 
 
 class PlayClockDisplayTests(unittest.TestCase):
-    """F-047: whole seconds until a rounded 5.0, then tenths, always up."""
+    """F-047: whole seconds only, always rounded up."""
 
     def test_documented_boundaries(self) -> None:
         cases = [
             (5.0, "5"),
             (4.99, "5"),
-            (4.9, "4.9"),
-            (4.01, "4.1"),
+            (4.9, "5"),
+            (4.01, "5"),
+            (4.0, "4"),
         ]
         for seconds, expected in cases:
             with self.subTest(seconds=seconds):
@@ -92,8 +99,8 @@ class PlayClockDisplayTests(unittest.TestCase):
             (25.0, "25"),
             (24.2, "25"),
             (5.01, "6"),
-            (0.05, "0.1"),
-            (0.0, "0.0"),
+            (0.05, "1"),
+            (0.0, "0"),
         ]
         for seconds, expected in cases:
             with self.subTest(seconds=seconds):
@@ -101,7 +108,7 @@ class PlayClockDisplayTests(unittest.TestCase):
 
     def test_a_cleared_play_clock_can_render_blank_but_an_expired_one_does_not(self) -> None:
         self.assertEqual(format_play_clock(0.0, blank_at_zero=True), "")
-        self.assertEqual(format_play_clock(0.0), "0.0")
+        self.assertEqual(format_play_clock(0.0), "0")
 
 
 class EventCountdownDisplayTests(unittest.TestCase):

@@ -31,11 +31,11 @@ class SpectatorFoundationTests(ApplicationTestCase):
         app.spectator_closed()
         app.spectator_opened()
         reopened = SpectatorBridge(bridge.spectator_snapshot).get_snapshot()
-        self.assertEqual(reopened['clocks']['play']['display'], '0.0')
+        self.assertEqual(reopened['clocks']['play']['display'], '0')
         self.assertEqual(reopened['revision'], app.service.revision)
         app.shutdown()
         recovered = self.make_application().resume()
-        self.assertEqual(recovered.spectator_snapshot()['clocks']['play']['display'], '0.0')
+        self.assertEqual(recovered.spectator_snapshot()['clocks']['play']['display'], '0')
         recovered.command('play_clock_clear')
         self.assertEqual(recovered.spectator_snapshot()['clocks']['play']['display'], '—')
 

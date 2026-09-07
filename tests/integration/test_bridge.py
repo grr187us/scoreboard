@@ -1124,7 +1124,7 @@ class ExpirationHistoryTests(BridgeTestCase):
         self.run_to(4.0)
 
         view = self.bridge.get_snapshot()
-        self.assertEqual(view["clocks"]["game"]["display"], "0.0")
+        self.assertEqual(view["clocks"]["game"]["display"], "0:00")
         self.assertFalse(view["clocks"]["game"]["running"])
         self.assertTrue(view["health"]["persistence"]["saved"])
 

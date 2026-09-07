@@ -2492,6 +2492,116 @@ def _normalized_screen_preset(screen_id: str, screen: dict[str, Any]) -> dict[st
     return result.layout["screens"][screen_id]
 
 
+def _stadium_box(id: str, x: float, y: float, width: float, height: float,
+                 color: str) -> dict[str, Any]:
+    return {"id": id, "type": "box", "x": x, "y": y, "width": width,
+            "height": height, "background": color, "z_index": 0}
+
+
+def _stadium_text(id: str, text: str, x: float, y: float, width: float,
+                  height: float, size: float, color: str = "#A9BCD6") -> dict[str, Any]:
+    return {"id": id, "type": "text", "text": text, "x": x, "y": y,
+            "width": width, "height": height, "font_scale": size,
+            "font_family": "bahnschrift", "font_weight": 700,
+            "text_align": "left", "vertical_align": "middle", "color": color}
+
+
+def _stadium_elements() -> list[dict[str, Any]]:
+    # Ordinary editable elements only: no asset, special renderer, or schema
+    # extension. Three subdued slash glyphs make the header's claw motif.
+    return [
+        _stadium_box("top_red", 0, 0, 0.5, 0.02, "#C8242B"),
+        _stadium_box("top_blue", 0.5, 0, 0.5, 0.02, "#1764AF"),
+        _stadium_text("stadium_brand", "TIGERS  /  FOOTBALL", 0.05, 0.04, 0.60, 0.055, 0.024, "#FFFFFF"),
+        _stadium_text("claw_mark", "///", 0.85, 0.04, 0.10, 0.065, 0.032, "#29456C"),
+        _stadium_box("header_rule", 0.05, 0.105, 0.90, 0.02, "#29456C"),
+    ]
+
+
+def _stadium_style(screen: dict[str, Any]) -> None:
+    screen["background"] = {"color": "#071B3A"}
+    for widget in screen["widgets"].values():
+        widget.update(font_family="bahnschrift", font_weight=700,
+                      color="#FFFFFF", text_align="center", z_index=2)
+
+
+def _stadium_event_screen(screen_id: str) -> dict[str, Any]:
+    screen = default_screen(screen_id)
+    _stadium_style(screen)
+    geometry = {
+        "event_phase": (0.30, 0.13, 0.40, 0.065, 0.024),
+        "event_title": (0.10, 0.205, 0.80, 0.07, 0.031),
+        "event_clock": (0.15, 0.28, 0.70, 0.29, 0.145),
+        "warmup": (0.20, 0.585, 0.60, 0.06, 0.022),
+        "home_name": (0.065, 0.70, 0.235, 0.21, 0.029),
+        "home_score": (0.305, 0.705, 0.165, 0.21, 0.088),
+        "away_score": (0.53, 0.705, 0.165, 0.21, 0.088),
+        "away_name": (0.70, 0.70, 0.235, 0.21, 0.029),
+    }
+    for id, (x, y, width, height, size) in geometry.items():
+        screen["widgets"][id].update(x=x, y=y, width=width, height=height, font_scale=size)
+    for id in ("home_name", "away_name", "event_title", "event_phase"):
+        screen["widgets"][id]["text_transform"] = "uppercase"
+    screen["widgets"]["event_phase"]["color"] = "#FFB703"
+    screen["widgets"]["warmup"]["color"] = "#A9BCD6"
+    screen["elements"] = _stadium_elements() + [
+        _stadium_box("home_panel", 0.04, 0.675, 0.445, 0.275, "#861E30"),
+        _stadium_box("away_panel", 0.515, 0.675, 0.445, 0.275, "#124C85"),
+        _stadium_box("home_accent", 0.04, 0.675, 0.445, 0.02, "#E13A46"),
+        _stadium_box("away_accent", 0.515, 0.675, 0.445, 0.02, "#3285D1"),
+    ]
+    return screen
+
+
+def _stadium_preset_layout() -> dict[str, Any]:
+    """Tigers Stadium: a static, editable three-screen presentation package.
+
+    The centre clock leads, team panels frame it, and field/status values
+    have dedicated space even when every optional field is populated.
+    Colours are fixed design choices, not bindings to saved team identity.
+    """
+    layout = default_layout("Tigers Stadium")
+    _stadium_style(layout)
+    geometry = {
+        "home_name": (0.055, 0.17, 0.235, 0.16, 0.026),
+        "home_score": (0.05, 0.33, 0.245, 0.30, 0.140),
+        "away_name": (0.71, 0.17, 0.235, 0.16, 0.026),
+        "away_score": (0.705, 0.33, 0.245, 0.30, 0.140),
+        "possession": (0.34, 0.13, 0.32, 0.055, 0.022),
+        "game_clock_label": (0.32, 0.205, 0.36, 0.045, 0.018),
+        "game_clock_value": (0.305, 0.26, 0.39, 0.25, 0.135),
+        "quarter": (0.32, 0.52, 0.36, 0.065, 0.029),
+        "play_clock_label": (0.35, 0.635, 0.17, 0.045, 0.019),
+        "play_clock_value": (0.53, 0.59, 0.13, 0.13, 0.060),
+        "status_message": (0.31, 0.725, 0.25, 0.055, 0.025),
+        "status_clock": (0.575, 0.725, 0.12, 0.055, 0.025),
+        "down": (0.055, 0.855, 0.13, 0.095, 0.042),
+        "distance": (0.225, 0.855, 0.17, 0.095, 0.042),
+        "ball_on": (0.445, 0.85, 0.49, 0.10, 0.022),
+    }
+    for id, (x, y, width, height, size) in geometry.items():
+        layout["widgets"][id].update(x=x, y=y, width=width, height=height, font_scale=size)
+    for id in ("home_name", "away_name", "quarter"):
+        layout["widgets"][id]["text_transform"] = "uppercase"
+    layout["widgets"]["game_clock_label"]["visible"] = True
+    for id in ("possession", "status_message", "status_clock"):
+        layout["widgets"][id]["color"] = "#FFB703"
+    for id in ("game_clock_label", "play_clock_label"):
+        layout["widgets"][id]["color"] = "#A9BCD6"
+    layout["elements"] = _stadium_elements() + [
+        _stadium_box("home_panel", 0.04, 0.145, 0.265, 0.535, "#861E30"),
+        _stadium_box("away_panel", 0.695, 0.145, 0.265, 0.535, "#124C85"),
+        _stadium_box("home_accent", 0.04, 0.145, 0.265, 0.02, "#E13A46"),
+        _stadium_box("away_accent", 0.695, 0.145, 0.265, 0.02, "#3285D1"),
+        _stadium_box("field_strip", 0.04, 0.80, 0.92, 0.16, "#102D53"),
+        _stadium_text("down_label", "DOWN", 0.055, 0.815, 0.13, 0.03, 0.015),
+        _stadium_text("distance_label", "TO GO", 0.225, 0.815, 0.17, 0.03, 0.015),
+        _stadium_text("field_label", "FIELD POSITION", 0.445, 0.815, 0.49, 0.03, 0.015),
+    ]
+    layout["screens"] = {id: _stadium_event_screen(id) for id in EVENT_SCREEN_IDS}
+    return layout
+
+
 def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
     return [
         {
@@ -2520,6 +2630,11 @@ def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
             "description": "Navy background with red accents and bahnschrift team "
             "names, from the Tigers brand baseline.",
             "screen": _tigers_event_screen("pregame"),
+        },
+        {
+            "id": "pregame_stadium", "name": "Tigers Stadium",
+            "description": "A dominant kickoff countdown with red and blue matchup panels.",
+            "screen": _stadium_event_screen("pregame"),
         },
     ]
 
@@ -2553,12 +2668,17 @@ def _raw_halftime_screen_presets() -> list[dict[str, Any]]:
             "names, from the Tigers brand baseline.",
             "screen": _tigers_event_screen("halftime"),
         },
+        {
+            "id": "halftime_stadium", "name": "Tigers Stadium",
+            "description": "A dominant return countdown, warmup line, and red and blue score panels.",
+            "screen": _stadium_event_screen("halftime"),
+        },
     ]
 
 
 def screen_preset_descriptors() -> dict[str, list[dict[str, Any]]]:
     """The built-in per-screen presets (spec v3 section 1.4), keyed by event
-    screen id: four pre-game, four halftime, each a complete normalized
+    screen id, each a complete normalized
     screen mini-document. Every preset here (and every game preset from
     :func:`preset_descriptors`) validates ``ok`` with zero warnings, and
     every id -- across both functions -- is globally unique.
@@ -2766,6 +2886,12 @@ def _raw_preset_descriptors() -> list[dict[str, Any]]:
             "description": "Navy background with red accents and bahnschrift team names, "
             "from the Tigers brand baseline.",
             "layout": _tigers_preset_layout(),
+        },
+        {
+            "id": "stadium", "name": "Tigers Stadium",
+            "description": "Large white scores, a dominant centre clock, red and blue team panels, "
+            "and a dedicated field strip. Matching Pre-game and Halftime presets are available.",
+            "layout": _stadium_preset_layout(),
         },
     ]
 
