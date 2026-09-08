@@ -44,5 +44,8 @@ where = ["src"]
 # Every file a window loads. An earlier pattern listed only "*.html", which
 # would have shipped the pages without their stylesheets or scripts. The
 # image pattern is for the TMSA crest a cutscene shows (added September 6,
-# 2026): a page-relative <img> the packaged build must actually contain.
-scoreboard = ["views/**/*.html", "views/**/*.css", "views/**/*.js", "views/**/*.png"]
+# 2026): a page-relative <img> the packaged build must actually contain. The
+# font patterns (September 7, 2026) carry the bundled Graduate face board.css
+# declares, with its SIL OFL licence text beside it.
+scoreboard = ["views/**/*.html", "views/**/*.css", "views/**/*.js", "views/**/*.png",
+              "views/**/fonts/*.ttf", "views/**/fonts/*.txt"]

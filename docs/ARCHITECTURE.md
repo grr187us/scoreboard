@@ -344,6 +344,69 @@ The layout library lives in its own file, `layouts.json`, in the same per-user S
 
 The active layout is deliberately not part of the 10 Hz view model. It changes rarely, so the host pushes it to the spectator, practice, and editor windows only when it actually changes (`window.applyLayout(...)`), the same push-on-change pattern already used for the display and data-folder preferences, rather than carrying it on every refresh tick.
 
+#### Optional widget formats and text fitting (September 7, 2026)
+
+Schema v3 widgets add `display_format` (default `default`) and `fit_text`
+(default `false`). Missing properties normalize silently, preserving older
+layouts. An unsupported format for that widget or a non-boolean fit flag
+rejects the draft. The game registry allow-lists ordinal quarter/down,
+value-only distance/ball position, and dots-only timeouts. The editor's
+Format choices come from widget descriptors; there is no arbitrary field
+binding or game-text editor. Event widgets support only the default format.
+
+The Python view model supplies the alternative strings from the same
+authoritative state; JavaScript selects an allowed binding, never strips
+suffixes, computes ordinals, or counts timeouts. The timeout formatter uses
+`MAX_TIMEOUTS`, emitting filled/hollow circles with no visible numeric count.
+Standard readouts and the operator's combined field status remain intact.
+
+The shared renderer retains its latest read-only model so a layout-only
+format change rebinds immediately, including with stopped clocks. Opt-in
+text fitting measures rendered text against available box space and shrinks
+it on one line without changing the string or the saved font size. Width
+comes from the laid-out text (so tabular digits and letter spacing count);
+height comes from the glyph ink via a 2D canvas `measureText`, because a
+display face such as Impact has a CSS line box nearly half again as tall as
+its digits and fitting to the line box would leave a score small in its
+panel. A fitted line therefore may overhang its box invisibly while the
+glyphs stay inside. A measurement cache avoids recomputing unchanged text
+each clock tick; content, box, font, or layout changes invalidate it.
+Scoreboard Grid enables fitting for team names, scores, clocks, and the stat
+readouts. This is presentation geometry only and has no path to game
+commands, persistence, or clock timing. `FONT_FAMILIES` gained
+`bahnschrift_condensed` (the Bahnschrift variable font's condensed named
+instance, present on Windows 10 and later) for the preset's labels.
+
+Every widget and element also carries `corner_cut` (0 to
+`MAX_CORNER_RADIUS`, default 0) and `cut_corners` (one of
+`CUT_CORNER_SIDES`: all/top/bottom/left/right, default all). The renderer
+sets `--cut` and a `data-cut-corners` attribute only when the cut is
+positive; `board.css` then clips the box to a chamfered polygon, turns the
+CSS border transparent so geometry is unchanged, and paints the border
+colour in a `::before` clipped with an even-odd ring between the outer
+polygon and a parallel inner one. The cut is capped at half the box so
+opposite cuts meet in a point. Missing properties normalise to the
+defaults, so older layouts are untouched.
+
+Box elements may be hairlines: `_element_minimum_size` returns
+`MIN_BOX_THICKNESS` (0.002) for a box and the widget minimum for text and
+image elements, in both validation and clamp repair; the editor's resize
+minimum mirrors it through `limits.min_box_thickness`. `MAX_ELEMENTS` is 40
+per screen. `FONT_FAMILIES` also gained `varsity`, whose stack is
+`'Jersey M54', Graduate, Impact, ...`: Graduate is the one bundled font
+(`views/shared/fonts/Graduate-Regular.ttf`, SIL OFL, declared by an
+`@font-face` in `board.css`, carried by the package-data patterns and the
+build script's required-file list); Jersey M54 is used only when the
+operator has installed it.
+
+A widget's text is written through `setWidgetText`, which wraps each colon
+in a `.clock-colon` span (the node's `textContent` is unchanged, so the
+fit and hide logic is unaffected); a per-font rule lifts Impact's colon,
+which the face draws low for lowercase text, to the centre of lining
+digits. The spectator's running-clock recolouring rules in `board.css` are
+commented out at the owner's request (September 7, 2026); the
+`running-game`/`running-play` classes are still applied.
+
 ### Cutscene packs (`cutscenes/`, `cutscenes.json`), added September 6, 2026
 
 Cutscenes are a host concern, exactly like the presentation layout and the

@@ -125,7 +125,7 @@ async function main(data) {
     // Restore a normal viewport for the remaining, non-matrix assertions.
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    for (const [model, expected] of [[data.zero, '0.0'], [data.blank, '—']]) {
+    for (const [model, expected] of [[data.zero, '0'], [data.blank, '—']]) {
       await page.evaluate(model => window.applyView(model), model);
       assert.equal(await widgetText(page, 'play_clock_value'), expected);
       assert.equal(await widgetHidden(page, 'play_clock_label'), false);
@@ -149,7 +149,7 @@ async function main(data) {
     await page.evaluate(model => window.applyView(model), data.zero); // must not throw
     await page.evaluate(() => { window.ScoreboardBoard.applyModel = window.originalApplyModel; });
     await page.evaluate(model => window.applyView(model), data.zero);
-    assert.equal(await widgetText(page, 'play_clock_value'), '0.0');
+    assert.equal(await widgetText(page, 'play_clock_value'), '0');
 
     // Re-establish a known-good baseline (default layout, a populated model)
     // before the layout-specific cases below.

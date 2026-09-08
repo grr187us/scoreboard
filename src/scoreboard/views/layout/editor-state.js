@@ -238,11 +238,14 @@
     background_opacity: 1,
     border_color: null,
     border_width: 0,
-    corner_radius: 0
+    corner_radius: 0,
+    corner_cut: 0,
+    cut_corners: 'all'
   };
 
   function withFillDefaults(target) {
-    var keys = ['background', 'background_opacity', 'border_color', 'border_width', 'corner_radius'];
+    var keys = ['background', 'background_opacity', 'border_color', 'border_width', 'corner_radius',
+                'corner_cut', 'cut_corners'];
     for (var i = 0; i < keys.length; i += 1) {
       target[keys[i]] = FILL_DEFAULTS[keys[i]];
     }

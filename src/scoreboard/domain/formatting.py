@@ -36,6 +36,8 @@ from __future__ import annotations
 import math
 from typing import Final
 
+from scoreboard.domain.state import MAX_TIMEOUTS
+
 #: Decimal places kept before rounding up. Ten significant sub-second digits are
 #: far finer than any clock the operator can observe, and coarse enough to
 #: absorb float representation error from monotonic arithmetic.
@@ -225,6 +227,20 @@ def format_possession(possession: str | None) -> str:
     return BLANK_DISPLAY
 
 
+def format_distance_value(distance: int | None) -> str:
+    """Standalone yards to go, without the combined readout's ampersand."""
+    if distance is None or distance < 0:
+        return BLANK_DISPLAY
+    return GOAL_TO_GO_DISPLAY if distance == 0 else str(distance)
+
+
+def format_timeout_dots(remaining: int | None) -> str:
+    """One filled/hollow circle per allowed timeout; unknown is not zero."""
+    if isinstance(remaining, bool) or not isinstance(remaining, int) or not 0 <= remaining <= MAX_TIMEOUTS:
+        return BLANK_DISPLAY
+    return " ".join("●" if index < remaining else "○" for index in range(MAX_TIMEOUTS))
+
+
 def format_timeouts(remaining: int | None) -> str:
     """``"TO 3"``, or blank when unknown. Never invents a maximum."""
 
@@ -262,6 +278,7 @@ __all__ = [
     "displayed_second",
     "format_ball_on",
     "format_distance",
+    "format_distance_value",
     "format_down",
     "format_down_and_distance",
     "format_event_countdown",
@@ -271,4 +288,5 @@ __all__ = [
     "format_possession",
     "format_status_clock",
     "format_timeouts",
+    "format_timeout_dots",
 ]

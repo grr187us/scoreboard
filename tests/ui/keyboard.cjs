@@ -65,6 +65,14 @@ async function main(data) {
       ['4','play_clock_preset',{seconds:40},'4','Load play clock 40 (stopped)'],
       ['p','play_clock_start',{},'P','Start play clock'],
       ['s','play_clock_stop',{},'S','Stop play clock'],
+      ['F13','game_clock_start',{},'F13','Start game clock'],
+      ['F14','game_clock_stop',{},'F14','Stop game clock'],
+      ['F15','play_clock_preset_start',{seconds:25},'F15','Load play clock 25 and start'],
+      ['F16','play_clock_preset_start',{seconds:40},'F16','Load play clock 40 and start'],
+      ['F17','play_clock_clear',{},'F17','Clear play clock'],
+      ['F18','play_clock_preset',{seconds:25},'F18','Load play clock 25 (stopped)'],
+      ['F19','play_clock_preset',{seconds:40},'F19','Load play clock 40 (stopped)'],
+      ['F20','play_clock_start',{},'F20','Start play clock'],
       ['q','quarter_forward',{},'Q','Quarter forward'],
       ['Shift+Q','quarter_back',{},'Shift+Q','Quarter back'],
       ['z','add_score',{team:'home',points:1},'Z','Home +1'],
@@ -84,7 +92,7 @@ async function main(data) {
       const model = await reset(); await press(key);
       assert.deepEqual(calls,[[command,{...args,source:'operator-keyboard'},model.revision]],key);
       assert.equal(results[0].accepted,true,key);
-      if (key==='2'||key==='4') assert.equal(results[0].view.clocks.play.running,false);
+      if (key==='2'||key==='4'||key==='F18'||key==='F19') assert.equal(results[0].view.clocks.play.running,false);
     }
     await reset(); await press('Space'); calls.length=0;
     await press('Space'); assert.equal(calls[0][0],'game_clock_stop');

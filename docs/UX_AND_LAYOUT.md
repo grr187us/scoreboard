@@ -553,7 +553,7 @@ Both are presentation defaults, not rules: an operator can restore any size thro
 
 **Images.** `+ Image` opens a file picker restricted to PNG, JPEG, GIF, and WebP; the file is read locally and embedded in the layout as a `data:` URI — nothing is referenced from disk or a network location. Each image is capped at 2 MB decoded, and every image in a layout together is capped at 6 MB decoded; a file over the limit, or of an unsupported type, is refused inline with a plain message, never a browser alert. Dropping an image file directly onto the canvas does the same thing as the toolbar button. An image element's aspect ratio is preserved when it is added, and its **fit** (contain/cover/fill) is adjustable afterward. SVG is not accepted (10.8) because an SVG file can itself contain a script.
 
-**Fonts.** Ten Windows system fonts are available for any widget or text element — Arial, Arial Black, Impact, Bahnschrift, Segoe UI, Segoe UI Black, Consolas, Georgia, Verdana, and Trebuchet MS — all already installed on Windows, so nothing is downloaded and the board keeps working with no network access.
+**Fonts.** Eleven Windows system faces are available for any widget or text element — Arial, Arial Black, Impact, Bahnschrift, Bahnschrift Condensed, Segoe UI, Segoe UI Black, Consolas, Georgia, Verdana, and Trebuchet MS — plus one bundled face, **Varsity block**: the SIL-Open-Font-License collegiate font Graduate, shipped inside the package (`views/shared/fonts/`, licence text beside it). The Varsity block stack prefers Jersey M54 when the operator has installed that font on the laptop (its licence is personal-use only, so it is not bundled) and otherwise uses Graduate. Both varsity faces are capitals-only, so `3rd` renders as `3RD` in them. Nothing is downloaded at run time and the board keeps working with no network access.
 
 **Presets.** The `Presets` menu (toolbar) and the presets gallery (Board inspector) offer four complete starting layouts: **Classic** (today's default, unchanged), **Broadcast bar** (a dark rounded bar across the bottom holding both team lines and the game clock, with the top of the board left empty for future media), **Big score** (both scores enlarged across the top half), and **Tigers navy** (a branded look using the project's navy/red palette). Choosing one replaces the current draft — after an inline confirmation if the draft has unsaved changes — but keeps the currently selected layout's *name*, so applying a preset is a starting point to keep editing and save, not an irreversible switch.
 
@@ -584,7 +584,7 @@ Validation is strict: a value out of range, an unrecognized color format, a widg
 - Physical controllers.
 - Binding a text element's wording to a game field, or any other way to make free text a computed value — a text element's content is fixed operator-typed copy (10.1, 10.4a).
 - SVG images — an SVG file can contain a script, which offline, unreviewed image handling should not have to defend against; only PNG/JPEG/GIF/WebP are accepted.
-- A font that is not already installed on Windows; nothing is downloaded (10.4a).
+- A font fetched at run time; the only non-system face is the bundled, OFL-licensed Graduate (10.4a, amended September 7, 2026).
 - A different hand-tuned layout per screen resolution.
 - Editing the operator panel's own layout.
 - A fourth screen — end of game, timeouts, or any other lifecycle moment beyond Game, Pre-game, and Halftime — is not added; the schema leaves room for one (`SCREEN_IDS`) but nothing beyond the three current screens is built.
@@ -638,7 +638,8 @@ down, distance, and field position. Pregame and halftime use a large central
 countdown with both names and scores below; halftime retains its phase and
 warmup line. All three share a navy background and a subdued three-slash
 header motif. The game-clock label is visible in this preset; timeouts remain
-hidden. Existing running-clock colours and cleared/expired values still apply.
+hidden. Cleared/expired values still apply; the wall's running-clock colour
+change is paused (see 10.11).
 
 To use the complete design, open **Advanced → Presentation layout…**, choose
 **Presets → Tigers Stadium → Apply** on **Game**, then repeat on **Pre-game**
@@ -654,6 +655,85 @@ mutation is introduced. The automated browser matrix checks all three screens
 at five viewports, maximum-length names and three-digit scores, plus clock,
 status, warmup, editor save/reopen, and cutscene restoration. Stadium viewing
 distance, brightness, HDMI geometry, and target-laptop evidence remain open.
+
+### 10.11 Scoreboard Grid and field formats (September 7, 2026)
+
+**Scoreboard Grid** is a Game preset built from the owner's scoreboard
+mockup and its exact palette (near-black `#030A12` background, `#071321`
+panels, `#F2F2F2` lettering, `#F5AE08` clock digits, royal-blue `#08439A`
+and deep-red `#A50021` banners): square-edged blue/red team panels with a
+banner, a block-digit score that fills the panel, a ruled-off TIME OUTS
+LEFT row of dots, an amber game clock over a gold-framed play clock, and a
+four-cell bar for QUARTER, BALL ON, DOWN, and TO GO showing `3rd`, `35`,
+`2nd`, and `7`. Timeouts show three circles per team: filled means
+remaining, hollow means used; no number accompanies them. `Goal` remains
+goal-to-go, and `OT`/`FINAL` retain their meaning. Panels, banners, the
+play-clock frame, and the stat bar's outer corners are chamfered (a
+straight 45-degree cut, as in the mockup), the team banner carries a thin
+silver outline, and two accent bars taper to a point either side of the
+heading. Each stat caption and the PLAY CLOCK caption sit between two short
+rules, as in the mockup. The game clock has no caption (its label widget is
+hidden; the operator may show it again). Lettering uses Bahnschrift
+Condensed for names and labels and the Varsity block face (Graduate, or
+Jersey M54 when installed) emboldened for every digit readout, including the
+Pre-game and Halftime countdown; the varsity face has no lowercase, so
+ordinals read `3RD`/`2ND`. Impact users get a lifted colon: that face sets
+it low, so the renderer centres a clock's colon between the digits.
+
+**Running-clock colour paused (September 7, 2026).** At the owner's
+request the wall no longer recolours the game clock green or the play clock
+red while it runs; each layout's own clock colour stays put. The operator
+window's own RUNNING/STOPPED cues (U-002) are unchanged. The rule is
+commented out in the shared board stylesheet and the running flags are
+still set, so it can be restored in one step.
+
+Open **Advanced → Presentation layout… → Game → Presets → Scoreboard
+Grid**, apply it, then **Save as… → Scoreboard Grid**. Applying it changes
+only Game; matching **Scoreboard Grid** Pre-game and Halftime presets (the
+same banners under a large countdown and a silver VS) are offered on those
+screens. This adds a built-in starting point, not an automatic replacement
+of the Default or any saved layout.
+
+The Text inspector now offers **Format** on the relevant widgets:
+
+| Widget | Choices |
+|---|---|
+| Quarter | Standard (`3rd Quarter`) or Ordinal only (`3rd`) |
+| Down | Standard or Ordinal only (both currently show `2nd`) |
+| Distance to go | Standard (`& 7`) or Value only (`7`, or `Goal`) |
+| Ball on | Standard (`AWAY 35`) or Value only (`35`) |
+| Home/away timeouts | Standard (`TO 2`) or Dots only (`● ● ○`) |
+
+Value-only ball position intentionally omits which team's half; use Standard
+if that context is wanted. Formats are fixed choices supplied by Python,
+not editable game text. Switching them updates the preview immediately,
+supports Undo/Redo, and persists when saved. Existing layouts retain their
+standard wording. Unknown down/distance values remain blank; unknown ball
+position remains `—`; zero timeouts means three hollow circles.
+
+**Corner cut** is a new fill setting beside Corner radius on every widget
+and element: a chamfer size (percent of board width, same limit as the
+radius) and a choice of which corners it trims (all, top, bottom, left, or
+right). Two opposite cuts on a thin bar meet in a point, which is how the
+Scoreboard Grid's header accents are drawn. A chamfered box keeps its
+border colour and width; a transparent fill stays see-through.
+
+**Shrink to fit on one line** is a new optional widget setting. Font size
+becomes the maximum: long content shrinks inside its box without truncation
+or wrapping. Fitting measures the glyphs themselves rather than the CSS line
+box, so a fitted Impact score fills its panel the way a real video board
+does. Scoreboard Grid enables this on team names, scores, both clocks, and
+the four stat readouts, so HOME/AWAY can be large while a 24-character
+school name still fits and a three-digit score or `Goal` never spills.
+Other layouts default to their existing sizing behavior. Typography uses
+installed Windows fonts (Bahnschrift Condensed is now a font choice) plus
+the bundled Graduate face; nothing is fetched at run time.
+
+**Hairline boxes.** A box element may now be as thin as 0.2 percent of the
+board (about two pixels at 1080p), so rules, underlines, and accent lines
+are ordinary boxes; text and image elements keep the 2 percent minimum so
+they stay legible and easy to grab. The per-screen element limit rose from
+24 to 40 to leave room for such trim.
 
 ## 11. Field Assistant window (added September 5, 2026)
 

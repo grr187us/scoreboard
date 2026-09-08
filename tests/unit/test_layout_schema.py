@@ -89,9 +89,9 @@ WIDGET_GEOMETRY_PROPERTIES = frozenset({
 WIDGET_STYLE_PROPERTIES = frozenset({
     "font_family", "letter_spacing", "text_transform", "text_effect",
     "background", "background_opacity", "border_color", "border_width",
-    "corner_radius", "padding",
+    "corner_radius", "corner_cut", "cut_corners", "padding",
 })
-WIDGET_PROPERTIES = WIDGET_GEOMETRY_PROPERTIES | WIDGET_STYLE_PROPERTIES
+WIDGET_PROPERTIES = WIDGET_GEOMETRY_PROPERTIES | WIDGET_STYLE_PROPERTIES | {"display_format", "fit_text"}
 
 #: A hand-built valid PNG, GIF, and JPEG-magic payload for exercising image
 #: validation for real rather than mocking base64 decoding away.
@@ -264,7 +264,8 @@ class DefaultLayoutTests(unittest.TestCase):
         expected_style_defaults = {
             "font_family": "arial", "letter_spacing": 0.0, "text_transform": "none",
             "text_effect": "none", "background": None, "background_opacity": 1.0,
-            "border_color": None, "border_width": 0.0, "corner_radius": 0.0, "padding": 0.0,
+            "border_color": None, "border_width": 0.0, "corner_radius": 0.0,
+            "corner_cut": 0.0, "cut_corners": "all", "padding": 0.0,
         }
         # F3 (crowd-facing game-state messages) adds status_message/
         # status_clock at the end of WIDGET_IDS -- new v3 widgets, not part
@@ -377,7 +378,8 @@ class WidgetMetadataTests(unittest.TestCase):
                     "max_font_scale", "font_weights", "text_alignments",
                     "vertical_alignments", "schema_version",
                     "min_letter_spacing", "max_letter_spacing", "max_border_width",
-                    "max_corner_radius", "max_padding", "min_opacity", "max_elements",
+                    "max_corner_radius", "cut_corner_sides", "max_padding", "min_opacity", "max_elements",
+                    "min_box_thickness",
                     "max_text_length", "max_text_lines", "max_image_bytes",
                     "max_total_image_bytes", "font_families", "text_transforms",
                     "text_effects", "image_fits", "element_types", "widget_groups"):
@@ -648,15 +650,17 @@ class ScreenTests(unittest.TestCase):
         by_screen = screen_preset_descriptors()
 
         self.assertEqual(set(by_screen), set(EVENT_SCREEN_IDS))
-        self.assertEqual(len(by_screen["pregame"]), 5)
-        self.assertEqual(len(by_screen["halftime"]), 5)
+        self.assertEqual(len(by_screen["pregame"]), 6)
+        self.assertEqual(len(by_screen["halftime"]), 6)
         self.assertEqual(
             [p["id"] for p in by_screen["pregame"]],
-            ["pregame_classic", "pregame_matchup", "pregame_broadcast", "pregame_tigers", "pregame_stadium"],
+            ["pregame_classic", "pregame_matchup", "pregame_broadcast", "pregame_tigers",
+             "pregame_stadium", "pregame_grid"],
         )
         self.assertEqual(
             [p["id"] for p in by_screen["halftime"]],
-            ["halftime_classic", "halftime_score_first", "halftime_broadcast", "halftime_tigers", "halftime_stadium"],
+            ["halftime_classic", "halftime_score_first", "halftime_broadcast", "halftime_tigers",
+             "halftime_stadium", "halftime_grid"],
         )
 
         game_preset_ids = {p["id"] for p in preset_descriptors()}
@@ -778,6 +782,8 @@ class WidgetV2StyleTests(unittest.TestCase):
             self.assertIsNone(widget["border_color"])
             self.assertEqual(widget["border_width"], 0.0)
             self.assertEqual(widget["corner_radius"], 0.0)
+            self.assertEqual(widget["corner_cut"], 0.0)
+            self.assertEqual(widget["cut_corners"], "all")
             self.assertEqual(widget["padding"], 0.0)
 
     def test_valid_style_values_are_accepted_and_normalised(self) -> None:
@@ -785,11 +791,13 @@ class WidgetV2StyleTests(unittest.TestCase):
             widget_id="quarter", font_family="bahnschrift", letter_spacing=0.05,
             text_transform="uppercase", text_effect="shadow", background="#abc",
             background_opacity=0.5, border_color="#123456", border_width=0.01,
-            corner_radius=0.02, padding=0.01,
+            corner_radius=0.02, corner_cut=0.015, cut_corners="top", padding=0.01,
         ))
 
         self.assertTrue(validation.ok, [i.message for i in validation.errors])
         widget = validation.layout["widgets"]["quarter"]
+        self.assertEqual(widget["corner_cut"], 0.015)
+        self.assertEqual(widget["cut_corners"], "top")
         self.assertEqual(widget["font_family"], "bahnschrift")
         self.assertEqual(widget["text_transform"], "uppercase")
         self.assertEqual(widget["text_effect"], "shadow")
@@ -825,6 +833,10 @@ class WidgetV2StyleTests(unittest.TestCase):
             ("border_width", 0.5, "BORDER_WIDTH"),
             ("corner_radius", -0.01, "CORNER_RADIUS"),
             ("corner_radius", 0.5, "CORNER_RADIUS"),
+            ("corner_cut", -0.01, "CORNER_CUT"),
+            ("corner_cut", 0.5, "CORNER_CUT"),
+            ("cut_corners", "diagonal", "CUT_CORNERS"),
+            ("cut_corners", 3, "CUT_CORNERS"),
             ("padding", -0.01, "PADDING"),
             ("padding", 0.5, "PADDING"),
         ]
@@ -1568,8 +1580,11 @@ class PresetTests(unittest.TestCase):
     def test_every_preset_validates_clean_with_unique_ids(self) -> None:
         presets = preset_descriptors()
 
-        self.assertEqual(len(presets), 5)
-        self.assertEqual([p["id"] for p in presets], ["classic", "broadcast", "big_score", "tigers", "stadium"])
+        self.assertEqual(len(presets), 6)
+        self.assertEqual(
+            [p["id"] for p in presets],
+            ["classic", "broadcast", "big_score", "tigers", "stadium", "grid"],
+        )
         seen_ids = set()
         for preset in presets:
             with self.subTest(preset=preset["id"]):
@@ -1620,6 +1635,8 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(presets["tigers"]["screens"]["halftime"], halftime_by_id["halftime_tigers"])
         self.assertEqual(presets["stadium"]["screens"]["pregame"], pregame_by_id["pregame_stadium"])
         self.assertEqual(presets["stadium"]["screens"]["halftime"], halftime_by_id["halftime_stadium"])
+        self.assertEqual(presets["grid"]["screens"]["pregame"], pregame_by_id["pregame_grid"])
+        self.assertEqual(presets["grid"]["screens"]["halftime"], halftime_by_id["halftime_grid"])
 
     def test_the_tigers_preset_uses_the_brand_baseline_colours(self) -> None:
         tigers = next(p for p in preset_descriptors() if p["id"] == "tigers")

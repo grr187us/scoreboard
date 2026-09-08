@@ -68,6 +68,9 @@ REQUIRED_FILES: tuple[str, ...] = (
     "_internal/scoreboard/views/shared/board.css",
     "_internal/scoreboard/views/shared/board.js",
     "_internal/scoreboard/views/shared/render.js",
+    # The one bundled font (SIL OFL) and its licence text, loaded by board.css.
+    "_internal/scoreboard/views/shared/fonts/Graduate-Regular.ttf",
+    "_internal/scoreboard/views/shared/fonts/Graduate-OFL.txt",
 )
 
 

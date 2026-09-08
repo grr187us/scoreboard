@@ -52,8 +52,13 @@
     return scale;
   }
 
-  function minSize(app) {
+  function minSize(app, item) {
     var limits = (app.state && app.state.limits) || {};
+    if (item && item.type === 'box') {
+      // A box may be a hairline rule; mirrors MIN_BOX_THICKNESS.
+      var thickness = typeof limits.min_box_thickness === 'number' ? limits.min_box_thickness : 0.002;
+      return { width: thickness, height: thickness };
+    }
     return {
       width: typeof limits.min_widget_width === 'number' ? limits.min_widget_width : 0.02,
       height: typeof limits.min_widget_height === 'number' ? limits.min_widget_height : 0.02
@@ -215,7 +220,7 @@
     var bounds = S.boundsFor(doc, kind);
     var targets = S.snapTargets(doc, id);
     var scale = precisionScale(app);
-    var minimum = minSize(app);
+    var minimum = minSize(app, item);
     var right = item.x + item.width;
     var bottom = item.y + item.height;
 

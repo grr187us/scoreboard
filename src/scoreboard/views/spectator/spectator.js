@@ -55,10 +55,10 @@
         eventBoard.dataset.screen = screenId;
         B.applyLayout(eventBoard, B.screenDocument(activeLayout(), screenId));
       }
-      B.applyModel(gameBoard, model);
-      B.applyModel(eventBoard, model);
       R.show(gameBoard, !eventMode);
       R.show(eventBoard, eventMode);
+      B.applyModel(gameBoard, model);
+      B.applyModel(eventBoard, model);
       // Colour supplements, never replaces, the textual clock status shown to
       // the operator.
       R.setFlag(gameBoard.querySelector('[data-widget="game_clock_value"]'), 'running-game', model.clocks.game.running);

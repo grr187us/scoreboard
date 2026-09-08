@@ -261,6 +261,15 @@ Numpad behavior and actual Windows repeat timing require target-laptop evidence.
 | D-008 | Because this is the stadium's only play-clock display, the spectator play clock MUST remain highly legible whenever it is active, and display loss/recovery tests MUST explicitly verify play-clock continuity. | Fullscreen and close/reopen tests with an active play clock. |
 | D-009 | The spectator board MUST always retain the `PLAY CLOCK` label during game mode. A cleared clock displays `—`, while a naturally expired uncleared clock displays `0.0`. Live periods display as `1st Quarter` through `4th Quarter`; the saved authoritative quarter label remains compact. | View-model and browser render tests. |
 
+**D-009 presentation amendment, September 7, 2026:** following the recorded
+whole-seconds clock decision, natural play-clock expiry displays `0`, while
+clear remains `—`. Standard quarter wording remains `3rd Quarter`; an
+operator may choose the new Ordinal only format (`3rd`) in the layout
+editor. Scoreboard Grid chooses ordinal quarter/down, value-only yards
+to go and ball position, and filled/hollow timeout dots. These are alternate
+views of the same state, not rule changes. See
+[the format choices](UX_AND_LAYOUT.md#1011-scoreboard-grid-and-field-formats-september-7-2026).
+
 ## 8. Persistence, recovery, and logging
 
 | ID | Requirement | Verification |

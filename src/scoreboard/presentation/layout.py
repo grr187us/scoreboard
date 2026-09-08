@@ -92,6 +92,10 @@ FONT_WEIGHTS: Final[tuple[int, ...]] = (400, 500, 600, 700, 800, 900)
 
 MIN_WIDGET_WIDTH: Final[float] = 0.02
 MIN_WIDGET_HEIGHT: Final[float] = 0.02
+#: A box element may be a hairline rule (a divider, an underline, an accent
+#: line); text and image elements keep the widget minimum so they stay
+#: legible and grabbable in the editor.
+MIN_BOX_THICKNESS: Final[float] = 0.002
 #: Fraction of the logical canvas WIDTH -- see the module docstring.
 MIN_FONT_SCALE: Final[float] = 0.010
 MAX_FONT_SCALE: Final[float] = 0.300
@@ -116,11 +120,16 @@ MIN_LETTER_SPACING: Final[float] = -0.05
 MAX_LETTER_SPACING: Final[float] = 0.30
 MAX_BORDER_WIDTH: Final[float] = 0.02
 MAX_CORNER_RADIUS: Final[float] = 0.10
+#: Which corners a ``corner_cut`` (a 45-degree chamfer, sized like a corner
+#: radius) trims. "top" is both top corners, "left" both left corners, etc.,
+#: so a banner can sit flush inside a chamfered panel and a bar can end in a
+#: point.
+CUT_CORNER_SIDES: Final[tuple[str, ...]] = ("all", "top", "bottom", "left", "right")
 MAX_PADDING: Final[float] = 0.05
 MIN_OPACITY: Final[float] = 0.05
 
 #: v2 element limits (spec section 1.4 / 1.6).
-MAX_ELEMENTS: Final[int] = 24
+MAX_ELEMENTS: Final[int] = 40
 MAX_TEXT_LENGTH: Final[int] = 120
 MAX_TEXT_LINES: Final[int] = 4
 MAX_IMAGE_BYTES: Final[int] = 2_000_000
@@ -131,24 +140,32 @@ TEXT_EFFECTS: Final[tuple[str, ...]] = ("none", "shadow", "outline")
 IMAGE_FITS: Final[tuple[str, ...]] = ("contain", "cover", "fill")
 ELEMENT_TYPES: Final[tuple[str, ...]] = ("text", "image", "box")
 
-#: Windows system fonts only -- nothing is ever downloaded (spec section 1.5).
+#: Windows system fonts (spec section 1.5) plus one bundled face: Graduate,
+#: an SIL Open Font License collegiate block font shipped in
+#: ``views/shared/fonts`` and declared by ``board.css``. Nothing is ever
+#: downloaded at run time. The "varsity" stack prefers Jersey M54 when the
+#: operator has installed it (its licence is personal-use only, so it is not
+#: bundled) and falls back to Graduate.
 FONT_FAMILIES: Final[dict[str, str]] = {
     "arial": "Arial, Helvetica, sans-serif",
     "arial_black": "'Arial Black', Arial, sans-serif",
     "impact": "Impact, 'Arial Black', sans-serif",
     "bahnschrift": "Bahnschrift, 'Segoe UI', Arial, sans-serif",
+    "bahnschrift_condensed": "'Bahnschrift Condensed', Bahnschrift, 'Segoe UI', Arial, sans-serif",
     "segoe": "'Segoe UI', Segoe, Arial, sans-serif",
     "segoe_black": "'Segoe UI Black', 'Segoe UI', Arial, sans-serif",
     "consolas": "Consolas, 'Courier New', monospace",
     "georgia": "Georgia, 'Times New Roman', serif",
     "verdana": "Verdana, Geneva, sans-serif",
     "trebuchet": "'Trebuchet MS', Arial, sans-serif",
+    "varsity": "'Jersey M54', Graduate, Impact, 'Arial Black', sans-serif",
 }
 FONT_FAMILY_LABELS: Final[dict[str, str]] = {
     "arial": "Arial", "arial_black": "Arial Black", "impact": "Impact",
-    "bahnschrift": "Bahnschrift", "segoe": "Segoe UI", "segoe_black": "Segoe UI Black",
+    "bahnschrift": "Bahnschrift", "bahnschrift_condensed": "Bahnschrift Condensed",
+    "segoe": "Segoe UI", "segoe_black": "Segoe UI Black",
     "consolas": "Consolas", "georgia": "Georgia", "verdana": "Verdana",
-    "trebuchet": "Trebuchet MS",
+    "trebuchet": "Trebuchet MS", "varsity": "Varsity block (Jersey M54 / Graduate)",
 }
 
 #: Not part of the public schema constants above, but the same "1-40, no
@@ -165,7 +182,8 @@ _KNOWN_WIDGET_PROPERTIES: Final[frozenset[str]] = frozenset({
     "text_align", "vertical_align", "font_weight", "z_index",
     "font_family", "letter_spacing", "text_transform", "text_effect",
     "background", "background_opacity", "border_color", "border_width",
-    "corner_radius", "padding",
+    "corner_radius", "padding", "display_format", "fit_text",
+    "corner_cut", "cut_corners",
 })
 
 _COLOR_PATTERN: Final[re.Pattern[str]] = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -226,6 +244,21 @@ WIDGET_FIELDS: Final[dict[str, str | None]] = {
 WIDGET_TEXTS: Final[dict[str, str]] = {
     "game_clock_label": "GAME CLOCK",
     "play_clock_label": "PLAY CLOCK",
+}
+
+# Allow-listed presentation bindings, never arbitrary paths or edited game text.
+# Omission preserves every existing saved layout's wording.
+WIDGET_FORMAT_FIELDS: Final[dict[str, dict[str, str]]] = {
+    "quarter": {"ordinal": "quarter"},
+    "down": {"ordinal": "football.down_display"},
+    "distance": {"value": "football.distance_value_display"},
+    "ball_on": {"value": "football.ball_on_value_display"},
+    "home_timeouts": {"dots": "football.home_timeouts_dots"},
+    "away_timeouts": {"dots": "football.away_timeouts_dots"},
+}
+WIDGET_FORMAT_LABELS: Final[dict[str, str]] = {
+    "default": "Standard", "ordinal": "Ordinal only (1st, 2nd…)",
+    "value": "Value only", "dots": "Dots only (filled = remaining)",
 }
 
 #: Widgets whose value can legitimately be absent from a snapshot. When the
@@ -329,6 +362,7 @@ def registry_for(kind: str) -> WidgetRegistry:
 _BASE_ELEMENT_PROPERTIES: Final[frozenset[str]] = frozenset({
     "id", "type", "visible", "x", "y", "width", "height", "z_index", "opacity",
     "background", "background_opacity", "border_color", "border_width", "corner_radius",
+    "corner_cut", "cut_corners",
 })
 #: A text element additionally carries the full text style set.
 _TEXT_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES | frozenset({
@@ -364,6 +398,8 @@ _STYLE_DEFAULTS: Final[dict[str, Any]] = {
     "border_color": None,
     "border_width": 0.0,
     "corner_radius": 0.0,
+    "corner_cut": 0.0,
+    "cut_corners": "all",
     "padding": 0.0,
 }
 
@@ -517,6 +553,8 @@ _DEFAULT_WIDGETS: Final[dict[str, dict[str, Any]]] = {
 #: effects) while still being a complete v2 document.
 for _widget in _DEFAULT_WIDGETS.values():
     _widget.update(_STYLE_DEFAULTS)
+    _widget["display_format"] = "default"
+    _widget["fit_text"] = False
 del _widget
 
 # --- Default event-screen widgets (spec v3 section 1.2) ---------------------
@@ -564,6 +602,8 @@ def _build_default_event_widget(widget_id: str, screen_id: str) -> dict[str, Any
         "font_weight": geometry["font_weight"], "z_index": 0,
     }
     widget.update(_STYLE_DEFAULTS)
+    widget["display_format"] = "default"
+    widget["fit_text"] = False
     return widget
 
 
@@ -939,6 +979,35 @@ def _validate_fill_and_border(
     else:
         result["corner_radius"] = _round_coordinate(number)
 
+    # A chamfer shares the radius limit; the two may be combined but the
+    # chamfer wins visually because it clips the box outline.
+    value = raw.get("corner_cut", defaults["corner_cut"])
+    ok, number = _is_finite_number(value)
+    if not ok or not 0.0 <= number <= MAX_CORNER_RADIUS:
+        errors.append(
+            LayoutIssue(
+                "CORNER_CUT",
+                f"{label}: corner_cut must be between 0.0 and {MAX_CORNER_RADIUS}; got {value!r}.",
+                subject_id,
+            )
+        )
+        result["corner_cut"] = defaults["corner_cut"]
+    else:
+        result["corner_cut"] = _round_coordinate(number)
+
+    value = raw.get("cut_corners", defaults["cut_corners"])
+    if not isinstance(value, str) or value not in CUT_CORNER_SIDES:
+        errors.append(
+            LayoutIssue(
+                "CUT_CORNERS",
+                f"{label}: cut_corners must be one of {list(CUT_CORNER_SIDES)}; got {value!r}.",
+                subject_id,
+            )
+        )
+        result["cut_corners"] = defaults["cut_corners"]
+    else:
+        result["cut_corners"] = value
+
     return result
 
 
@@ -1065,6 +1134,18 @@ def _validate_widget(
             )
 
     normalized: dict[str, Any] = {"id": widget_id}
+
+    formats = WIDGET_FORMAT_FIELDS.get(widget_id, {}) if registry is WIDGET_REGISTRIES["game"] else {}
+    display_format = raw.get("display_format", "default")
+    if not isinstance(display_format, str) or display_format not in ("default", *formats):
+        errors.append(LayoutIssue("DISPLAY_FORMAT", f"{label}: unsupported display format.", widget_id))
+        display_format = "default"
+    normalized["display_format"] = display_format
+    fit_text = raw.get("fit_text", False)
+    if not isinstance(fit_text, bool):
+        errors.append(LayoutIssue("FIT_TEXT", f"{label}: shrink to fit must be true or false.", widget_id))
+        fit_text = False
+    normalized["fit_text"] = fit_text
 
     visible = raw.get("visible", default["visible"])
     if not isinstance(visible, bool):
@@ -1474,7 +1555,8 @@ def _validate_element(
         else:
             normalized[coordinate] = _round_coordinate(number)
 
-    for dimension, minimum in (("width", MIN_WIDGET_WIDTH), ("height", MIN_WIDGET_HEIGHT)):
+    minimum_width, minimum_height = _element_minimum_size(normalized_type)
+    for dimension, minimum in (("width", minimum_width), ("height", minimum_height)):
         value = raw.get(dimension, _DEFAULT_ELEMENT_GEOMETRY[dimension])
         ok, number = _is_finite_number(value)
         if not ok or not 0.0 <= number <= 1.0:
@@ -1649,6 +1731,14 @@ def _validate_element(
     return normalized, errors, warnings, element_id_for_issues, image_bytes
 
 
+def _element_minimum_size(element_type: str) -> tuple[float, float]:
+    """Smallest width and height an element of this type may have."""
+
+    if element_type == "box":
+        return MIN_BOX_THICKNESS, MIN_BOX_THICKNESS
+    return MIN_WIDGET_WIDTH, MIN_WIDGET_HEIGHT
+
+
 def _clamp_element(raw: Any, safe_area: Mapping[str, float]) -> dict[str, Any] | None:
     """Best-effort geometry repair for one element (spec section 1.4): every
     non-geometry property passes through untouched; an element with no usable
@@ -1671,15 +1761,16 @@ def _clamp_element(raw: Any, safe_area: Mapping[str, float]) -> dict[str, Any] |
     is_text = element_type == "text"
     min_x = safe_area["left"] if is_text else 0.0
     min_y = safe_area["top"] if is_text else 0.0
-    max_width = max(MIN_WIDGET_WIDTH, (1.0 - safe_area["left"] - safe_area["right"]) if is_text else 1.0)
-    max_height = max(MIN_WIDGET_HEIGHT, (1.0 - safe_area["top"] - safe_area["bottom"]) if is_text else 1.0)
+    minimum_width, minimum_height = _element_minimum_size(element_type)
+    max_width = max(minimum_width, (1.0 - safe_area["left"] - safe_area["right"]) if is_text else 1.0)
+    max_height = max(minimum_height, (1.0 - safe_area["top"] - safe_area["bottom"]) if is_text else 1.0)
 
     width, _ = _clamp_number(
-        raw.get("width", _DEFAULT_ELEMENT_GEOMETRY["width"]), MIN_WIDGET_WIDTH, max_width,
+        raw.get("width", _DEFAULT_ELEMENT_GEOMETRY["width"]), minimum_width, max_width,
         _DEFAULT_ELEMENT_GEOMETRY["width"],
     )
     height, _ = _clamp_number(
-        raw.get("height", _DEFAULT_ELEMENT_GEOMETRY["height"]), MIN_WIDGET_HEIGHT, max_height,
+        raw.get("height", _DEFAULT_ELEMENT_GEOMETRY["height"]), minimum_height, max_height,
         _DEFAULT_ELEMENT_GEOMETRY["height"],
     )
     max_edge_x = (1.0 - safe_area["right"]) if is_text else 1.0
@@ -2091,7 +2182,7 @@ _CLAMP_PASSTHROUGH_PROPERTIES: Final[tuple[str, ...]] = (
     "visible", "color", "text_align", "vertical_align", "font_weight", "z_index",
     "font_family", "letter_spacing", "text_transform", "text_effect",
     "background", "background_opacity", "border_color", "border_width",
-    "corner_radius", "padding",
+    "corner_radius", "corner_cut", "cut_corners", "padding",
 )
 
 
@@ -2291,6 +2382,10 @@ def widget_descriptors(kind: str = "game") -> list[dict[str, Any]]:
             "optional": widget_id in registry.optional,
             "group": registry.groups[widget_id],
             "default": default_screen_widget(default_screen_id, widget_id),
+            "formats": [
+                {"id": format_id, "label": WIDGET_FORMAT_LABELS[format_id]}
+                for format_id in ("default", *(WIDGET_FORMAT_FIELDS.get(widget_id, {}) if kind == "game" else {}))
+            ],
         }
         for widget_id in registry.ids
     ]
@@ -2318,6 +2413,10 @@ def screen_descriptors() -> list[dict[str, Any]]:
                 "optional": widget_id in registry.optional,
                 "group": registry.groups[widget_id],
                 "default": default_screen_widget(screen_id, widget_id),
+                "formats": [
+                    {"id": format_id, "label": WIDGET_FORMAT_LABELS[format_id]}
+                    for format_id in ("default", *(WIDGET_FORMAT_FIELDS.get(widget_id, {}) if kind == "game" else {}))
+                ],
             }
             for widget_id in registry.ids
         ]
@@ -2602,6 +2701,224 @@ def _stadium_preset_layout() -> dict[str, Any]:
     return layout
 
 
+# --- "Scoreboard Grid" preset: the owner's video-board mockup ---------------
+#: Square-edged blue/red team panels with a banner, an oversized white score,
+#: and filled/hollow timeout dots; an amber game clock over a gold-framed play
+#: clock; and a four-cell stat bar (quarter, ball on, down, to go) across the
+#: bottom. Every colour below is taken from the owner's mockup palette.
+
+_GRID_BG: Final[str] = "#030A12"          # near-black navy
+_GRID_PANEL: Final[str] = "#071321"       # dark navy panel fill
+_GRID_WHITE: Final[str] = "#F2F2F2"       # scores, labels, field values
+_GRID_AMBER: Final[str] = "#F5AE08"       # clock digits
+_GRID_GOLD: Final[str] = "#E9A51A"        # play-clock frame
+_GRID_HOME_BANNER: Final[str] = "#08439A"
+_GRID_HOME_DOTS: Final[str] = "#0959BA"
+_GRID_HOME_EDGE: Final[str] = "#2869BC"
+_GRID_AWAY_BANNER: Final[str] = "#A50021"
+_GRID_AWAY_DOTS: Final[str] = "#C60029"
+_GRID_AWAY_EDGE: Final[str] = "#D0002C"
+_GRID_RULE: Final[str] = "#777B80"        # neutral dividers
+_GRID_SILVER: Final[str] = "#C5C9CD"      # metallic heading
+
+#: Chamfer size (fraction of canvas width) on every panel corner.
+_GRID_CUT: Final[float] = 0.012
+#: Hairline accent rules (fraction of canvas width; about three pixels at
+#: 1080p).
+_GRID_RULE_H: Final[float] = 0.003
+
+#: Condensed bold lettering for names and labels; Impact for the block digits.
+_GRID_LABEL_FONT: Final[str] = "bahnschrift_condensed"
+_GRID_DIGIT_FONT: Final[str] = "varsity"
+
+
+def _grid_box(id: str, x: float, y: float, width: float, height: float,
+              color: str | None, **extra: Any) -> dict[str, Any]:
+    element = {"id": id, "type": "box", "x": x, "y": y, "width": width,
+               "height": height, "background": color, "z_index": 0}
+    element.update(extra)
+    return element
+
+
+def _grid_text(id: str, text: str, x: float, y: float, width: float,
+               height: float, size: float, color: str = _GRID_WHITE, **extra: Any) -> dict[str, Any]:
+    element = {"id": id, "type": "text", "text": text, "x": x, "y": y,
+               "width": width, "height": height, "font_scale": size,
+               "font_family": _GRID_LABEL_FONT, "font_weight": 700,
+               "letter_spacing": 0.06, "text_align": "center",
+               "vertical_align": "middle", "color": color, "z_index": 2}
+    element.update(extra)
+    return element
+
+
+def _grid_header_elements() -> list[dict[str, Any]]:
+    """Corner stripes and the silver heading, shared by every Grid screen."""
+    # Over each team panel: a hairline the full width of the panel with a
+    # short, heavier tab riding on its inner end that tapers to a point
+    # toward the heading, as in the mockup's header trim.
+    return [
+        _grid_box("home_rule", 0.025, 0.034, 0.31, _GRID_RULE_H, _GRID_HOME_EDGE),
+        _grid_box("home_tab", 0.185, 0.02, 0.15, 0.017, _GRID_HOME_EDGE,
+                  corner_cut=0.006, cut_corners="right"),
+        _grid_box("away_rule", 0.665, 0.034, 0.31, _GRID_RULE_H, _GRID_AWAY_EDGE),
+        _grid_box("away_tab", 0.665, 0.02, 0.15, 0.017, _GRID_AWAY_EDGE,
+                  corner_cut=0.006, cut_corners="left"),
+        _grid_text("title", "HIGH SCHOOL FOOTBALL", 0.30, 0.04, 0.40, 0.045, 0.019,
+                   _GRID_SILVER, letter_spacing=0.16),
+    ]
+
+
+def _grid_event_screen(screen_id: str) -> dict[str, Any]:
+    screen = default_screen(screen_id)
+    geometry = {
+        "event_phase": (0.30, 0.105, 0.40, 0.06, 0.028),
+        "event_title": (0.10, 0.17, 0.80, 0.07, 0.034),
+        "event_clock": (0.15, 0.25, 0.70, 0.30, 0.150),
+        "warmup": (0.20, 0.565, 0.60, 0.05, 0.022),
+        "home_name": (0.045, 0.685, 0.27, 0.10, 0.046),
+        "home_score": (0.045, 0.79, 0.27, 0.16, 0.090),
+        "away_name": (0.685, 0.685, 0.27, 0.10, 0.046),
+        "away_score": (0.685, 0.79, 0.27, 0.16, 0.090),
+    }
+    for id, (x, y, width, height, size) in geometry.items():
+        screen["widgets"][id].update(
+            x=x, y=y, width=width, height=height, font_scale=size, z_index=2,
+            font_family=_GRID_LABEL_FONT, font_weight=700, color=_GRID_WHITE,
+            text_align="center", vertical_align="middle",
+        )
+    screen["widgets"]["event_phase"].update(color=_GRID_AMBER, letter_spacing=0.16)
+    screen["widgets"]["event_title"].update(color=_GRID_SILVER, letter_spacing=0.06)
+    screen["widgets"]["event_clock"].update(color=_GRID_AMBER, font_family=_GRID_DIGIT_FONT,
+                                            fit_text=True)
+    screen["widgets"]["warmup"].update(color=_GRID_SILVER, letter_spacing=0.06)
+    for side in ("home", "away"):
+        screen["widgets"][f"{side}_name"].update(text_transform="uppercase", fit_text=True)
+        screen["widgets"][f"{side}_score"].update(font_family=_GRID_DIGIT_FONT, font_weight=700,
+                                                  fit_text=True)
+    screen["background"] = {"color": _GRID_BG}
+    # The countdown stays large and central; the matchup panels along the
+    # bottom reuse the game board's banners so the switch to the game board
+    # at kickoff keeps the same shapes in the same places.
+    screen["elements"] = _grid_header_elements() + [
+        _grid_box("home_panel", 0.025, 0.665, 0.31, 0.30, _GRID_PANEL,
+                  border_color=_GRID_HOME_EDGE, border_width=0.0015, corner_cut=_GRID_CUT),
+        _grid_box("home_banner", 0.025, 0.665, 0.31, 0.135, _GRID_HOME_BANNER, z_index=1,
+                  border_color=_GRID_SILVER, border_width=0.0015,
+                  corner_cut=_GRID_CUT, cut_corners="top"),
+        _grid_box("away_panel", 0.665, 0.665, 0.31, 0.30, _GRID_PANEL,
+                  border_color=_GRID_AWAY_EDGE, border_width=0.0015, corner_cut=_GRID_CUT),
+        _grid_box("away_banner", 0.665, 0.665, 0.31, 0.135, _GRID_AWAY_BANNER, z_index=1,
+                  border_color=_GRID_SILVER, border_width=0.0015,
+                  corner_cut=_GRID_CUT, cut_corners="top"),
+        _grid_text("versus", "VS", 0.40, 0.73, 0.20, 0.17, 0.075, _GRID_SILVER,
+                   letter_spacing=0.10),
+    ]
+    return screen
+
+
+def _grid_preset_layout() -> dict[str, Any]:
+    """Scoreboard Grid: the owner's square-edged video-board design.
+
+    Quarter and down show ordinals (``3rd``, ``2nd``), yards to go and the
+    ball spot show the bare value, and timeouts show three dots (filled =
+    remaining, hollow = used) with no count. Team names and every digit
+    readout shrink to fit their box so a long school name or a three-digit
+    score never spills.
+    """
+    layout = default_layout("Scoreboard Grid")
+    layout["background"] = {"color": _GRID_BG}
+    # (x, y, width, height, font_scale). Every live widget has its own
+    # rectangle, including the optional possession and crowd-status readouts
+    # tucked into the header row.
+    geometry = {
+        "home_name": (0.04, 0.09, 0.28, 0.11, 0.07),
+        "away_name": (0.68, 0.09, 0.28, 0.11, 0.07),
+        "home_score": (0.04, 0.225, 0.28, 0.33, 0.30),
+        "away_score": (0.68, 0.225, 0.28, 0.33, 0.30),
+        "home_timeouts": (0.045, 0.625, 0.27, 0.09, 0.046),
+        "away_timeouts": (0.685, 0.625, 0.27, 0.09, 0.046),
+        "game_clock_label": (0.36, 0.04, 0.28, 0.04, 0.02),
+        "game_clock_value": (0.35, 0.09, 0.30, 0.32, 0.22),
+        "play_clock_label": (0.385, 0.45, 0.23, 0.05, 0.024),
+        "play_clock_value": (0.385, 0.515, 0.23, 0.185, 0.16),
+        "quarter": (0.045, 0.82, 0.205, 0.13, 0.11),
+        "ball_on": (0.28, 0.82, 0.205, 0.13, 0.11),
+        "down": (0.515, 0.82, 0.205, 0.13, 0.11),
+        "distance": (0.75, 0.82, 0.205, 0.13, 0.11),
+        "possession": (0.7, 0.045, 0.14, 0.035, 0.016),
+        "status_message": (0.04, 0.045, 0.15, 0.035, 0.016),
+        "status_clock": (0.195, 0.045, 0.08, 0.035, 0.016),
+    }
+    for widget_id, (x, y, width, height, size) in geometry.items():
+        layout["widgets"][widget_id].update(
+            x=x, y=y, width=width, height=height, font_scale=size,
+            font_family=_GRID_LABEL_FONT, font_weight=700, color=_GRID_WHITE,
+            text_align="center", vertical_align="middle", visible=True, z_index=2,
+        )
+    for widget_id in ("home_score", "away_score", "game_clock_value", "play_clock_value",
+                      "quarter", "ball_on", "down", "distance"):
+        # Graduate ships one weight; 700 asks the browser to embolden it.
+        layout["widgets"][widget_id].update(font_family=_GRID_DIGIT_FONT, font_weight=700,
+                                            fit_text=True)
+    for widget_id in ("game_clock_value", "play_clock_value", "play_clock_label",
+                      "possession", "status_message", "status_clock"):
+        layout["widgets"][widget_id]["color"] = _GRID_AMBER
+    for widget_id in ("game_clock_label", "play_clock_label"):
+        layout["widgets"][widget_id]["letter_spacing"] = 0.12
+    # The clock needs no caption on this board; the operator may turn it on.
+    layout["widgets"]["game_clock_label"]["visible"] = False
+    for side, dots in (("home", _GRID_HOME_DOTS), ("away", _GRID_AWAY_DOTS)):
+        layout["widgets"][f"{side}_name"].update(text_transform="uppercase", fit_text=True)
+        layout["widgets"][f"{side}_timeouts"].update(
+            display_format="dots", font_family="arial", font_weight=400, color=dots,
+        )
+    for widget_id, format_id in (("quarter", "ordinal"), ("down", "ordinal"),
+                                  ("distance", "value"), ("ball_on", "value")):
+        layout["widgets"][widget_id]["display_format"] = format_id
+
+    elements = _grid_header_elements()
+    for side, edge, banner, x in (("home", _GRID_HOME_EDGE, _GRID_HOME_BANNER, 0.025),
+                                  ("away", _GRID_AWAY_EDGE, _GRID_AWAY_BANNER, 0.665)):
+        elements += [
+            _grid_box(f"{side}_panel", x, 0.085, 0.31, 0.635, _GRID_PANEL,
+                      border_color=edge, border_width=0.0015, corner_cut=_GRID_CUT),
+            _grid_box(f"{side}_banner", x, 0.085, 0.31, 0.12, banner, z_index=1,
+                      border_color=_GRID_SILVER, border_width=0.0015,
+                      corner_cut=_GRID_CUT, cut_corners="top"),
+            # A transparent frame whose three outer edges coincide with the
+            # panel frame, so only its top edge shows: the rule above the
+            # timeouts row. (A box may not be thinner than the widget minimum.)
+            _grid_box(f"{side}_timeouts_frame", x, 0.57, 0.31, 0.15, None,
+                      border_color=edge, border_width=0.0015, z_index=1,
+                      corner_cut=_GRID_CUT, cut_corners="bottom"),
+            _grid_text(f"{side}_timeouts_label", "TIME OUTS LEFT", x + 0.02, 0.585,
+                       0.27, 0.045, 0.024),
+        ]
+    elements.append(_grid_box("play_clock_panel", 0.375, 0.43, 0.25, 0.29, _GRID_PANEL,
+                              border_color=_GRID_GOLD, border_width=0.002,
+                              corner_cut=0.016))
+    elements.append(_grid_box("play_clock_rule_l", 0.39, 0.4735, 0.03, _GRID_RULE_H, _GRID_GOLD))
+    elements.append(_grid_box("play_clock_rule_r", 0.58, 0.4735, 0.03, _GRID_RULE_H, _GRID_GOLD))
+    # Four bordered cells: adjacent borders merge into the stat bar's
+    # dividers, and only the bar's outer corners are chamfered.
+    for index, (label, x, cut) in enumerate((("QUARTER", 0.025, "left"), ("BALL ON", 0.2625, None),
+                                             ("DOWN", 0.5, None), ("TO GO", 0.7375, "right"))):
+        elements.append(_grid_box(f"stat_cell_{index}", x, 0.745, 0.2375, 0.22, _GRID_PANEL,
+                                  border_color=_GRID_RULE, border_width=0.001,
+                                  corner_cut=_GRID_CUT if cut else 0.0,
+                                  cut_corners=cut or "all"))
+        # "— QUARTER —": the caption between two short blue rules.
+        elements.append(_grid_text(f"stat_label_{index}", label, x + 0.06875, 0.76, 0.10,
+                                   0.05, 0.024))
+        elements.append(_grid_box(f"stat_rule_{index}_l", x + 0.025, 0.7835, 0.04,
+                                  _GRID_RULE_H, _GRID_HOME_EDGE))
+        elements.append(_grid_box(f"stat_rule_{index}_r", x + 0.1725, 0.7835, 0.04,
+                                  _GRID_RULE_H, _GRID_HOME_EDGE))
+    layout["elements"] = elements
+    layout["screens"] = {screen_id: _grid_event_screen(screen_id) for screen_id in EVENT_SCREEN_IDS}
+    return layout
+
+
 def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
     return [
         {
@@ -2635,6 +2952,12 @@ def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
             "id": "pregame_stadium", "name": "Tigers Stadium",
             "description": "A dominant kickoff countdown with red and blue matchup panels.",
             "screen": _stadium_event_screen("pregame"),
+        },
+        {
+            "id": "pregame_grid", "name": "Scoreboard Grid",
+            "description": "Blue and red matchup panels frame a centered kickoff countdown, "
+            "matching the Scoreboard Grid game preset.",
+            "screen": _grid_event_screen("pregame"),
         },
     ]
 
@@ -2672,6 +2995,12 @@ def _raw_halftime_screen_presets() -> list[dict[str, Any]]:
             "id": "halftime_stadium", "name": "Tigers Stadium",
             "description": "A dominant return countdown, warmup line, and red and blue score panels.",
             "screen": _stadium_event_screen("halftime"),
+        },
+        {
+            "id": "halftime_grid", "name": "Scoreboard Grid",
+            "description": "Blue and red score panels below a centered halftime countdown and "
+            "warmup line, matching the Scoreboard Grid game preset.",
+            "screen": _grid_event_screen("halftime"),
         },
     ]
 
@@ -2893,6 +3222,15 @@ def _raw_preset_descriptors() -> list[dict[str, Any]]:
             "and a dedicated field strip. Matching Pre-game and Halftime presets are available.",
             "layout": _stadium_preset_layout(),
         },
+        {
+            "id": "grid", "name": "Scoreboard Grid",
+            "description": "The owner's video-board design: square blue and red HOME/AWAY "
+            "panels with block-digit scores and timeout dots, an amber game clock over a "
+            "gold-framed play clock, and a four-cell bar showing the quarter, ball on, down "
+            "and to-go as bare values (3rd, 35, 2nd, 7). Matching Pre-game and Halftime "
+            "presets are available.",
+            "layout": _grid_preset_layout(),
+        },
     ]
 
 
@@ -2903,6 +3241,7 @@ def limits() -> dict[str, Any]:
         "schema_version": LAYOUT_SCHEMA_VERSION,
         "min_widget_width": MIN_WIDGET_WIDTH,
         "min_widget_height": MIN_WIDGET_HEIGHT,
+        "min_box_thickness": MIN_BOX_THICKNESS,
         "min_font_scale": MIN_FONT_SCALE,
         "max_font_scale": MAX_FONT_SCALE,
         "min_z_index": MIN_Z_INDEX,
@@ -2920,6 +3259,7 @@ def limits() -> dict[str, Any]:
         "max_letter_spacing": MAX_LETTER_SPACING,
         "max_border_width": MAX_BORDER_WIDTH,
         "max_corner_radius": MAX_CORNER_RADIUS,
+        "cut_corner_sides": list(CUT_CORNER_SIDES),
         "max_padding": MAX_PADDING,
         "min_opacity": MIN_OPACITY,
         "max_elements": MAX_ELEMENTS,
@@ -2977,6 +3317,7 @@ def supported_widget_ids(view_model: Mapping[str, Any], kind: str = "game") -> t
 
 __all__ = [
     "COORDINATE_PRECISION",
+    "CUT_CORNER_SIDES",
     "DEFAULT_LAYOUT_NAME",
     "DEFAULT_SAFE_INSET",
     "ELEMENT_TYPES",
@@ -3010,6 +3351,7 @@ __all__ = [
     "MIN_OPACITY",
     "MIN_SAFE_INSET",
     "MIN_SAFE_SPAN",
+    "MIN_BOX_THICKNESS",
     "MIN_WIDGET_HEIGHT",
     "MIN_WIDGET_WIDTH",
     "MIN_Z_INDEX",
@@ -3023,6 +3365,7 @@ __all__ = [
     "TEXT_TRANSFORMS",
     "VERTICAL_ALIGNMENTS",
     "WIDGET_FIELDS",
+    "WIDGET_FORMAT_FIELDS",
     "WIDGET_GROUPS",
     "WIDGET_GROUP_ORDER",
     "WIDGET_IDS",

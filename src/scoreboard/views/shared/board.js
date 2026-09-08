@@ -79,6 +79,27 @@
     "status_clock": "status.clock_display"
   };
 
+  var WIDGET_FORMAT_FIELDS = {
+  "quarter": {
+    "ordinal": "quarter"
+  },
+  "down": {
+    "ordinal": "football.down_display"
+  },
+  "distance": {
+    "value": "football.distance_value_display"
+  },
+  "ball_on": {
+    "value": "football.ball_on_value_display"
+  },
+  "home_timeouts": {
+    "dots": "football.home_timeouts_dots"
+  },
+  "away_timeouts": {
+    "dots": "football.away_timeouts_dots"
+  }
+};
+
   /* Application-controlled label text. Operators may style/move/hide these
    * widgets, never edit the words. */
   var WIDGET_TEXTS = {
@@ -130,12 +151,14 @@
     "arial_black": "'Arial Black', Arial, sans-serif",
     "impact": "Impact, 'Arial Black', sans-serif",
     "bahnschrift": "Bahnschrift, 'Segoe UI', Arial, sans-serif",
+    "bahnschrift_condensed": "'Bahnschrift Condensed', Bahnschrift, 'Segoe UI', Arial, sans-serif",
     "segoe": "'Segoe UI', Segoe, Arial, sans-serif",
     "segoe_black": "'Segoe UI Black', 'Segoe UI', Arial, sans-serif",
     "consolas": "Consolas, 'Courier New', monospace",
     "georgia": "Georgia, 'Times New Roman', serif",
     "verdana": "Verdana, Geneva, sans-serif",
-    "trebuchet": "'Trebuchet MS', Arial, sans-serif"
+    "trebuchet": "'Trebuchet MS', Arial, sans-serif",
+    "varsity": "'Jersey M54', Graduate, Impact, 'Arial Black', sans-serif"
   };
 
   /* Mirrors scoreboard.presentation.layout.default_layout()["screens"]: the
@@ -177,7 +200,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "home_score": {
         "id": "home_score",
@@ -201,7 +226,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "away_name": {
         "id": "away_name",
@@ -225,7 +252,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "away_score": {
         "id": "away_score",
@@ -249,7 +278,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "event_phase": {
         "id": "event_phase",
@@ -273,7 +304,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "event_title": {
         "id": "event_title",
@@ -297,7 +330,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "event_clock": {
         "id": "event_clock",
@@ -321,7 +356,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "warmup": {
         "id": "warmup",
@@ -345,7 +382,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       }
     },
     "elements": []
@@ -383,7 +422,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "home_score": {
         "id": "home_score",
@@ -407,7 +448,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "away_name": {
         "id": "away_name",
@@ -431,7 +474,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "away_score": {
         "id": "away_score",
@@ -455,7 +500,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "event_phase": {
         "id": "event_phase",
@@ -479,7 +526,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "event_title": {
         "id": "event_title",
@@ -503,7 +552,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "event_clock": {
         "id": "event_clock",
@@ -527,7 +578,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       },
       "warmup": {
         "id": "warmup",
@@ -551,7 +604,9 @@
         "border_color": null,
         "border_width": 0.0,
         "corner_radius": 0.0,
-        "padding": 0.0
+        "padding": 0.0,
+        "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
       }
     },
     "elements": []
@@ -602,7 +657,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "home_score": {
       "id": "home_score",
@@ -626,7 +683,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "possession": {
       "id": "possession",
@@ -650,7 +709,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "away_name": {
       "id": "away_name",
@@ -674,7 +735,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "away_score": {
       "id": "away_score",
@@ -698,7 +761,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "game_clock_label": {
       "id": "game_clock_label",
@@ -722,7 +787,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "game_clock_value": {
       "id": "game_clock_value",
@@ -746,7 +813,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "quarter": {
       "id": "quarter",
@@ -770,7 +839,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "down": {
       "id": "down",
@@ -794,7 +865,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "distance": {
       "id": "distance",
@@ -818,7 +891,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "play_clock_label": {
       "id": "play_clock_label",
@@ -842,7 +917,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "play_clock_value": {
       "id": "play_clock_value",
@@ -866,7 +943,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "ball_on": {
       "id": "ball_on",
@@ -890,7 +969,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "home_timeouts": {
       "id": "home_timeouts",
@@ -914,7 +995,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "away_timeouts": {
       "id": "away_timeouts",
@@ -938,7 +1021,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "status_message": {
       "id": "status_message",
@@ -962,7 +1047,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     },
     "status_clock": {
       "id": "status_clock",
@@ -986,7 +1073,9 @@
       "border_color": null,
       "border_width": 0.0,
       "corner_radius": 0.0,
-      "padding": 0.0
+      "padding": 0.0,
+      "display_format": "default", "fit_text": false,
+        "corner_cut": 0.0, "cut_corners": "all"
     }
   },
   "elements": []
@@ -1145,12 +1234,22 @@
       : (typeof fallback.border_color === 'string' ? fallback.border_color : null);
     var borderWidth = numberOr(source.border_width, numberOr(fallback.border_width, 0));
     var cornerRadius = numberOr(source.corner_radius, numberOr(fallback.corner_radius, 0));
+    var cornerCut = numberOr(source.corner_cut, numberOr(fallback.corner_cut, 0));
+    var cutCorners = stringOr(source.cut_corners, stringOr(fallback.cut_corners, 'all'));
 
     var background = backgroundColor ? (hexToRgba(backgroundColor, backgroundOpacity) || 'transparent') : 'transparent';
     node.style.setProperty('--bg', background);
     node.style.setProperty('--bc', borderColor || 'transparent');
     node.style.setProperty('--bw', borderWidth);
     node.style.setProperty('--br', cornerRadius);
+    node.style.setProperty('--cut', cornerCut);
+    // The chamfer is a CSS clip keyed on this attribute (board.css); an
+    // uncut box keeps the plain border/radius path.
+    if (cornerCut > 0) {
+      node.dataset.cutCorners = cutCorners;
+    } else {
+      delete node.dataset.cutCorners;
+    }
   }
 
   /** Set the text-styling custom properties shared by every widget and every
@@ -1164,6 +1263,7 @@
     var textEffect = stringOr(source.text_effect, stringOr(fallback.text_effect, 'none'));
 
     node.style.setProperty('--ff', fontStack);
+    node.dataset.font = fontFamilyKey;
     node.style.setProperty('--ls', letterSpacing);
     node.style.setProperty('--tt', textTransform);
     node.style.setProperty('--pad', padding);
@@ -1400,6 +1500,9 @@
         element.style.setProperty('--va', verticalAlign);
         element.style.zIndex = zIndex;
         element.dataset.layoutVisible = visible ? '1' : '0';
+        element.dataset.displayFormat = stringOr(widget.display_format, 'default');
+        element.dataset.fitText = widget.fit_text === true ? '1' : '0';
+        element._fitKey = null;
         refreshHidden(element);
 
         applyPaint(element, widget, fallback);
@@ -1429,6 +1532,86 @@
     } catch (error) {
       // Leave whatever free elements were already on the board.
     }
+    // A format edit must repaint immediately even while clocks are stopped.
+    if (boardRoot._lastModel) applyModel(container, boardRoot._lastModel);
+  }
+
+  /** Write `text` into a widget's text node. A colon is wrapped in its own
+   * span so a clock's separator can be raised to sit between the digits
+   * (board.css, per font); the node's textContent stays exactly `text`. */
+  function setWidgetText(textElement, text) {
+    if (text.indexOf(':') === -1) {
+      textElement.textContent = text;
+      return;
+    }
+    var parts = text.split(':');
+    textElement.textContent = '';
+    for (var i = 0; i < parts.length; i += 1) {
+      if (i > 0) {
+        var colon = document.createElement('span');
+        colon.className = 'clock-colon';
+        colon.textContent = ':';
+        textElement.appendChild(colon);
+      }
+      if (parts[i]) textElement.appendChild(document.createTextNode(parts[i]));
+    }
+  }
+
+  var measureContext = null;
+
+  /** The rendered glyph height ("ink") of `text` in the widget's computed
+   * font: what a spectator actually sees, as opposed to the CSS line box,
+   * which for a display face such as Impact is nearly half again as tall as
+   * the digits themselves. Measuring ink lets a score fill its panel the way
+   * a real video board does. Returns null when the browser cannot measure. */
+  function inkExtent(text, style) {
+    if (!measureContext) {
+      var canvas = document.createElement('canvas');
+      measureContext = canvas.getContext && canvas.getContext('2d');
+      if (!measureContext) return null;
+    }
+    measureContext.font = [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ');
+    if ('letterSpacing' in measureContext) measureContext.letterSpacing = style.letterSpacing;
+    var metrics = measureContext.measureText(text);
+    if (typeof metrics.actualBoundingBoxAscent !== 'number') return null;
+    return {height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent};
+  }
+
+  function transformedText(text, style) {
+    if (style.textTransform === 'uppercase') return text.toUpperCase();
+    if (style.textTransform === 'lowercase') return text.toLowerCase();
+    return text;
+  }
+
+  // Opt-in geometry fitting only: the snapshot text is never abbreviated.
+  // Cache measurements across unchanged clock ticks; a layout edit clears it.
+  function fitWidgetText(element, textElement) {
+    if (!textElement) return;
+    if (element.dataset.fitText !== '1') {
+      textElement.style.fontSize = '';
+      return;
+    }
+    var box = element.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    var style = window.getComputedStyle(element);
+    var width = element.clientWidth - Number(style.paddingLeft.slice(0, -2)) - Number(style.paddingRight.slice(0, -2));
+    var height = element.clientHeight - Number(style.paddingTop.slice(0, -2)) - Number(style.paddingBottom.slice(0, -2));
+    var key = [textElement.textContent, width, height, style.fontSize, style.fontFamily,
+      style.fontWeight, style.letterSpacing, style.textTransform].join('|');
+    if (element._fitKey === key) return;
+    element._fitKey = key;
+    textElement.style.fontSize = '';
+    // Width comes from the laid-out text (it honours tabular digits and
+    // letter spacing); only the height is taken from the glyph ink.
+    var range = document.createRange();
+    range.selectNodeContents(textElement);
+    var ink = range.getBoundingClientRect();
+    var glyphs = inkExtent(transformedText(textElement.textContent, style), style);
+    if (glyphs) ink = {width: ink.width, height: glyphs.height};
+    if (width <= 0 || height <= 0 || !ink.width || !ink.height) return;
+    var factor = width / ink.width;
+    if (height / ink.height < factor) factor = height / ink.height;
+    if (factor < 1) textElement.style.fontSize = (factor * 96) + '%';
   }
 
   /** Write every widget's text found under `container` from `model`, using
@@ -1447,6 +1630,7 @@
     var boardRoot = container.querySelector('[data-board-root]') || container;
     var registry = registryForRoot(boardRoot);
     var read = window.ScoreboardRender.read;
+    boardRoot._lastModel = model;
     for (var index = 0; index < registry.ids.length; index += 1) {
       var id = registry.ids[index];
       var element = boardRoot.querySelector('[data-widget="' + id + '"]');
@@ -1455,6 +1639,9 @@
       }
       try {
         var field = registry.fields[id];
+        var formats = boardRoot.dataset.boardKind === 'game' && WIDGET_FORMAT_FIELDS[id];
+        var format = element.dataset.displayFormat;
+        if (formats && Object.prototype.hasOwnProperty.call(formats, format)) field = formats[format];
         var value;
         if (field === null || field === undefined) {
           value = registry.texts[id] || '';
@@ -1463,11 +1650,17 @@
         }
         var text = value === null || value === undefined ? '' : String(value);
         var textElement = element.querySelector('.widget-text');
+        if (format === 'dots' && formats && formats.dots) {
+          element.setAttribute('aria-label', stringOr(read(model, registry.fields[id]), ''));
+        } else {
+          element.removeAttribute('aria-label');
+        }
         if (textElement && textElement.textContent !== text) {
-          textElement.textContent = text;
+          setWidgetText(textElement, text);
         }
         element.dataset.hasValue = (!isOptionalIn(registry, id) || text !== '') ? '1' : '0';
         refreshHidden(element);
+        fitWidgetText(element, textElement);
       } catch (error) {
         // Never let one bad widget stop the rest of the board from updating.
       }

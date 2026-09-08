@@ -306,6 +306,14 @@
 
         <section class="insp-section" id="sec-text">
           <h3>Text</h3>
+          <label class="prop-row" id="field-fit_text">
+            <input type="checkbox" id="prop-fit_text" data-prop="fit_text">
+            Shrink to fit on one line
+          </label>
+          <div class="prop-row" id="field-display_format" hidden>
+            <label for="prop-display_format">Format</label>
+            <select id="prop-display_format" data-prop="display_format"></select>
+          </div>
           <div class="prop-row" id="field-text">
             <textarea id="prop-text" data-prop="text" rows="2"></textarea>
           </div>
@@ -361,6 +369,11 @@
           <div class="prop-row labelled">
             <label for="prop-corner_radius">Corner radius</label>
             <input type="number" id="prop-corner_radius" data-prop="corner_radius" step="0.1">
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-corner_cut">Corner cut</label>
+            <input type="number" id="prop-corner_cut" data-prop="corner_cut" step="0.1" title="Chamfer size, percent of board width">
+            <select id="prop-cut_corners" data-prop="cut_corners" aria-label="Which corners are cut"></select>
           </div>
           <div class="prop-row labelled" id="field-padding">
             <label for="prop-padding">Padding</label>

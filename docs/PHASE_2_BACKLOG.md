@@ -320,6 +320,18 @@ object briefly reaching the JSON/history boundary through Undo) found and
 fixed during testing. No additional essential field beyond the five listed
 was identified during the requirements review.
 
+## Scoreboard Grid — September 7, 2026
+
+Owner-requested Game preset (plus Pre-game and Halftime companions) in
+the owner's palette, and reusable field-format choices. Quarter/down show
+ordinals, distance and ball position show standalone values, and timeouts
+use filled/hollow dots. Names, scores, clocks, and stat readouts shrink to
+fit. Full discovered suite: 1124 tests, zero failures/errors, 3 expected
+A-1 skips, including the 35-case offline browser check and editor
+save/reload coverage. See [the workflow](UX_AND_LAYOUT.md#1011-scoreboard-grid-and-field-formats-september-7-2026)
+and the roadmap for evidence and packaging status. Hardware gates and Task 12
+remain open.
+
 ## Presentation layout editor — ✅ v1 delivered, ✅ v2 delivered, both September 5, 2026; ✅ v3 (pre-game and halftime screens) delivered September 6, 2026
 
 Implements item 3 of "Owner-requested next scoreboard work" in

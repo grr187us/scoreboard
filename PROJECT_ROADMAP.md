@@ -338,7 +338,7 @@ gated on Python's validation of the whole draft.
   (`SCHEMA_UPGRADED`) rather than an error — so every layout saved by v1
   keeps opening; any other version is still a hard `SCHEMA_VERSION` error. New:
   a top-level `background` color; an `elements` list (`text`/`image`/`box`,
-  up to `MAX_ELEMENTS = 24`) with its own id, geometry, stacking order, and
+  up to `MAX_ELEMENTS`, 24 at the time and 40 since September 7, 2026) with its own id, geometry, stacking order, and
   (for `text`) the full style set widgets now also carry — font family (a
   fixed ten-entry Windows-system-font table), letter spacing, text
   transform, a shadow/outline effect, background fill and opacity, border
@@ -1611,6 +1611,64 @@ motion or a field-position graphic), saved-team colour bindings, or new game
 rules. Phase 0 HDMI evidence, target-laptop readability/brightness, C4, and
 Task 12 remain open. A successful build is not stadium-release acceptance.
 
+### 8. Scoreboard Grid — September 7, 2026
+
+Added the owner-requested **Scoreboard Grid** Game preset (with matching
+Pre-game and Halftime presets) from the owner's mockup and its exact palette:
+square blue/red banner panels, block-digit white scores that fill the
+panel, a ruled-off timeout row of filled/hollow dots without a count, an
+amber game clock over a gold-framed play clock, and four bottom cells with
+`3rd`, `35`, `2nd`, and `7`-style readouts. Names and labels use Bahnschrift
+Condensed, digits use Impact; both are installed Windows faces. Existing
+running-clock colour change on the wall is paused at the owner's request
+(the classes still flip; the two CSS rules are commented out). A second
+revision the same day added chamfered corners (`corner_cut`/`cut_corners`
+on every widget and element, editable in the inspector), a silver outline
+on the team banners, tapered header accents, a hidden game-clock caption,
+and a raised colon for Impact clocks. A first draft had shipped as two presets
+("Scoreboard Grid" and "Scoreboard Grid v2") with rounded corners, the
+wrong palette, and undersized digits; the revision folds them into the one
+preset the owner asked for.
+
+The editor now exposes validated, optional `display_format` choices for
+quarter/down, distance, ball position, and timeouts. Python supplies every
+alternative string; the shared renderer only selects a binding. Defaults
+preserve existing layouts' wording. Opt-in `fit_text` allows large team names
+to shrink safely onto one line for long schools, measuring glyph ink so a
+score can fill its panel. A third revision the same day, again on owner
+feedback, bundled the OFL-licensed Graduate collegiate font as the "Varsity
+block" choice (preferring Jersey M54 when the operator installs it; that
+font's licence is personal-use only), let box elements be hairlines
+(`MIN_BOX_THICKNESS`), raised `MAX_ELEMENTS` to 40, put short rules either
+side of the stat and play-clock captions, and redrew the header trim as a
+hairline with a tapered tab over each team panel. No new dependencies were
+added and nothing is fetched at run time. Applying this Game preset keeps the other screens intact. See [the operator workflow](docs/UX_AND_LAYOUT.md#1011-scoreboard-grid-and-field-formats-september-7-2026).
+
+**Verification:** full discovery **1124 tests, 0 failures, 0 errors, 3
+expected A-1 skips**, 67.909 seconds. New Python checks cover format validation,
+backward compatibility, the Python/JavaScript binding mirror, all timeout
+counts, missing values, Goal, ordinals, and save/reload. The offline Edge
+browser check covers 35 cases across 1920×1080, 1366×768, 1280×720, 640×360,
+and 390×844; maximum-length names, three-digit scores, crowd status, OT/FINAL,
+zero/cleared play clock, and missing fields fit without text overlap or page
+scrolling. It also drives each Format control, first-frame text fitting,
+layout-only rebinding, Save, and Python validation/storage/reload. Normal,
+extreme, Pre-game, and Halftime screenshots were inspected (set
+`SCOREBOARD_CAPTURE_DIR` when running `tests.ui.test_grid_browser`).
+
+The first full run found two stale browser expectations of `0.0` left by
+the already committed whole-seconds change; both now expect `0`, preserving
+the expired-versus-cleared distinction. No clock behavior changed here.
+Verification uses the same available Blender CPython 3.11.11 plus pinned
+`.venv/Lib/site-packages`, Node, and Edge documented by the Stadium work.
+The broken virtual-environment launcher was not changed.
+
+**Package:** the `dist/Scoreboard` build of September 7 (version 0.1.0,
+823 files, 31.1 MB) predates the Scoreboard Grid revision and still carries
+the two-preset draft; rebuild it before the next hand-off. `compileall`,
+`git diff --check`, and the relative-link checker pass on the revised tree.
+Physical LED readability/brightness, the HDMI gate, and Task 12 remain open.
+
 ## Next Action
 
 **On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed.
@@ -1620,7 +1678,7 @@ Then, in order:
 1. **Work [the two-display checklist](docs/DISPLAY_CHECKLIST.md) on a real two-monitor machine.** This is now the largest single gap in Phase 2. Task 10 is implemented and its policy is tested, but nothing has been placed on a second display, no HDMI cable has been unplugged, and no resolution or scaling change has been observed. Every box in that file is open.
 2. **Answer question A-1** from the audit — whether a game-clock Start should always blank the play clock, given that the game clock also starts on the ready-for-play. This is a football-rules question for the owner and the officials, not a code decision, and it affects the stadium's only play-clock display. It is the one open item that can visibly mislead the field.
 3. **Finish C4 publication ordering.** Preserve the command-lock isolation, prevent a stale per-window offer after a newer batch, isolate healthy-window delivery from a stalled sibling, and add a forced-interleaving regression test.
-4. **Rebuild the package from the reconciled working tree, then work `docs/PACKAGING.md` on the target laptop** — clean machine, network disabled, SmartScreen, startup time. The documented September 5 build predates C4/C5/F3/F4/I4 and `dist/` is absent.
+4. **Work `docs/PACKAGING.md` on the target laptop** — clean machine, network disabled, SmartScreen, startup time. The September 7 package predates the Scoreboard Grid revision and must be rebuilt; build verification is development evidence only.
 5. **Task 12 — sustained rehearsal and recovery acceptance**, which closes Phase 2 together with the stadium display rehearsal.
 
 All five owner-requested items below are delivered: the local-time

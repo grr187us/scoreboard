@@ -66,6 +66,7 @@ from scoreboard.domain.formatting import (
     FormattingError,
     format_ball_on,
     format_distance,
+    format_distance_value,
     format_down,
     format_down_and_distance,
     format_event_countdown,
@@ -75,6 +76,7 @@ from scoreboard.domain.formatting import (
     format_possession,
     format_status_clock,
     format_timeouts,
+    format_timeout_dots,
 )
 from scoreboard.domain.state import (
     GAME_STATUS_LABELS,
@@ -550,6 +552,7 @@ def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[
         "down_distance_display": format_down_and_distance(state.down, state.distance),
         "down_display": format_down(state.down),
         "distance_display": format_distance(state.distance),
+        "distance_value_display": format_distance_value(state.distance),
         "possession": state.possession,
         "possession_display": format_possession(state.possession),
         "ball_on": None if ball_on is None else {"team": ball_on.team, "yard_line": ball_on.yard_line},
@@ -558,6 +561,9 @@ def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[
             else format_ball_on(ball_on.team, ball_on.yard_line, str(team_name))
         ),
         "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
+        "ball_on_value_display": "—" if ball_on is None else str(ball_on.yard_line),
+        "home_timeouts_dots": format_timeout_dots(state.home_timeouts),
+        "away_timeouts_dots": format_timeout_dots(state.away_timeouts),
         "home_timeouts_display": format_timeouts(state.home_timeouts),
         "away_timeouts_display": format_timeouts(state.away_timeouts),
     }

@@ -270,6 +270,9 @@
     populateSelectOnce(el('prop-fit'), limits.image_fits || ['contain', 'cover', 'fill'], function (value) {
       return { value: value, text: value };
     });
+    populateSelectOnce(el('prop-cut_corners'), limits.cut_corner_sides || ['all', 'top', 'bottom', 'left', 'right'], function (value) {
+      return { value: value, text: value === 'all' ? 'all corners' : value + ' corners' };
+    });
     populateChoiceGroup('prop-text_align', limits.text_alignments || ['left', 'center', 'right']);
     populateChoiceGroup('prop-vertical_align', limits.vertical_alignments || ['top', 'middle', 'bottom']);
     populateChoiceGroup('prop-text_transform', limits.text_transforms || ['none', 'uppercase'], function (v) {
@@ -317,6 +320,8 @@
     setHidden('field-padding', kind !== 'widget' && kind !== 'text');
     setHidden('field-opacity', kind !== 'text' && kind !== 'image' && kind !== 'box' && kind !== 'multi');
     setHidden('field-text', kind !== 'text');
+    setHidden('field-display_format', true);
+    setHidden('field-fit_text', kind !== 'widget');
     setHidden('align-distribute', kind !== 'multi');
 
     if (kind === 'board') {
@@ -346,6 +351,20 @@
     (screenDescriptor.widgets || []).forEach(function (d) { if (d.id === id) descriptor = d; });
     title.textContent = descriptor ? descriptor.label : elementLabel(item);
 
+    var formats = descriptor && descriptor.formats || [];
+    if (kind === 'widget' && formats.length > 1) {
+      setHidden('field-display_format', false);
+      var formatSelect = el('prop-display_format');
+      formatSelect.replaceChildren();
+      formats.forEach(function (format) {
+        var option = document.createElement('option');
+        option.value = format.id;
+        option.textContent = format.label;
+        formatSelect.appendChild(option);
+      });
+      formatSelect.value = item.display_format || 'default';
+    }
+
     applyLimitsToInspector(app.state.limits || {});
 
     app.suppress = true;
@@ -356,6 +375,7 @@
       el('prop-height').value = percentText(item.height);
       el('prop-z_index').value = String(item.z_index);
       el('prop-visible').checked = Boolean(item.visible);
+      el('prop-fit_text').checked = Boolean(item.fit_text);
 
       if (kind === 'widget' || kind === 'text') {
         setColorField('prop-color', item.color);
@@ -384,6 +404,8 @@
         setColorField('prop-border_color', item.border_color);
         el('prop-border_width').value = percentText(item.border_width || 0);
         el('prop-corner_radius').value = percentText(item.corner_radius || 0);
+        el('prop-corner_cut').value = percentText(item.corner_cut || 0);
+        el('prop-cut_corners').value = item.cut_corners || 'all';
       }
       if (kind === 'image') {
         el('prop-fit').value = item.fit || 'contain';

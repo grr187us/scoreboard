@@ -1,9 +1,13 @@
 # Windows packaging and offline launch
 
 **Status:** Rebuilt and verified on the development host September 7, 2026,
-including Tigers Stadium and the current cutscenes. `dist/Scoreboard` contains
-version 0.1.0, 823 files, 31.0 MB. Asset and frozen `--check` verification
-passed with isolated data. Clean-machine, network-disabled, stadium, and
+including the field formats and text fitting, Tigers Stadium, and the
+current cutscenes. `dist/Scoreboard` contains version 0.1.0, 823 files,
+31.1 MB. Asset and frozen `--check` verification passed with isolated data.
+That build predates the same-day Scoreboard Grid revisions (one preset in
+the owner's palette instead of the two-preset draft, chamfered corners,
+and the bundled Graduate font under `views/shared/fonts/`, which the
+required-file list now covers) and must be rebuilt before hand-off. Clean-machine, network-disabled, stadium, and
 target-laptop acceptance remain open.
 An eight-second frozen-process smoke check against an isolated saved Tigers
 Stadium layout exited 0 and logged clean startup/shutdown. This does not
@@ -17,7 +21,10 @@ with `src` and the pinned dependencies in `.venv/Lib/site-packages` on
 `PYTHONPATH`; the repository `.venv` launcher currently points at a missing
 python.org installation. Restore the documented Python 3.11 environment
 before following the usual build command below. The full discovered suite
-passed 1115 tests with 3 expected A-1 skips on the build runtime.
+passed 1124 tests with 3 expected A-1 skips on the build runtime. The final
+text-spacing refinement also passed 26 focused schema/renderer/browser checks.
+Scoreboard Grid was verified in offline Edge, including 35 viewport/content
+cases and editor save/reopen; it has not been observed on the physical LED wall.
 
 ## What the package is
 

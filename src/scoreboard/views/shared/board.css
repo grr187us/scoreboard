@@ -16,6 +16,17 @@
  * so a layout saved before these properties existed still draws correctly.
  */
 
+/* The one bundled face (SIL Open Font License, see fonts/Graduate-OFL.txt):
+ * a collegiate block font for scores and clocks. Loaded from the package,
+ * never from a network. */
+@font-face {
+  font-family: "Graduate";
+  src: url("fonts/Graduate-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 .widget {
   position: absolute;
   display: flex;
@@ -43,6 +54,15 @@
 .widget-text {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Shrink-to-fit text is measured by its glyph ink, so the line box may be
+ * taller than the widget; it stays on one line and is never clipped. */
+.widget[data-fit-text="1"] .widget-text {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  line-height: 1;
+  letter-spacing: calc(var(--ls, 0) * 1em);
 }
 
 /* A free element (text/image/box) placed alongside the widgets. A text
@@ -78,7 +98,69 @@
 .effect-shadow .widget-text { text-shadow: 0 0.06em 0.18em rgba(0, 0, 0, .85); }
 .effect-outline .widget-text { -webkit-text-stroke: 0.04em #000; paint-order: stroke fill; }
 
+/* Impact sets its colon for lowercase text, so between lining digits it
+ * sits low; lift it to the centre of the digits. Other faces are left alone. */
+.widget[data-font="impact"] .clock-colon { position: relative; top: -0.1em; }
+
+/* A chamfered box (`corner_cut` > 0, `cut_corners` naming the corners). The
+ * element keeps its CSS border (made transparent) so its geometry is
+ * identical to an uncut box, paints its fill clipped to the outer polygon,
+ * and a ::before stretched over the border box paints the border colour
+ * clipped to the ring between the outer polygon and a parallel inner one
+ * (even-odd fill), so a transparent fill really is see-through. `--cutpx`
+ * is capped at half the box so opposite cuts meet in a clean point (the
+ * 16:9 canvas makes the height cap 0.5625 * 0.5 of the width fraction). */
+.widget[data-cut-corners], .element[data-cut-corners] {
+  --cutpx: min(calc(var(--canvas-width) * var(--cut, 0)),
+               calc(var(--canvas-width) * var(--w, 0.1) * 0.5),
+               calc(var(--canvas-width) * var(--h, 0.1) * 0.28125));
+  --c: var(--cutpx);
+  --rc: calc(100% - var(--c));
+  --b: calc(var(--canvas-width) * var(--bw, 0));
+  --i: max(0px, calc(var(--c) - 0.586 * var(--b)));
+  --bi: calc(var(--b) + var(--i));
+  --rb: calc(100% - var(--b));
+  --rbi: calc(100% - var(--b) - var(--i));
+  border-color: transparent;
+  border-radius: 0;
+  clip-path: polygon(var(--outer));
+}
+.widget[data-cut-corners]::before, .element[data-cut-corners]::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--b));
+  background: var(--bc, transparent);
+  clip-path: polygon(evenodd, var(--outer), var(--inner));
+  pointer-events: none;
+}
+[data-cut-corners] > .widget-text, [data-cut-corners] > img { position: relative; }
+[data-cut-corners="all"] {
+  --outer: var(--c) 0, var(--rc) 0, 100% var(--c), 100% var(--rc), var(--rc) 100%, var(--c) 100%, 0 var(--rc), 0 var(--c);
+  --inner: var(--bi) var(--b), var(--rbi) var(--b), var(--rb) var(--bi), var(--rb) var(--rbi), var(--rbi) var(--rb), var(--bi) var(--rb), var(--b) var(--rbi), var(--b) var(--bi);
+}
+[data-cut-corners="top"] {
+  --outer: var(--c) 0, var(--rc) 0, 100% var(--c), 100% 100%, 0 100%, 0 var(--c);
+  --inner: var(--bi) var(--b), var(--rbi) var(--b), var(--rb) var(--bi), var(--rb) var(--rb), var(--b) var(--rb), var(--b) var(--bi);
+}
+[data-cut-corners="bottom"] {
+  --outer: 0 0, 100% 0, 100% var(--rc), var(--rc) 100%, var(--c) 100%, 0 var(--rc);
+  --inner: var(--b) var(--b), var(--rb) var(--b), var(--rb) var(--rbi), var(--rbi) var(--rb), var(--bi) var(--rb), var(--b) var(--rbi);
+}
+[data-cut-corners="left"] {
+  --outer: var(--c) 0, 100% 0, 100% 100%, var(--c) 100%, 0 var(--rc), 0 var(--c);
+  --inner: var(--bi) var(--b), var(--rb) var(--b), var(--rb) var(--rb), var(--bi) var(--rb), var(--b) var(--rbi), var(--b) var(--bi);
+}
+[data-cut-corners="right"] {
+  --outer: 0 0, var(--rc) 0, 100% var(--c), 100% var(--rc), var(--rc) 100%, 0 100%;
+  --inner: var(--b) var(--b), var(--rbi) var(--b), var(--rb) var(--bi), var(--rb) var(--rbi), var(--rbi) var(--rb), var(--b) var(--rb);
+}
+
 /* Colour supplements, never replaces, the textual clock status shown to the
- * operator (carried over from the pre-widget spectator board). */
-.widget.running-game .widget-text { color: var(--game-running); }
-.widget.running-play .widget-text { color: var(--play-running); }
+ * operator (carried over from the pre-widget spectator board). PAUSED on
+ * September 7, 2026 at the owner's request: the wall keeps each layout's own
+ * clock colour while a clock runs. The running-game/running-play classes are
+ * still set, so restoring this is a matter of re-enabling the two rules.
+ *
+ * .widget.running-game .widget-text { color: var(--game-running); }
+ * .widget.running-play .widget-text { color: var(--play-running); }
+ */

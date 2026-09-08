@@ -39,7 +39,7 @@ EDITABLE_PROPERTIES = frozenset({
     # v2 widget/element style properties (spec section 1.3).
     "font_family", "letter_spacing", "text_transform", "text_effect",
     "background", "background_opacity", "border_color", "border_width",
-    "corner_radius", "padding",
+    "corner_radius", "padding", "display_format", "fit_text", "corner_cut", "cut_corners",
     # Element-only properties (spec section 1.4).
     "text", "opacity", "fit",
 })
@@ -350,8 +350,9 @@ class ControlCoverageTests(unittest.TestCase):
         """
 
         code = code_only(self.script)
-        for forbidden in (".display", "_display", ".seconds", ".score"):
-            self.assertNotIn(forbidden, code, forbidden)
+        # display_format is layout metadata, not a formatted snapshot field.
+        for forbidden in (r"\.display\b", r"_display\b", r"\.seconds\b", r"\.score\b"):
+            self.assertNotRegex(code, forbidden)
 
 
 if __name__ == "__main__":  # pragma: no cover

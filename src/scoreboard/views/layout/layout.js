@@ -654,13 +654,13 @@
 
   var NUMERIC_WIDGET_PROPS = {
     x: 1, y: 1, width: 1, height: 1, font_scale: 1, letter_spacing: 1,
-    background_opacity: 1, border_width: 1, corner_radius: 1, padding: 1,
+    background_opacity: 1, border_width: 1, corner_radius: 1, corner_cut: 1, padding: 1,
     opacity: 1, z_index: 1, font_weight: 1
   };
 
   var PERCENT_PROPS = {
     x: 1, y: 1, width: 1, height: 1, font_scale: 1, background_opacity: 1,
-    border_width: 1, corner_radius: 1, padding: 1, opacity: 1
+    border_width: 1, corner_radius: 1, corner_cut: 1, padding: 1, opacity: 1
   };
 
   function currentSingleItem() {
@@ -671,7 +671,7 @@
   }
 
   function valueForProp(prop, target) {
-    if (prop === 'visible') {
+    if (prop === 'visible' || prop === 'fit_text') {
       return target.checked;
     }
     if (PERCENT_PROPS[prop]) {
