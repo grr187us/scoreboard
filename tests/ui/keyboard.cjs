@@ -46,9 +46,22 @@ async function main(data) {
       await page.waitForFunction(rev=>document.querySelector('#chip-revision').textContent === 'Rev '+rev,snapshot.revision);
       return snapshot;
     }
+    // Playwright's keyboard only knows F1-F12. The operator page listens on
+    // document keydown without an isTrusted check, so the macro-pad keys
+    // F13-F24 are dispatched as synthetic events from the focused element,
+    // which keeps the input-safety checks below targeting the real field.
+    async function pressKey(pg, key) {
+      if (!/^F(1[3-9]|2[0-4])$/.test(key)) return pg.keyboard.press(key);
+      await pg.evaluate(k => {
+        const target = document.activeElement || document.body;
+        for (const type of ['keydown','keyup']) {
+          target.dispatchEvent(new KeyboardEvent(type,{key:k,code:k,bubbles:true,cancelable:true}));
+        }
+      }, key);
+    }
     async function press(key) {
       const before=results.length;
-      await page.keyboard.press(key);
+      await pressKey(page, key);
       await expectResult(before);
       return settled();
     }
@@ -134,7 +147,7 @@ async function main(data) {
     for(const field of fields) {
       await field.focus();
       const before=calls.length;
-      for(const [key] of map) await page.keyboard.press(key);
+      for(const [key] of map) await pressKey(page, key);
       assert.equal(calls.length,before,'shortcut leaked from '+await field.getAttribute('id'));
     }
     await page.evaluate(()=>document.querySelectorAll('[id^="test-"]').forEach(el=>el.remove()));
@@ -237,7 +250,7 @@ async function main(data) {
     await startup.locator('#new').click();
     await startup.keyboard.press('Escape');
     assert.equal(await startup.locator('#new-confirm').isVisible(),false);
-    for(const [key] of map) await startup.keyboard.press(key);
+    for(const [key] of map) await pressKey(startup, key);
     assert.deepEqual(await startup.evaluate(()=>window.startupChoices),[]);
     assert.equal(startup.isClosed(),false);
     await startup.locator('#new').click();await startup.locator('#cancel').click();

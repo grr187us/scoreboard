@@ -1,18 +1,21 @@
 # Windows packaging and offline launch
 
-**Status:** Rebuilt and verified on the development host September 7, 2026,
-including the field formats and text fitting, Tigers Stadium, and the
-current cutscenes. `dist/Scoreboard` contains version 0.1.0, 823 files,
-31.1 MB. Asset and frozen `--check` verification passed with isolated data.
-That build predates the same-day Scoreboard Grid revisions (one preset in
-the owner's palette instead of the two-preset draft, chamfered corners,
-and the bundled Graduate font under `views/shared/fonts/`, which the
-required-file list now covers) and must be rebuilt before hand-off. Clean-machine, network-disabled, stadium, and
-target-laptop acceptance remain open.
-An eight-second frozen-process smoke check against an isolated saved Tigers
-Stadium layout exited 0 and logged clean startup/shutdown. This does not
-establish physical display placement or readability.
-**Last updated:** September 7, 2026
+**Status:** Rebuilt and verified on the development host September 8, 2026,
+from commit `a6b2a47` (field status, Scoreboard Grid, the bundled Graduate
+font under `views/shared/fonts/`, Tigers Stadium, and the current
+cutscenes). `dist/Scoreboard` contains version 0.1.0, 782 files, 27.9 MB.
+Asset and frozen `--check` verification passed. The build script's
+required-file list covers the font, and both font files were confirmed in
+the built folder. The folder was also zipped to `dist/Scoreboard-0.1.0.zip`
+(13 MB) for transfer to the owner's Windows 10 gaming laptop, the first
+target-laptop run. The full discovered suite passed on the same tree: 1125
+tests, 0 failures, 0 errors, 3 expected A-1 skips (Node.js on `PATH`).
+Clean-machine, network-disabled, stadium, and target-laptop acceptance
+remain open. An earlier eight-second frozen-process smoke check against an
+isolated saved Tigers Stadium layout exited 0 and logged clean
+startup/shutdown; this does not establish physical display placement or
+readability.
+**Last updated:** September 8, 2026
 
 This document covers how the offline package is built, what it contains, what the operator's laptop must already have, and which acceptance checks still need a person.
 
