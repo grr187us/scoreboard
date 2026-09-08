@@ -21,6 +21,7 @@ from scoreboard.host.bridge import SpectatorBridge
 from scoreboard.host.cutscenes import CutscenesBridge
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import resolve_paths
+from scoreboard.presentation import layout as layout_module
 
 from tests.integration.support import TemporaryDataDirectoryTest
 
@@ -302,6 +303,41 @@ class SpectatorGetCutsceneTests(CutscenesWindowTestCase):
         bridge = SpectatorBridge(lambda: {})
 
         self.assertIsNone(bridge.get_cutscene())
+
+
+class CutsceneBoardStyleTests(CutscenesWindowTestCase):
+    """Bug 1: the real, wired-up app -- not a director built by hand --
+    publishes a cutscene program that keeps the operator's chosen preset's
+    colour rather than always falling back to the Broadcast bar's own white.
+    """
+
+    def test_the_directors_program_uses_the_active_presets_colour(self) -> None:
+        grid = next(
+            preset["layout"] for preset in layout_module.preset_descriptors() if preset["id"] == "grid"
+        )
+        broadcast = next(
+            preset["layout"] for preset in layout_module.preset_descriptors() if preset["id"] == "broadcast"
+        )
+        gold = grid["widgets"]["home_score"]["color"]
+        self.assertNotEqual(gold, broadcast["widgets"]["home_score"]["color"])
+
+        save_result = self.application.layouts.save("Grid copy", grid)
+        self.assertTrue(save_result["ok"], save_result)
+        select_result = self.application.layouts.select("Grid copy")
+        self.assertTrue(select_result["ok"], select_result)
+
+        result = self.bridge.trigger_cutscene("touchdown")
+        self.assertTrue(result["ok"], result)
+
+        program = self.application.cutscenes.current_program()
+        assert program is not None
+        self.assertEqual(program["layout"]["widgets"]["home_score"]["color"], gold)
+        self.assertEqual(program["layout"]["widgets"]["away_score"]["color"], gold)
+        # Geometry still the Broadcast bar's -- only the look moved over.
+        self.assertEqual(
+            program["layout"]["widgets"]["home_score"]["x"],
+            broadcast["widgets"]["home_score"]["x"],
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

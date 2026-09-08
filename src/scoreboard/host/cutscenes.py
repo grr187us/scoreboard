@@ -80,6 +80,7 @@ class CutsceneDirector:
         schedule: Callable[[float, Callable[[], None]], Any] | None = None,
         read_spectator_view: Callable[[], dict[str, Any]] | None = None,
         read_layout: Callable[[], dict[str, Any]] | None = None,
+        read_board_layout: Callable[[], dict[str, Any]] | None = None,
         folder_opener: Callable[[Any], None] | None = None,
     ) -> None:
         self._paths = paths
@@ -88,6 +89,7 @@ class CutsceneDirector:
         self._schedule = _default_schedule if schedule is None else schedule
         self._read_spectator_view = read_spectator_view
         self._read_layout = read_layout
+        self._read_board_layout = read_board_layout
         self._folder_opener = folder_opener
 
         #: Public; replaced (or monkey-patched method by method) by
@@ -145,6 +147,26 @@ class CutsceneDirector:
             return {}
         return view if isinstance(view, dict) else {}
 
+    def _resolve_board_layout(self) -> dict[str, Any] | None:
+        """The operator's active layout, the style source for the program's
+        widgets (:func:`~scoreboard.presentation.cutscenes.build_program`).
+
+        ``None`` when no reader was wired (behaviour is then unchanged: the
+        program uses only the Broadcast bar's own look). A raising reader is
+        contained exactly like :meth:`_resolve_view`: it must never break a
+        trigger, so the failure is only noted and the program falls back to
+        the Broadcast bar's look for this one play.
+        """
+
+        if self._read_board_layout is None:
+            return None
+        try:
+            board_layout = self._read_board_layout()
+        except Exception as exc:  # noqa: BLE001 - a broken read must never break a trigger
+            self._diagnostics.unhandled_error(context="cutscene_board_layout", error=exc)
+            return None
+        return board_layout if isinstance(board_layout, dict) else None
+
     # --- The JavaScript-facing API ------------------------------------------
 
     def state(self) -> dict[str, Any]:
@@ -195,6 +217,7 @@ class CutsceneDirector:
         # the program-builder seam without reintroducing the lock inversion.
         spectator_view = self._resolve_view()
         layout = self._resolve_layout()
+        board_layout = self._resolve_board_layout()
         with self._lock:
             previous = self._current
             if self._timer is not None:
@@ -211,6 +234,7 @@ class CutsceneDirector:
                 pack=pack,
                 spectator_view=spectator_view,
                 layout=layout,
+                board_layout=board_layout,
             )
             started_at = self._monotonic()
             self._current = {"program": program, "started_at": started_at, "pack_name": pack["name"]}

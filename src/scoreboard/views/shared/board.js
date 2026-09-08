@@ -1614,6 +1614,36 @@
     if (factor < 1) textElement.style.fontSize = (factor * 96) + '%';
   }
 
+  /** Re-run every fitted widget's fit under every board root in the
+   * document. A widget fitted before its web font finished loading (a lazy
+   * `@font-face`, e.g. the Grid preset's Graduate face) is measured against
+   * the invisible fallback face `font-display: block` substitutes meanwhile,
+   * so the cached `_fitKey` -- keyed on the font-family *string*, not its
+   * load state -- never notices the font swap and the stale, too-large size
+   * sticks until the widget's text next changes. Clearing `_fitKey` first
+   * forces `fitWidgetText` to re-measure against whatever font is actually
+   * painted now. */
+  function refitAllWidgetText() {
+    var roots = document.querySelectorAll('[data-board-root]');
+    for (var r = 0; r < roots.length; r += 1) {
+      var elements = roots[r].querySelectorAll('[data-widget][data-fit-text="1"]');
+      for (var i = 0; i < elements.length; i += 1) {
+        var element = elements[i];
+        element._fitKey = null;
+        fitWidgetText(element, element.querySelector('.widget-text'));
+      }
+    }
+  }
+
+  // A lazily-loaded web font (Graduate, via the Grid preset's `varsity`
+  // family) can finish loading after the first fit already ran against its
+  // fallback face; re-fit once it's actually available. Older browsers
+  // without the Font Loading API just keep today's behaviour.
+  if (global.document && document.fonts) {
+    document.fonts.ready.then(refitAllWidgetText, function () {});
+    document.fonts.addEventListener('loadingdone', refitAllWidgetText);
+  }
+
   /** Write every widget's text found under `container` from `model`, using
    * the registry that matches the board root's `data-board-kind`. A static
    * label (registry.fields[id] === null) always shows registry.texts[id].

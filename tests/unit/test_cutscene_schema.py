@@ -25,6 +25,7 @@ advance correctly" behavior lives in
 
 from __future__ import annotations
 
+import copy
 import unittest
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from scoreboard.presentation.cutscenes import (
     BUILTIN_PACK_PREFIX,
     BUILTIN_SCENE_IDS,
     CUTSCENE_EVENTS,
+    CUTSCENE_STYLE_KEYS,
     CUTSCENE_TEAM_NAME,
     DEFAULT_DURATION_SECONDS,
     EVENT_DEFAULT_INTRO,
@@ -618,6 +620,189 @@ class BuildProgramTests(unittest.TestCase):
         self.assertNotIn("loop", program["scene"])
         self.assertEqual(program["scene"]["type"], "image")
         self.assertEqual(program["scene"]["fallback"], {"type": "builtin", "id": "touchdown"})
+
+
+class BuildProgramBoardStyleTests(unittest.TestCase):
+    """Bug 1: a cutscene keeps the geometry of the Broadcast bar but the
+    *look* of the operator's active layout (``board_layout``).
+    """
+
+    def _geometry_layout(self) -> dict:
+        # Stands in for the real Broadcast bar preset: white/arial, its own
+        # geometry, and one widget (``quarter``) the board layout below does
+        # not carry at all.
+        return {
+            "schema_version": 3,
+            "name": "Broadcast bar",
+            "widgets": {
+                "home_score": {
+                    "x": 0.26, "y": 0.80, "width": 0.12, "height": 0.14,
+                    "font_scale": 0.07, "color": "#FFFFFF", "font_family": "arial",
+                    "text_align": "center",
+                },
+                "away_score": {
+                    "x": 0.62, "y": 0.80, "width": 0.12, "height": 0.14,
+                    "font_scale": 0.07, "color": "#FFFFFF", "font_family": "arial",
+                },
+                "game_clock_value": {
+                    "x": 0.39, "y": 0.80, "width": 0.22, "height": 0.14,
+                    "font_scale": 0.08, "color": "#FFFFFF", "font_family": "arial",
+                },
+                "quarter": {
+                    "x": 0.04, "y": 0.705, "width": 0.20, "height": 0.065,
+                    "font_scale": 0.028, "color": "#FFFFFF", "font_family": "arial",
+                },
+            },
+            "screens": {
+                "pregame": {
+                    "widgets": {
+                        "home_score": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2,
+                                       "font_scale": 0.05, "color": "#FFFFFF", "font_family": "arial"},
+                    },
+                },
+                "halftime": {
+                    "widgets": {
+                        "away_score": {"x": 0.5, "y": 0.5, "width": 0.2, "height": 0.2,
+                                       "font_scale": 0.05, "color": "#FFFFFF", "font_family": "arial"},
+                    },
+                },
+            },
+        }
+
+    def _board_layout(self) -> dict:
+        # Stands in for the operator's active preset: gold scores in the
+        # bundled fonts. ``home_name`` exists only here (not in the geometry
+        # layout) and must be ignored -- the Broadcast bar has no slot for it.
+        return {
+            "schema_version": 3,
+            "name": "Scoreboard Grid",
+            "widgets": {
+                "home_score": {
+                    "color": "#FFB703", "font_family": "varsity", "font_weight": 700,
+                    "letter_spacing": 0.02, "text_transform": "uppercase",
+                    "text_effect": "outline",
+                    # Never copied: geometry and unrelated cosmetics.
+                    "x": 0.9, "y": 0.9, "width": 0.9, "height": 0.9, "font_scale": 0.9,
+                    "visible": False, "z_index": 9, "text_align": "left",
+                    "vertical_align": "top", "padding": 0.5,
+                    "display_format": "dots",
+                },
+                "away_score": {"color": "#FFB703", "font_family": "varsity"},
+                "game_clock_value": {"color": "#FFB703", "font_family": "bahnschrift_condensed"},
+                "home_name": {"color": "#FFB703", "font_family": "bahnschrift_condensed"},
+            },
+            "screens": {
+                "pregame": {
+                    "widgets": {
+                        "home_score": {"color": "#FFB703", "font_family": "varsity"},
+                    },
+                },
+                "halftime": {
+                    "widgets": {
+                        "away_score": {"color": "#FFB703", "font_family": "varsity"},
+                    },
+                },
+            },
+        }
+
+    def test_style_keys_pinned(self) -> None:
+        self.assertEqual(
+            CUTSCENE_STYLE_KEYS,
+            ("color", "font_family", "font_weight", "letter_spacing", "text_transform", "text_effect"),
+        )
+
+    def test_board_layout_none_equals_the_old_output(self) -> None:
+        with_none = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(), board_layout=None,
+        )
+        without_kwarg = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(),
+        )
+
+        self.assertEqual(with_none["layout"], without_kwarg["layout"])
+        self.assertEqual(with_none["layout"]["widgets"]["home_score"]["color"], "#FFFFFF")
+
+    def test_a_non_mapping_board_layout_is_ignored(self) -> None:
+        program = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(), board_layout="not a mapping",
+        )
+
+        self.assertEqual(program["layout"]["widgets"]["home_score"]["color"], "#FFFFFF")
+
+    def test_shared_widgets_take_the_boards_style_and_the_geometrys_position(self) -> None:
+        program = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(), board_layout=self._board_layout(),
+        )
+        home_score = program["layout"]["widgets"]["home_score"]
+
+        for key in ("color", "font_family", "font_weight", "letter_spacing", "text_transform", "text_effect"):
+            self.assertEqual(home_score[key], self._board_layout()["widgets"]["home_score"][key])
+        # Geometry, and every non-style property, stay the Broadcast bar's.
+        self.assertEqual(home_score["x"], 0.26)
+        self.assertEqual(home_score["y"], 0.80)
+        self.assertEqual(home_score["width"], 0.12)
+        self.assertEqual(home_score["height"], 0.14)
+        self.assertEqual(home_score["font_scale"], 0.07)
+        self.assertEqual(home_score["text_align"], "center")
+        self.assertNotIn("visible", home_score)
+        self.assertNotIn("z_index", home_score)
+        self.assertNotIn("padding", home_score)
+        self.assertNotIn("display_format", home_score)
+        # A widget that received a style copy is marked for fitting: the
+        # operator's font can be wider than the Broadcast bar's slot.
+        self.assertTrue(home_score["fit_text"])
+
+    def test_an_id_only_in_the_board_layout_is_ignored(self) -> None:
+        program = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(), board_layout=self._board_layout(),
+        )
+
+        self.assertNotIn("home_name", program["layout"]["widgets"])
+
+    def test_an_id_only_in_the_geometry_layout_is_untouched(self) -> None:
+        program = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(), board_layout=self._board_layout(),
+        )
+        quarter = program["layout"]["widgets"]["quarter"]
+
+        self.assertEqual(quarter["color"], "#FFFFFF")
+        self.assertEqual(quarter["font_family"], "arial")
+        self.assertNotIn("fit_text", quarter)
+
+    def test_screens_are_merged_the_same_way(self) -> None:
+        program = build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=self._geometry_layout(), board_layout=self._board_layout(),
+        )
+        pregame_home_score = program["layout"]["screens"]["pregame"]["widgets"]["home_score"]
+        halftime_away_score = program["layout"]["screens"]["halftime"]["widgets"]["away_score"]
+
+        self.assertEqual(pregame_home_score["color"], "#FFB703")
+        self.assertEqual(pregame_home_score["font_family"], "varsity")
+        self.assertEqual(pregame_home_score["x"], 0.1)
+        self.assertTrue(pregame_home_score["fit_text"])
+        self.assertEqual(halftime_away_score["color"], "#FFB703")
+        self.assertEqual(halftime_away_score["x"], 0.5)
+
+    def test_neither_input_is_mutated(self) -> None:
+        geometry_layout = self._geometry_layout()
+        board_layout = self._board_layout()
+        geometry_copy = copy.deepcopy(geometry_layout)
+        board_copy = copy.deepcopy(board_layout)
+
+        build_program(
+            play_id=1, event="touchdown", pack=builtin_pack("touchdown"),
+            spectator_view={}, layout=geometry_layout, board_layout=board_layout,
+        )
+
+        self.assertEqual(geometry_layout, geometry_copy)
+        self.assertEqual(board_layout, board_copy)
 
 
 class EventDescriptorTests(unittest.TestCase):

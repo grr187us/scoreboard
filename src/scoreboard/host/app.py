@@ -221,6 +221,12 @@ class ScoreboardApplication:
             diagnostics=self.diagnostics,
             monotonic=self._monotonic,
             read_spectator_view=self._read_spectator_view,
+            # The operator's active layout is the style source for a
+            # cutscene program (Bug 1): the board must keep its own colours
+            # and fonts even while it morphs into the Broadcast bar's
+            # geometry. ``current_layout`` always returns a normalized
+            # document, never raises.
+            read_board_layout=self.layouts.current_layout,
         )
         self._push: Callable[[str, dict[str, Any]], None] | None = None
         # WindowHost owns this optional surface.  Keeping the predicate here

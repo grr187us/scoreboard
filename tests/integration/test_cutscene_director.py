@@ -254,6 +254,52 @@ class TriggerTests(CutsceneDirectorTestCase):
         self.assertIn("cutscene_event=make_some_noise", self.log_text())
 
 
+class BoardLayoutStyleTests(CutsceneDirectorTestCase):
+    """Bug 1: with ``read_board_layout`` wired, every event's program keeps
+    the operator's active look while still morphing into the Broadcast bar's
+    geometry (the one fix in :func:`~scoreboard.presentation.cutscenes.
+    build_program` covers all five events, since every trigger goes through
+    it).
+    """
+
+    def _board_layout(self) -> dict:
+        grid = next(
+            preset["layout"] for preset in layout_module.preset_descriptors() if preset["id"] == "grid"
+        )
+        return grid
+
+    def test_every_event_publishes_the_boards_colour_for_shared_widgets(self) -> None:
+        from scoreboard.presentation.cutscenes import CUTSCENE_EVENTS
+
+        board_layout = self._board_layout()
+        director, _monotonic, _scheduler, link = self.make_director(
+            read_board_layout=lambda: board_layout,
+        )
+        grid_color = board_layout["widgets"]["home_score"]["color"]
+        broadcast_default = next(
+            p["layout"] for p in layout_module.preset_descriptors() if p["id"] == "broadcast"
+        )["widgets"]["home_score"]["color"]
+        # The two presets disagree on colour -- otherwise this test would
+        # pass even with the bug still present.
+        self.assertNotEqual(grid_color, broadcast_default)
+
+        for index, event in enumerate(CUTSCENE_EVENTS, start=1):
+            with self.subTest(event=event):
+                director.trigger(event)
+                published_layout = link.published[index - 1]["layout"]
+                self.assertEqual(published_layout["widgets"]["home_score"]["color"], grid_color)
+                self.assertEqual(published_layout["widgets"]["away_score"]["color"], grid_color)
+                self.assertTrue(published_layout["widgets"]["home_score"]["fit_text"])
+                # The geometry stays the Broadcast bar's, not the Grid's.
+                broadcast = next(
+                    p["layout"] for p in layout_module.preset_descriptors() if p["id"] == "broadcast"
+                )
+                self.assertEqual(
+                    published_layout["widgets"]["home_score"]["x"],
+                    broadcast["widgets"]["home_score"]["x"],
+                )
+
+
 class ExpireTests(CutsceneDirectorTestCase):
     def test_expire_ends_exactly_once(self) -> None:
         diagnostics = self.make_diagnostics()
@@ -398,6 +444,29 @@ class FailureContainmentTests(CutsceneDirectorTestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(link.published[0]["texts"]["team_name"], "Tigers")
+
+    def test_a_raising_board_layout_reader_still_triggers_and_notes_a_diagnostic(self) -> None:
+        def broken_board_layout():
+            raise RuntimeError("no board for you")
+
+        diagnostics = self.make_diagnostics()
+        director, _monotonic, _scheduler, link = self.make_director(
+            diagnostics=diagnostics, read_board_layout=broken_board_layout,
+        )
+
+        result = director.trigger("touchdown")
+        diagnostics.flush()
+
+        self.assertTrue(result["ok"])
+        broadcast = next(p["layout"] for p in layout_module.preset_descriptors() if p["id"] == "broadcast")
+        # Falls back to the Broadcast bar's own look for this play, exactly
+        # as if no reader had been wired.
+        self.assertEqual(
+            link.published[0]["layout"]["widgets"]["home_score"]["color"],
+            broadcast["widgets"]["home_score"]["color"],
+        )
+        self.assertIn("UNHANDLED_ERROR", self.log_text())
+        self.assertIn("cutscene_board_layout", self.log_text())
 
 
 class LockOrderingTests(CutsceneDirectorTestCase):

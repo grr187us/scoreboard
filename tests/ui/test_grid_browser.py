@@ -31,12 +31,18 @@ class GridBrowserTests(unittest.TestCase):
                            play_clock=ClockValue(0,False,40)),
                    replace(state, quarter='FINAL', down=None, distance=None, ball_on=None,
                            play_clock_cleared=True)]
+        # The game clock at its full 12:00, stopped -- the state the board is
+        # in before the clock has ever started, where the too-large fit was
+        # visible (bug 2: fit against Graduate's fallback face raced the
+        # lazily-loaded web font and the stale, oversized fit stuck).
+        clock_start = replace(state, game_clock=ClockValue(720, False, 720))
         with tempfile.TemporaryDirectory() as folder:
             paths = resolve_paths(Path(folder)).ensure()
             library = PresentationLayouts(paths)
             result = run_browser('grid.cjs', {
                 'layout': presets['grid'], 'classic': presets['classic'],
                 'models': [spectator_view_model(s) for s in states],
+                'clock_start': spectator_view_model(clock_start),
                 'pregame': spectator_view_model(GameState(event_countdown=ClockValue(900, False, 1800))),
                 'halftime': spectator_view_model(replace(state, lifecycle='HALFTIME',
                     event_phase='HALFTIME', event_countdown=ClockValue(181, False, 1800))),

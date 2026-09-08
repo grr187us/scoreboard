@@ -116,6 +116,15 @@ MANIFEST_SCHEMA_VERSION: Final[int] = 1
 
 BUILTIN_PACK_PREFIX: Final[str] = "builtin:"
 
+#: The widget properties a cutscene program borrows from the operator's
+#: active layout (the *style* source) while keeping the Broadcast bar's
+#: geometry (the *geometry* source) -- see :func:`build_program`. Exported so
+#: a test (or a future reviewer) can pin the exact list rather than
+#: re-deriving it.
+CUTSCENE_STYLE_KEYS: Final[tuple[str, ...]] = (
+    "color", "font_family", "font_weight", "letter_spacing", "text_transform", "text_effect",
+)
+
 
 # --- Small numeric helper (mirrors presentation/layout.py's) ----------------
 
@@ -448,6 +457,35 @@ def _resolve_scene(event: str, pack: Mapping[str, Any]) -> dict[str, Any]:
     return {"type": "builtin", "id": BUILTIN_SCENE_IDS.get(event, CUTSCENE_EVENTS[0])}
 
 
+def _apply_board_style(widgets: Any, board_widgets: Any) -> None:
+    """Copy :data:`CUTSCENE_STYLE_KEYS` from ``board_widgets`` onto
+    ``widgets`` in place, for every widget id present in both, and set
+    ``fit_text: True`` on every widget that received a style copy.
+
+    Geometry, visibility, alignment, backgrounds, and every other property
+    are left exactly as the geometry layout (the Broadcast bar) drew them --
+    only the *look* changes. A widget id that exists in only one of the two
+    mappings is left untouched (an id-only-in-board is simply ignored: the
+    Broadcast bar has no slot to paint it into).
+    """
+
+    if not isinstance(widgets, dict) or not isinstance(board_widgets, Mapping):
+        return
+    for widget_id, widget in widgets.items():
+        if not isinstance(widget, dict):
+            continue
+        board_widget = board_widgets.get(widget_id)
+        if not isinstance(board_widget, Mapping):
+            continue
+        copied = False
+        for key in CUTSCENE_STYLE_KEYS:
+            if key in board_widget:
+                widget[key] = board_widget[key]
+                copied = True
+        if copied:
+            widget["fit_text"] = True
+
+
 def build_program(
     *,
     play_id: int,
@@ -455,6 +493,7 @@ def build_program(
     pack: Mapping[str, Any],
     spectator_view: Mapping[str, Any],
     layout: Mapping[str, Any],
+    board_layout: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the one JSON document that tells the spectator page everything
     it needs to play one cutscene (spec section 2.4).
@@ -464,6 +503,16 @@ def build_program(
     the Tigers, so a first down, a touchdown, a turnover, or a crowd prompt
     is always theirs, and a penalty is nobody's -- it only says a flag is
     down.
+
+    ``layout`` is the *geometry* source: the Broadcast bar the board morphs
+    down into, whose ``x``/``y``/``width``/``height``/``font_scale`` decide
+    where everything sits during a cutscene. ``board_layout`` -- the
+    operator's active layout, if given -- is the *style* source: every
+    widget the two layouts have in common (at the top level, and per
+    ``screens.*`` mini-document) borrows the operator's colour, font, weight,
+    letter-spacing, text-transform, and text-effect, so the board keeps
+    looking like itself even while it is shrunk into the bar. Neither input
+    is ever mutated.
     """
 
     team = EVENT_TEAM.get(event, "home")
@@ -474,6 +523,17 @@ def build_program(
 
     program_layout: dict[str, Any] = copy.deepcopy(dict(layout)) if isinstance(layout, Mapping) else {}
     program_layout["name"] = "Cutscene"
+
+    if isinstance(board_layout, Mapping):
+        _apply_board_style(program_layout.get("widgets"), board_layout.get("widgets"))
+        board_screens = board_layout.get("screens")
+        program_screens = program_layout.get("screens")
+        if isinstance(program_screens, dict) and isinstance(board_screens, Mapping):
+            for screen_id, screen in program_screens.items():
+                board_screen = board_screens.get(screen_id)
+                if not isinstance(screen, dict) or not isinstance(board_screen, Mapping):
+                    continue
+                _apply_board_style(screen.get("widgets"), board_screen.get("widgets"))
 
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -526,6 +586,7 @@ __all__ = [
     "BUILTIN_SCENE_IDS",
     "CUTSCENE_TEAM_NAME",
     "CUTSCENE_EVENTS",
+    "CUTSCENE_STYLE_KEYS",
     "DEFAULT_DURATION_SECONDS",
     "EVENT_DEFAULT_INTRO",
     "EVENT_HEADLINES",

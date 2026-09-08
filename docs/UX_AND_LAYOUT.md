@@ -812,11 +812,11 @@ the two scenes added the same day (v3) `.scratch/cutscenes-v3/spec.md`.
 A cutscene is a manually-triggered 5–10 second interruption of the spectator
 board: a claw-strike intro rips across whatever is currently on screen (for
 the events that have one), the board morphs into the built-in **Broadcast
-bar** layout (score and clock along the bottom), a FIRST DOWN, TOUCHDOWN,
-TURNOVER, FLAG ON THE PLAY, or MAKE SOME NOISE scene plays on the freed-up
-upper stage, and the board morphs back to exactly what it was showing
-before — same layout, same screen (game, pre-game, or halftime). The five
-events, their durations, and their sublines:
+bar** layout's geometry (score and clock along the bottom), a FIRST DOWN,
+TOUCHDOWN, TURNOVER, FLAG ON THE PLAY, or MAKE SOME NOISE scene plays on the
+freed-up upper stage, and the board morphs back to exactly what it was
+showing before — same layout, same screen (game, pre-game, or halftime). The
+five events, their durations, and their sublines:
 
 | Event (`event`) | Headline | Subline | Duration | Intro | Whose |
 |---|---|---|---|---|---|
@@ -831,6 +831,23 @@ defensive counterpart of the touchdown, and it earns the claw) and **MAKE
 SOME NOISE** (a 5 s crowd prompt with a live level meter; it has no intro
 because a 1.6 s claw would eat a third of it and a crowd prompt wants to be
 on the wall *now*).
+
+**The morphed bar keeps the operator's own look (added September 8, 2026).**
+Only the Broadcast bar's *geometry* — each widget's position, size, and
+alignment — is borrowed for the morph; the *colours* are not. Every widget
+the Broadcast bar and the operator's currently active layout have in
+common (score, clock, and the rest, at the top level and on the pre-game
+and halftime screens alike) is repainted in that active layout's colour,
+font, weight, letter-spacing, text-transform, and text-effect, with safe
+text-fitting turned on for every widget repainted this way (the operator's
+font can be wider than the Broadcast bar's slot). So a board running the
+Scoreboard Grid preset still shows its gold scores and Bahnschrift/Impact
+faces while it is shrunk into the bar, instead of snapping to the
+Broadcast bar's own stock white/Arial look. Geometry, visibility, and
+everything else about the bar are unaffected; a widget the active layout
+does not have (or a widget the Broadcast bar does not have) is left
+exactly as the Broadcast bar would have drawn it.
+
 It is a host/presentation concern, exactly like the presentation layout and
 the saved teams: triggering, cancelling, selecting a pack, and rescanning the
 packs folder advance no state revision, submit no `Command`, and write
@@ -919,7 +936,7 @@ times below are relative to the moment the program is applied:
 | When | What happens |
 |---|---|
 | t = 0 | The stage covers the full canvas; the 1.6 s claw-strike intro plays over whatever board is currently showing. A **penalty** has no intro at all (its pack's `intro` defaults to `none`, since the claws are Tigers-branded and a flag is nobody's), and neither does **make some noise** (at 5 s the claw would eat a third of it), so those two scenes mount immediately with the bar already up. |
-| ≈ 45% of the intro | The board morphs into the Broadcast bar layout under a 600 ms transition, underneath the still-playing intro. |
+| ≈ 45% of the intro | The board morphs into the Broadcast bar's geometry, painted in the operator's active layout's colours and fonts, under a 600 ms transition, underneath the still-playing intro. |
 | End of the intro | The intro unmounts; the stage shrinks to the upper ~70% of the canvas (above the bar's status row); the main scene — FIRST DOWN, TOUCHDOWN, TURNOVER, FLAG ON THE PLAY, or MAKE SOME NOISE, built-in or a dropped-in video/image — mounts. |
 | Duration − outro (600 ms, or 300 ms on a cancel) | The stage fades. |
 | Full duration | The scene unmounts, the stage hides, the board morphs back to the operator's own layout, and the window is idle again. |

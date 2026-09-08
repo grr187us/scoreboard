@@ -2,7 +2,7 @@
 
 > **Document purpose:** This is the living command-center document for the scoreboard project. It records the current plan, phase status, major decisions, unanswered questions, and the next concrete action.
 >
-> **Last updated:** September 7, 2026
+> **Last updated:** September 8, 2026
 
 ## How to Use This Document
 
@@ -1668,6 +1668,67 @@ The broken virtual-environment launcher was not changed.
 the two-preset draft; rebuild it before the next hand-off. `compileall`,
 `git diff --check`, and the relative-link checker pass on the revised tree.
 Physical LED readability/brightness, the HDMI gate, and Task 12 remain open.
+
+### 9. Cutscene morph colours and grid-clock text fit — September 8, 2026 (branch `improvements`)
+
+Two owner-reported bugs fixed, both against `.scratch/improvements/spec.md`.
+
+**Bug 1 — a cutscene repainted the board in the wrong colours.** Every
+cutscene morphs the board down into the built-in Broadcast bar's geometry
+(section 12.4 above); until now it also switched to that preset's own
+white/Arial look, so a board running the Scoreboard Grid or Tigers Stadium
+preset visibly snapped to a different, unbranded appearance for the
+duration of the play. `build_program` (`presentation/cutscenes.py`) now
+takes an optional `board_layout` — the operator's active layout, the style
+source — and, for every widget id the Broadcast bar (the geometry source)
+and the active layout have in common, at the top level and per `screens.*`,
+copies `CUTSCENE_STYLE_KEYS` (`color`, `font_family`, `font_weight`,
+`letter_spacing`, `text_transform`, `text_effect`, exported so a test can
+pin the exact list) and forces `fit_text: True` on every widget touched
+this way, since the operator's font can be wider than the Broadcast bar's
+slot. Geometry, visibility, alignment, backgrounds, and everything else
+stay the Broadcast bar's; a widget on only one side is left untouched;
+`board_layout=None` (or anything not a mapping) reproduces the old output
+exactly; neither input is ever mutated. `CutsceneDirector.trigger`
+(`host/cutscenes.py`) reads the new `read_board_layout` callable beside its
+existing `read_layout` call, both **outside** `self._lock` (the file's
+lock-ordering rule: never call out to another lock holder while holding the
+director lock), and contains a raising reader the same way as the existing
+spectator-view reader — a diagnostic note, not a broken trigger.
+`host/app.py` wires it as `read_board_layout=self.layouts.current_layout`.
+One fix in the shared program builder covers all five events. See
+[the morph description](docs/UX_AND_LAYOUT.md#12-cutscenes-window-added-september-6-2026)
+for the operator-facing explanation.
+
+**Bug 2 — the game clock rendered too big until it first started.**
+`fitWidgetText` (`views/shared/board.js`) caches its fit by a key that
+includes the CSS font-family string but not whether that font has actually
+finished loading. The Scoreboard Grid preset's `varsity` face (the bundled
+Graduate font) loads lazily on first use, so the first fit ran against the
+fallback face, came out too large, and the cache — only invalidated when
+the widget's text next changes — never noticed the swap once Graduate
+arrived; the clock stayed oversized and overlapping the score until the
+clock started and its text changed. Every fitted widget under both boards
+now re-fits on `document.fonts.ready` and on every `document.fonts`
+`loadingdone` event, reusing the existing `_fitKey`-clearing pattern;
+browsers without the Font Loading API keep today's behaviour unchanged.
+
+**Verification performed:** unit + integration + browser tests. Full
+discovery **1136 tests, 0 failures, 0 errors, 3 expected A-1 skips**. New
+Python coverage: `build_program`'s style-merge behaviour (shared widgets
+take the board's look and the geometry's position, an id on only one side
+ignored, screens merged the same way, `None`/non-mapping unchanged,
+neither input mutated), a director wired with `read_board_layout`
+publishing the merged colours for every one of the five `CUTSCENE_EVENTS`,
+a raising reader still triggering and noting a diagnostic, and the same
+proved against the real, fully wired `ScoreboardApplication` after
+selecting a Scoreboard Grid-based preset as the active layout. New browser
+coverage (`tests/ui/grid.cjs` + `tests/ui/test_grid_browser.py`): the
+Scoreboard Grid preset's game clock at a stopped `12:00` — before it has
+ever started, and with no further model push — fits inside its box and
+does not overlap the score widgets once `document.fonts.ready` settles.
+
+Real-runtime evidence (September 8, 2026, real pywebview/WebView2, operator + practice windows, a session-scratch harness `realrun_improvements.py`): with the Tigers Stadium and Scoreboard Grid presets active and `document.fonts.status == "loaded"`, the resting `12:00` game clock's ink rect sat inside its widget box and intersected neither score box (Grid: ink 229.9-394.1 px in a 226.4-397.6 px box). Each of the five events, triggered by the operator hotkeys D/T/O/F/L, kept every sampled widget's computed colour and font family identical before and mid-cutscene while `#canvas[data-layout]` read `Cutscene`, and the preset name returned after the outro. An offline Edge/Playwright pass over both presets and all five events (and a `board_layout=None` control that reproduced the white/Arial bar) agreed: 10/10 PASS, no console errors.
 
 ## Next Action
 

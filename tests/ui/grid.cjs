@@ -63,6 +63,16 @@ async function main(data) {
     },data);
     await page.goto(pathToFileURL(path.resolve('src/scoreboard/views/spectator/index.html')).href);
     await page.waitForFunction(()=>typeof window.applyView==='function');
+    // Bug 2: the very first render on the page is the only place the game
+    // clock's fit can race the Grid preset's lazily-loaded Graduate face
+    // (later renders find it already loaded). Apply the stopped 12:00 clock
+    // here, before anything else has touched the page, then require the fit
+    // to be correct once fonts have settled -- with no further model push,
+    // since a real spectator sees the clock at rest for a while before it
+    // ever starts.
+    await page.evaluate(data=>{window.applyLayout(data.layout);window.applyView(data.clock_start);},data);
+    await page.evaluate(()=>document.fonts.ready);
+    assert.deepEqual(await measure(page),[],'game clock at rest before it has ever started');
     await page.evaluate(data=>{window.applyLayout(data.layout);window.applyView(data.models[0]);},data);
     const value=id=>page.locator(`#game-board [data-widget="${id}"] .widget-text`).textContent();
     for (const [width,height] of [[1920,1080],[1366,768],[1280,720],[640,360],[390,844]]) {
