@@ -109,7 +109,6 @@ SESSION_SHUTDOWN: Final[str] = "session_shutdown"
 CLOCK_EXPIRED: Final[dict[str, str]] = {
     "game": "game_clock_expired",
     "play": "play_clock_expired",
-    "event": "event_countdown_expired",
     # F3's crowd-facing status countdown: additive entry so
     # host/bridge.py's _record_expirations can note it reaching zero on its
     # own, in the same shape as the other three (.scratch/f3-i4/DESIGN.md).
@@ -515,7 +514,6 @@ def stopped_state(state: GameState) -> GameState:
         state,
         game_clock=stopped_clock(state.game_clock),
         play_clock=stopped_clock(state.play_clock),
-        event_countdown=stopped_clock(state.event_countdown),
     )
 
 
@@ -769,7 +767,7 @@ class GameStore:
             CLOCK_EXPIRED[clock],
             SYSTEM_SOURCE,
             None,
-            f"{clock}_clock" if clock != "event" else "event_countdown",
+            f"{clock}_clock",
             _encode({"seconds": float(from_seconds), "running": True}),
             _encode({"seconds": 0.0, "running": False}),
             RESULT_ACCEPTED,
@@ -900,7 +898,6 @@ class GameStore:
         return (
             displayed_second(state.game_clock.seconds),
             displayed_second(state.play_clock.seconds),
-            displayed_second(state.event_countdown.seconds),
         )
 
     def _reset_display_cadence(self, state: GameState) -> None:

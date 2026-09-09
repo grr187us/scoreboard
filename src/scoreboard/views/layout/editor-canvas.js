@@ -55,7 +55,8 @@
   function minSize(app, item) {
     var limits = (app.state && app.state.limits) || {};
     if (item && item.type === 'box') {
-      // A box may be a hairline rule; mirrors MIN_BOX_THICKNESS.
+      // A box may be a hairline rule; mirrors MIN_BOX_THICKNESS. (A ticker
+      // keeps the widget minimum below, as the schema does.)
       var thickness = typeof limits.min_box_thickness === 'number' ? limits.min_box_thickness : 0.002;
       return { width: thickness, height: thickness };
     }
@@ -146,7 +147,7 @@
       return;
     }
     var kind = S.kindOf(doc, id);
-    var bounds = S.boundsFor(doc, kind);
+    var bounds = S.boundsFor(doc, kind, item);
     var targets = S.snapTargets(doc, id);
     var scale = precisionScale(app);
     var lines = [];
@@ -217,7 +218,7 @@
       return;
     }
     var kind = S.kindOf(doc, id);
-    var bounds = S.boundsFor(doc, kind);
+    var bounds = S.boundsFor(doc, kind, item);
     var targets = S.snapTargets(doc, id);
     var scale = precisionScale(app);
     var minimum = minSize(app, item);
@@ -519,7 +520,7 @@
       if (!item) {
         continue;
       }
-      var ref = group || S.boundsFor(doc, S.kindOf(doc, ids[i]));
+      var ref = group || S.boundsFor(doc, S.kindOf(doc, ids[i]), item);
       if (edge === 'left') {
         S.setGeometry(item, 'x', ref.left, scale);
       } else if (edge === 'right') {

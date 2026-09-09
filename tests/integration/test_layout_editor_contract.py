@@ -42,6 +42,15 @@ EDITABLE_PROPERTIES = frozenset({
     "corner_radius", "padding", "display_format", "fit_text", "corner_cut", "cut_corners",
     # Element-only properties (spec section 1.4).
     "text", "opacity", "fit",
+    # Event-screens additions (.scratch/event-screens/spec.md section 4):
+    # orientation/border style/bleed/rotation as plain properties; the
+    # gradient (`fill`), the named `animation`, a ticker's `lines`, and an
+    # image's bundled `asset` as composites the editor assembles from these.
+    "orientation", "border_style", "bleed", "rotate_degrees",
+    "fill_kind", "fill_angle", "fill_color_a", "fill_opacity_a",
+    "fill_color_b", "fill_opacity_b", "fill_on", "fill_off",
+    "animation_preset", "animation_seconds",
+    "lines", "mode", "speed_seconds", "asset",
 })
 
 
@@ -234,7 +243,11 @@ class ControlCoverageTests(unittest.TestCase):
         for key in ("min_font_scale", "max_font_scale", "min_widget_width",
                     "min_widget_height", "text_alignments", "vertical_alignments",
                     "font_weights", "font_families", "text_transforms", "text_effects",
-                    "image_fits", "widget_groups", "max_text_length", "max_image_bytes"):
+                    "image_fits", "widget_groups", "max_text_length", "max_image_bytes",
+                    # Event-screens limits (spec section 2.1); read with fallbacks.
+                    "animation_presets", "animation_min_seconds", "max_animation_seconds",
+                    "fill_kinds", "border_styles", "orientations", "max_rotate_degrees",
+                    "ticker_modes", "ticker_speed_range", "max_ticker_lines", "bundled_images"):
             self.assertIn(key, self.script, key)
 
     def test_it_offers_reset_save_and_discard(self) -> None:
@@ -252,9 +265,28 @@ class ControlCoverageTests(unittest.TestCase):
         for action in ("rename_layout_open", "duplicate_layout_open", "delete_layout_open"):
             self.assertIn(f'data-action="{action}"', self.html, action)
 
-    def test_it_offers_the_three_element_types(self) -> None:
-        for action in ("add_text", "add_image", "add_box"):
+    def test_it_offers_the_four_element_types(self) -> None:
+        for action in ("add_text", "add_image", "add_box", "add_ticker"):
             self.assertIn(f'data-action="{action}"', self.html, action)
+
+    def test_it_offers_the_motion_switch_as_a_toolbar_toggle(self) -> None:
+        """The motion kill switch (spec section 4): a pressed-state button the
+        preview and the wall both follow. It is a host preference -- it must
+        not be a `data-prop` (it is not part of the layout document) and it
+        must not read as a game command (the CommandType scan above covers
+        that; this pins the control itself)."""
+
+        match = re.search(r'<button[^>]*id="motion-toggle"[^>]*>', self.html)
+        self.assertIsNotNone(match, "no #motion-toggle button")
+        tag = match.group(0)
+        self.assertIn('data-action="toggle_motion"', tag)
+        self.assertIn("aria-pressed", tag)
+        self.assertNotIn("data-prop", tag)
+        self.assertIn("data-motion", self.script, "the preview must set #canvas's data-motion")
+
+    def test_the_motion_and_ticker_sections_exist(self) -> None:
+        for section in ("sec-motion", "sec-ticker"):
+            self.assertIn(f'id="{section}"', self.html, section)
 
     def test_the_image_picker_is_restricted_to_the_four_accepted_types(self) -> None:
         match = re.search(r'<input[^>]*id="image-file-input"[^>]*>', self.html)

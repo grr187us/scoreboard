@@ -29,7 +29,7 @@ class TeamsDrawerContractTests(unittest.TestCase):
 
     def _teams_drawer(self) -> str:
         drawer = self.html.split('<div class="drawer" id="teams-drawer"', 1)[1]
-        return drawer.split('<div class="drawer" id="event-drawer"', 1)[0]
+        return drawer.split('<div class="drawer" id="setup-drawer"', 1)[0]
 
     def test_the_tool_bar_offers_a_teams_button(self) -> None:
         tools = self._tools_bar()

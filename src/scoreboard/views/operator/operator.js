@@ -1,9 +1,10 @@
 /* Operator controls.
  *
- * This file holds no authoritative state. It stores exactly three kinds of
+ * This file holds no authoritative state. It stores exactly four kinds of
  * ephemeral view state -- which drawer is open, which command a confirmation
- * dialog is waiting on, and the text an operator has typed but not applied --
- * and it renders whatever view model Python returns.
+ * dialog is waiting on, the text an operator has typed but not applied, and
+ * which team's scoring is armed -- and it renders whatever view model Python
+ * returns.
  *
  * It never computes a score, a clock value, a phase, or a revision. Every
  * control routes through bridge.command(), and the expected revision comes
@@ -19,6 +20,13 @@
   var model = null;
   var pending = null; // the command a confirmation dialog is waiting on
   var lastDisplayLabel = null; // last rendered display health, to avoid re-reads
+  var armedTeam = null; // which team's scoring is armed ('home'/'away'/null)
+  var armTimer = null; // the auto-disarm timeout; see armScore()
+  var promptedForTeams = false; // the soft prompt has had its one free opening
+
+  // Long enough to reach the right point button, short enough that an armed
+  // panel is never left waiting through the next play (owner decision 2).
+  var ARM_SECONDS = 8;
 
   var alertLine = document.getElementById('alert');
   var dialog = document.getElementById('confirm-dialog');
@@ -26,6 +34,20 @@
   var dialogDetail = document.getElementById('confirm-detail');
   var dialogChange = document.getElementById('confirm-change');
   var teamsPayload = null; // last api.teams() result, used to prefill Edit
+  var rulesPayload = null; // last api.rules() result, for Restore defaults
+
+  // The Setup drawer's fields, by rule name. A two-id entry is a
+  // minutes:seconds pair; a one-id entry is a plain number. The names are
+  // Python's (domain/rules.py); the page only moves values in and out.
+  var RULE_INPUTS = {
+    quarter_seconds: ['rule-quarter-minutes', 'rule-quarter-seconds'],
+    overtime_seconds: ['rule-overtime-minutes', 'rule-overtime-seconds'],
+    pregame_seconds: ['rule-pregame-minutes', 'rule-pregame-seconds'],
+    halftime_seconds: ['rule-halftime-minutes', 'rule-halftime-seconds'],
+    warmup_seconds: ['rule-warmup-minutes', 'rule-warmup-seconds'],
+    timeout_seconds: ['rule-timeout-seconds'],
+    timeouts_per_half: ['rule-timeouts-per-half']
+  };
 
   /* --- Rendering -------------------------------------------------------- */
 
@@ -38,7 +60,6 @@
 
     var game = model.clocks.game;
     var play = model.clocks.play;
-    var event = model.clocks.event;
 
     R.setText(document.getElementById('chip-game'),
       'GAME ' + game.display + ' ' + game.status);
@@ -61,17 +82,18 @@
     markState('game-stop', !game.running);
     markState('play-start', play.running);
     markState('play-stop', !play.running);
-    markState('event-start', event.running);
-    markState('event-stop', !event.running);
 
-    // The same correction controls serve the authoritative pregame countdown.
-    // JavaScript only adjusts form affordances; Python validates and owns time.
+    // The same correction controls serve the kickoff and halftime countdowns:
+    // one game-clock engine for every quarter label. JavaScript only adjusts
+    // form affordances from the period length Python reports; Python
+    // validates and owns time.
+    var maximumSeconds = Number(game.maximum_seconds) || 720;
     var gameMinutes = document.getElementById('game-minutes');
-    if (gameMinutes) gameMinutes.max = model.quarter === 'PRE' ? '30' : '12';
+    if (gameMinutes) gameMinutes.max = String(Math.ceil(maximumSeconds / 60));
     var gameReset = document.querySelector('[data-command="game_clock_reset"]');
-    if (gameReset) gameReset.dataset.confirmDetail = model.quarter === 'PRE' ?
-      'The pregame countdown returns to 30:00 and stays stopped.' :
-      'The game clock returns to 12:00 and stays stopped.';
+    if (gameReset) gameReset.dataset.confirmDetail =
+      'The clock returns to ' + (game.full_display || '12:00') + ' and stays stopped.';
+    renderRules(model.rules);
 
     renderHealth(model.health);
     renderCrowdStatus(model);
@@ -89,7 +111,115 @@
     renderIdentityNow('away', awayIdentity || null);
     renderIdentityStripe('home', homeIdentity || null);
     renderIdentityStripe('away', awayIdentity || null);
+    renderSetup(model);
+    renderTimeoutButtons(model);
   }
+
+  /* --- Teams not chosen yet (owner decision 1) --------------------------- */
+
+  /**
+   * The soft prompt's three surfaces: NOT CHOSEN on the panel, the sentence
+   * at the top of the Teams drawer, and a warm border on the Teams button.
+   * Every word here is Python's (`setup.detail`); an older view model with no
+   * `setup` block is treated as "nothing pending" rather than throwing, the
+   * same way a missing `undo_history` is.
+   */
+  function renderSetup(current) {
+    var setup = current.setup || {};
+    R.show(document.getElementById('home-pending'), Boolean(setup.home_pending));
+    R.show(document.getElementById('away-pending'), Boolean(setup.away_pending));
+
+    var prompt = document.getElementById('teams-prompt');
+    if (prompt) {
+      R.setText(prompt, setup.detail || '');
+      R.show(prompt, Boolean(setup.teams_pending));
+    }
+    var teamsButton = document.getElementById('open-teams');
+    if (teamsButton) {
+      // Text plus a border, never colour alone (U-002): the drawer's sentence
+      // and the panel's NOT CHOSEN carry the meaning; this only draws the eye.
+      R.setFlag(teamsButton, 'is-attention', Boolean(setup.teams_pending));
+      teamsButton.title = setup.teams_pending ? 'Choose the teams before kickoff.' : '';
+    }
+  }
+
+  /**
+   * A team with no timeouts left cannot spend one. This is a render-time
+   * affordance only -- Python still refuses the command below zero -- and it
+   * computes nothing: the count comes straight from the view model.
+   */
+  /**
+   * The crowd TIMEOUT button loads the configured timeout length (Setup).
+   * The length is copied from the view model into the button's data-seconds
+   * at render time, so the command it sends is exactly what Python holds.
+   */
+  function renderRules(rules) {
+    if (!rules) {
+      return; // an older view model with no rules block; the HTML default stands
+    }
+    var timeoutButton = document.getElementById('crowd-timeout');
+    if (timeoutButton && rules.timeout_seconds) {
+      timeoutButton.dataset.seconds = String(rules.timeout_seconds);
+    }
+  }
+
+  function renderTimeoutButtons(current) {
+    var timeouts = current.football ? current.football.timeouts : null;
+    ['home', 'away'].forEach(function (side) {
+      var button = document.getElementById(side + '-timeout');
+      if (button && timeouts) {
+        button.disabled = timeouts[side] <= 0;
+      }
+    });
+  }
+
+  /* --- Armed scoring (owner decision 2) ---------------------------------- */
+
+  /**
+   * Arm one team's point buttons. Only one team can be armed at a time, so
+   * this disarms whatever was armed first. The timeout it starts is the only
+   * timer this file owns; it computes no game value, it just takes the point
+   * buttons away again when nobody presses one.
+   */
+  function armScore(team) {
+    disarmScore();
+    armedTeam = team;
+    armTimer = window.setTimeout(disarmScore, ARM_SECONDS * 1000);
+    renderArmed();
+  }
+
+  function disarmScore() {
+    if (armTimer !== null) {
+      window.clearTimeout(armTimer);
+      armTimer = null;
+    }
+    armedTeam = null;
+    renderArmed();
+  }
+
+  /**
+   * Swap the two groups inside the fixed-height .score-controls block. They
+   * are toggled with `hidden`, never style.display, and both stay inside the
+   * same block, so the panel's height never changes and nothing on the page
+   * can be pushed off a 1093x614 screen (U-001).
+   */
+  function renderArmed() {
+    ['home', 'away'].forEach(function (side) {
+      var armed = armedTeam === side;
+      var controls = document.getElementById(side + '-score-controls');
+      if (controls) {
+        controls.dataset.armed = armed ? 'true' : 'false';
+      }
+      R.setFlag(document.getElementById(side + '-panel'), 'is-armed', armed);
+      R.show(document.getElementById(side + '-idle'), !armed);
+      R.show(document.getElementById(side + '-armed'), armed);
+      // The word SCORING in the heading, not the accent border alone (U-002).
+      R.show(document.getElementById(side + '-armed-flag'), armed);
+    });
+  }
+
+  // An armed panel must never survive the operator's attention moving away.
+  window.addEventListener('blur', disarmScore);
 
   /* --- Team identity (F4) ------------------------------------------------ */
 
@@ -165,6 +295,9 @@
     R.setText(document.getElementById('display-detail'),
       health.display.detail || (health.display.open ? health.display.target : '') || '');
     R.show(document.getElementById('drawer-reopen-display'), health.display.can_reopen);
+    // Closing is only offered while there is something to close (owner
+    // request 6); Reopen is the mirror of it and already renders that way.
+    R.show(document.getElementById('close-display'), health.display.open);
 
     var saveChip = document.getElementById('chip-save');
     R.setText(saveChip, health.persistence.label);
@@ -383,7 +516,20 @@
     return field ? field.value : '';
   }
 
+  /**
+   * What Undo will reverse, in Python's own words. This page adds the two-word
+   * prefix and nothing else: `last_action.label` is the same string the LAST
+   * strip and the history drawer already show, so the dialog cannot disagree
+   * with them about what is about to be given up (U-009).
+   */
+  function describeUndo() {
+    return 'Reverses: ' + (model && model.last_action ? model.last_action.label : '');
+  }
+
   function describeChange(button, args) {
+    if (button.dataset.command === 'undo') {
+      return describeUndo();
+    }
     if (args.value !== undefined && button.dataset.team) {
       var team = button.dataset.team;
       return team.toUpperCase() + ' score ' + model.teams[team].score +
@@ -422,6 +568,15 @@
     render(result.view);
     if (result.accepted) {
       clearAlert();
+      if (name === 'new_game') {
+        // The soft prompt (owner decision 1): a new game arrives with the
+        // default names, so the drawer that fixes that opens by itself. It
+        // can be dismissed; nothing is locked, and this is one of only two
+        // places the page opens a drawer on its own.
+        promptedForTeams = true;
+        openDrawer('teams-drawer');
+        refreshTeams();
+      }
       return;
     }
     if (result.confirmation_required) {
@@ -447,6 +602,9 @@
   /* --- Confirmation dialog --------------------------------------------- */
 
   function openDialog(request) {
+    // A dialog takes the operator's attention; an armed panel waiting behind
+    // it would apply a point on the next stray press (owner decision 2).
+    disarmScore();
     request.restoreFocus = document.activeElement;
     request.expectedRevision = request.expectedRevision === undefined ? model.revision : request.expectedRevision;
     pending = request;
@@ -535,6 +693,12 @@
     var name = button.dataset.command;
     var args = argumentsFor(button);
     var source = clickEvent.detail === 0 ? 'operator-keyboard' : 'operator-mouse';
+
+    if (name === 'add_score') {
+      // One point press applies and disarms, accepted or rejected: the panel
+      // is armed for a single decision, never for a run of them.
+      disarmScore();
+    }
 
     if (button.dataset.confirm === 'local') {
       // A direct correction shows old and new values before anything is sent.
@@ -762,6 +926,34 @@
   }
 
   function handleAction(action, button) {
+    if (action === 'arm_score') {
+      // No bridge call and no game value: arming only reveals the four point
+      // buttons that were always the real data-command controls (K-001).
+      armScore(button && button.dataset.team);
+      return;
+    }
+    if (action === 'disarm_score') {
+      disarmScore();
+      return;
+    }
+    if (action === 'close_display') {
+      // A host action in the Reopen family: it closes that one window and
+      // changes no game state, advances no revision (D-005). Older hosts have
+      // no such method, and must say so plainly rather than throw.
+      if (!api || typeof api.close_display !== 'function') {
+        showAlert('This build cannot close the display window from here.');
+        return;
+      }
+      Promise.resolve(api.close_display()).then(function (payload) {
+        renderDisplays(payload);
+        if (payload && payload.status) {
+          showAlert(payload.status.detail || '');
+        }
+      }).catch(function (error) {
+        showAlert('The display could not be closed: ' + error);
+      });
+      return;
+    }
     if (action === 'edit_team') {
       var editName = button && button.dataset.name;
       var editTeam = teamsPayload && teamsPayload.teams &&
@@ -911,10 +1103,24 @@
     } else if (action === 'open_display') {
       openDrawer('display-drawer');
       refreshDisplays();
-    } else if (action === 'open_event') {
-      openDrawer('event-drawer');
+    } else if (action === 'open_setup') {
+      openDrawer('setup-drawer');
+      refreshRules();
+    } else if (action === 'save_rules') {
+      saveRules();
+    } else if (action === 'restore_default_rules') {
+      // Draft only: the defaults land in the fields, and nothing reaches
+      // Python until Save (F-016).
+      if (rulesPayload && rulesPayload.default_fields) {
+        fillRules(rulesPayload.default_fields);
+        setRulesNote('Defaults filled in. Press Save rules to apply them.');
+      }
     } else if (action === 'open_field') {
       openDrawer('field-drawer');
+    } else if (action === 'open_game') {
+      // The separate danger area (owner request 5): every control inside asks
+      // to be confirmed before it can lose a game.
+      openDrawer('game-drawer');
     } else if (action === 'open_history') {
       // Read-only: the list is already in the rendered view model, so opening
       // it asks Python for nothing and changes nothing (I4).
@@ -942,6 +1148,9 @@
   }
 
   function openDrawer(id) {
+    // An overlay hides the board, so an armed panel behind it would be a
+    // surprise waiting for the drawer to close (owner decision 2).
+    disarmScore();
     closeDrawers();
     var drawer = document.getElementById(id);
     if (drawer) {
@@ -950,12 +1159,91 @@
   }
 
   function closeDrawers() {
-    ['corrections', 'display-drawer', 'teams-drawer', 'event-drawer', 'field-drawer', 'history-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
+    ['corrections', 'display-drawer', 'teams-drawer', 'setup-drawer', 'field-drawer', 'game-drawer', 'history-drawer', 'shortcut-help', 'advanced-drawer'].forEach(function (id) {
       var drawer = document.getElementById(id);
       if (drawer) {
         drawer.hidden = true;
       }
     });
+  }
+
+  /* --- Setup drawer (game rules) ---------------------------------------- */
+
+  function refreshRules() {
+    if (!api || typeof api.rules !== 'function') {
+      setRulesNote('Rules are not available in this build.');
+      return;
+    }
+    Promise.resolve(api.rules()).then(function (payload) {
+      rulesPayload = payload;
+      fillRules(payload.fields);
+      setRulesNote('');
+    }).catch(function (error) {
+      setRulesNote('The rules could not be read: ' + error);
+    });
+  }
+
+  /**
+   * Fill the drawer from Python's per-field split (`fields`): a clock rule
+   * arrives already divided into minutes and seconds, so nothing here does
+   * arithmetic on a value it was given.
+   */
+  function fillRules(fields) {
+    (fields || []).forEach(function (entry) {
+      var ids = RULE_INPUTS[entry.name];
+      if (!ids) return;
+      if (ids.length === 2) {
+        var minutes = document.getElementById(ids[0]);
+        var seconds = document.getElementById(ids[1]);
+        if (minutes) minutes.value = String(entry.minutes);
+        if (seconds) seconds.value = String(entry.seconds);
+      } else {
+        var field = document.getElementById(ids[0]);
+        if (field) field.value = String(entry.value);
+      }
+    });
+  }
+
+  /** Read every field at click time (F-016); Python validates the result. */
+  function readRules() {
+    var payload = {};
+    Object.keys(RULE_INPUTS).forEach(function (name) {
+      var ids = RULE_INPUTS[name];
+      if (ids.length === 2) {
+        payload[name] = Number(fieldValue('#' + ids[0])) * 60 + Number(fieldValue('#' + ids[1]));
+      } else {
+        payload[name] = Number(fieldValue('#' + ids[0]));
+      }
+    });
+    return payload;
+  }
+
+  function saveRules() {
+    if (!api || typeof api.save_rules !== 'function') {
+      setRulesNote('Rules cannot be saved in this build.');
+      return;
+    }
+    Promise.resolve(api.save_rules(readRules())).then(function (result) {
+      if (result && result.fields) {
+        rulesPayload = result;
+        fillRules(result.fields);
+      }
+      setRulesNote(result ? result.message : '');
+      if (result && !result.ok) {
+        showAlert(result.message);
+      } else {
+        clearAlert();
+      }
+    }).catch(function (error) {
+      setRulesNote('The rules could not be saved: ' + error);
+    });
+  }
+
+  function setRulesNote(message) {
+    var note = document.getElementById('rules-note');
+    if (!note) return;
+    R.setText(note, message || '');
+    note.hidden = !message;
   }
 
   /**
@@ -982,8 +1270,40 @@
     blocked: function () { return !api || !dialog.hidden || !document.getElementById('shortcut-help').hidden; },
     submit: submit,
     host: callHost,
+    /**
+     * A score key is the same two steps as the SCORE button (2.8): the first
+     * press only arms that team -- no bridge call, no game value -- and the
+     * second sends the point the binding already named.
+     */
+    score: function (binding) {
+      if (armedTeam === binding.arm) {
+        disarmScore();
+        submit(binding.command, Object.assign({}, binding.args),
+          {source: 'operator-keyboard'});
+        return;
+      }
+      armScore(binding.arm);
+    },
+    /**
+     * A binding that must be confirmed first (Ctrl+Z). It opens the same
+     * local dialog the button does, so both input adapters take the identical
+     * round trip (owner decision 3).
+     */
+    confirm: function (name, args, options) {
+      openDialog({
+        title: (options && options.title) || 'Confirm this change',
+        detail: '',
+        change: name === 'undo' ? describeUndo() : '',
+        command: name,
+        args: args,
+        source: 'operator-keyboard'
+      });
+    },
     close: function () {
       if (!dialog.hidden) closeDialog();
+      // Escape with nothing open and a team armed just puts the point buttons
+      // away; an armed panel can never be open at the same time as a drawer.
+      else if (armedTeam) disarmScore();
       else closeDrawers();
     }
   });
@@ -1009,7 +1329,18 @@
 
   R.whenReady(function (bridge) {
     api = bridge;
-    Promise.resolve(api.get_snapshot()).then(render);
+    Promise.resolve(api.get_snapshot()).then(function (view) {
+      render(view);
+      // The second (and last) place the page opens a drawer by itself: a
+      // fresh game at launch, or a recovered pregame board still carrying the
+      // default names. It never re-opens from render(), so a prompt the
+      // operator dismissed stays dismissed until the next New Game.
+      if (!promptedForTeams && view && view.setup && view.setup.teams_pending) {
+        promptedForTeams = true;
+        openDrawer('teams-drawer');
+        refreshTeams();
+      }
+    });
     // So the "Now" swatches are already right before the drawer is first
     // opened; identity also arrives in every view, so this is belt and
     // braces (F4).

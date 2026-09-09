@@ -85,11 +85,14 @@ WIDGET_GEOMETRY_PROPERTIES = frozenset({
     "id", "visible", "x", "y", "width", "height", "font_scale", "color",
     "text_align", "vertical_align", "font_weight", "z_index",
 })
-#: The ten v2 style properties every widget (and text element) now carries.
+#: The ten v2 style properties every widget (and text element) now carries,
+#: plus the three event-screens properties every widget carries (border
+#: style, bounded animation, writing direction).
 WIDGET_STYLE_PROPERTIES = frozenset({
     "font_family", "letter_spacing", "text_transform", "text_effect",
     "background", "background_opacity", "border_color", "border_width",
     "corner_radius", "corner_cut", "cut_corners", "padding",
+    "border_style", "animation", "orientation",
 })
 WIDGET_PROPERTIES = WIDGET_GEOMETRY_PROPERTIES | WIDGET_STYLE_PROPERTIES | {"display_format", "fit_text"}
 
@@ -382,7 +385,13 @@ class WidgetMetadataTests(unittest.TestCase):
                     "min_box_thickness",
                     "max_text_length", "max_text_lines", "max_image_bytes",
                     "max_total_image_bytes", "font_families", "text_transforms",
-                    "text_effects", "image_fits", "element_types", "widget_groups"):
+                    "text_effects", "image_fits", "element_types", "widget_groups",
+                    # Event-screens spec section 2.1.
+                    "animation_presets", "animation_min_seconds", "max_animation_seconds",
+                    "fill_kinds", "max_fill_stops", "border_styles", "orientations",
+                    "max_rotate_degrees", "bleed_min", "bleed_max", "bleed_max_size",
+                    "ticker_modes", "max_ticker_lines", "max_ticker_line_length",
+                    "ticker_speed_range", "bundled_images"):
             self.assertIn(key, limits())
 
     def test_status_widgets_are_exposed_under_the_status_group(self) -> None:
@@ -650,16 +659,19 @@ class ScreenTests(unittest.TestCase):
         by_screen = screen_preset_descriptors()
 
         self.assertEqual(set(by_screen), set(EVENT_SCREEN_IDS))
-        self.assertEqual(len(by_screen["pregame"]), 6)
-        self.assertEqual(len(by_screen["halftime"]), 6)
+        # Event-screens spec section 2.8: the pinned order, nine per screen.
+        self.assertEqual(len(by_screen["pregame"]), 9)
+        self.assertEqual(len(by_screen["halftime"]), 9)
         self.assertEqual(
             [p["id"] for p in by_screen["pregame"]],
-            ["pregame_classic", "pregame_matchup", "pregame_broadcast", "pregame_tigers",
+            ["pregame_welcome", "pregame_kickoff_clock", "pregame_fifty", "pregame_classic",
+             "pregame_matchup", "pregame_broadcast", "pregame_tigers",
              "pregame_stadium", "pregame_grid"],
         )
         self.assertEqual(
             [p["id"] for p in by_screen["halftime"]],
-            ["halftime_classic", "halftime_score_first", "halftime_broadcast", "halftime_tigers",
+            ["halftime_welcome", "halftime_kickoff_clock", "halftime_fifty", "halftime_classic",
+             "halftime_score_first", "halftime_broadcast", "halftime_tigers",
              "halftime_stadium", "halftime_grid"],
         )
 
@@ -1561,7 +1573,7 @@ class ElementLabelTests(unittest.TestCase):
         self.assertEqual(element_label({"type": "box", "id": "panel_1"}), "Box panel_1")
 
     def test_element_constants_are_internally_consistent(self) -> None:
-        self.assertEqual(set(ELEMENT_TYPES), {"text", "image", "box"})
+        self.assertEqual(set(ELEMENT_TYPES), {"text", "image", "box", "ticker"})
         self.assertEqual(set(TEXT_TRANSFORMS), {"none", "uppercase"})
         self.assertEqual(set(TEXT_EFFECTS), {"none", "shadow", "outline"})
         self.assertEqual(set(IMAGE_FITS), {"contain", "cover", "fill"})

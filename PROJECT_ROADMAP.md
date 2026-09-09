@@ -2,7 +2,7 @@
 
 > **Document purpose:** This is the living command-center document for the scoreboard project. It records the current plan, phase status, major decisions, unanswered questions, and the next concrete action.
 >
-> **Last updated:** September 8, 2026
+> **Last updated:** September 9, 2026
 
 ## How to Use This Document
 
@@ -490,6 +490,72 @@ spectator drew that pregame screen during `PRE_GAME`, and a confirmed move
 to `HALF` switched it to the halftime screen showing `HALFTIME` and
 "Warmup follows: 3:00". Not verified: the `tests/ui/` Playwright suites
 (no Node.js on this host) and LED/hardware rendering.
+
+### Phase 2 owner request 5 — scoreboard control refresh (September 8, 2026)
+
+**Status: ✅ delivered and verified September 8, 2026.** Built against
+`.scratch/control-refresh/spec.md`, verified with the full suite **green at
+1207 tests, 0 failures, 0 errors** (the 3 A-1 skips are the only
+pre-existing exceptions carried forward) and **45/45 checks** in the real
+pywebview runtime, driven through `.scratch/control-refresh/realrun_control_refresh.py`
+against the actual `WindowHost`/WebView2 windows rather than a stub bridge.
+
+**What the owner decided, asked this session.**
+
+1. **Teams: a soft prompt, not a lock.** The Teams drawer opens by itself
+   after `New Game` (and once, on first load of a pregame board whose names
+   are still the defaults). It can be dismissed and nothing is locked, but
+   "teams not chosen" is made hard to miss on the board (`NOT CHOSEN` on the
+   panel, a warm border on the `Teams ▸` button) and the kickoff confirmation
+   says it in words.
+2. **Field Assistant plus two-step armed scoring.** The `+1/+2/+3/+6`
+   buttons no longer sit exposed on the main screen. Each team panel has one
+   `SCORE ▸` arm control; pressing it reveals the four point buttons and a
+   cancel in the same fixed-height space, and one point press applies and
+   disarms. The keyboard score keys (`Z X C V` / `N M , .`) became the same
+   two steps.
+3. **Protection pattern: a confirm dialog.** Undo (button and Ctrl+Z) now
+   shows a dialog naming exactly what it will reverse. Nothing on the main
+   screen changes the score, quarter, or history with a single accidental
+   press except the quick timeout below.
+4. **Quick timeout: charge only.** `HOME TIMEOUT` / `AWAY TIMEOUT` on the
+   main screen send `timeout_used` for that team and nothing else -- one
+   press, undoable, and it does not touch the crowd message, the countdown,
+   or any clock.
+
+**The two other asks.** `New Game`/`End Game`/`Reset Game Clock` moved out
+of the always-visible tool bar into a new `Game ▸` drawer -- the "separate
+danger area" `docs/UX_AND_LAYOUT.md` section 2 already called for. And the
+spectator display can now be closed from the display window itself: Esc and
+a mouse-revealed corner button both close only that window; the operator's
+health strip shows `DISPLAY CLOSED` with the pinned detail sentence and a
+one-click `Reopen Display`; the operator's Display drawer gained its own
+`Close Display` button. No game state changes when the display closes
+(D-005) -- a running clock keeps running and no revision moves.
+
+**What was verified.** The full suite: **1207 tests, 0 failures, 0 errors**
+(3 A-1 skips, unchanged from the pre-existing inventory). Four new
+integration test files (`test_display_close.py`, `test_team_setup_prompt.py`,
+`test_operator_refresh_ui.py`, `test_spectator_close_ui.py`; see
+`tests/README.md`) pin the new bridge methods, the `setup` view-model block,
+and the operator/spectator source contracts. In the real pywebview runtime:
+**45/45 checks** covering the Teams prompt opening itself and being
+dismissible, no exposed `add_score` control anywhere outside the armed row
+and Corrections, two-step scoring through the real bridge (arming sends
+nothing; the second press does), Undo's confirmation naming the reversed
+action, the quick timeout charging and nothing else, the `Game ▸` drawer's
+contents, and closing the display from the window (Esc, the corner button,
+and the drawer's `Close Display`) with the game clock still running
+afterward and no revision moved. U-001 was re-measured idle and armed at
+both supported viewports (`tests/ui/keyboard.cjs`) and again in the real
+window at the shipped size (`documentElement.scrollHeight` equalled
+`clientHeight` at 681×1164 with a team armed).
+
+**What is deliberately not done.** No hard lock on team names -- the soft
+prompt is dismissible by design, per owner decision 1. Team names remain
+pregame-only (F-010); this refresh did not reopen that rule. See
+`docs/UX_AND_LAYOUT.md` sections 2, 4, 5c, 5d, and 6 and `docs/ARCHITECTURE.md`
+for the full behavior.
 
 ### Phase 2 Task 3 evidence
 
@@ -1730,9 +1796,210 @@ does not overlap the score widgets once `document.fonts.ready` settles.
 
 Real-runtime evidence (September 8, 2026, real pywebview/WebView2, operator + practice windows, a session-scratch harness `realrun_improvements.py`): with the Tigers Stadium and Scoreboard Grid presets active and `document.fonts.status == "loaded"`, the resting `12:00` game clock's ink rect sat inside its widget box and intersected neither score box (Grid: ink 229.9-394.1 px in a 226.4-397.6 px box). Each of the five events, triggered by the operator hotkeys D/T/O/F/L, kept every sampled widget's computed colour and font family identical before and mid-cutscene while `#canvas[data-layout]` read `Cutscene`, and the preset name returned after the outro. An offline Edge/Playwright pass over both presets and all five events (and a `board_layout=None` control that reproduced the white/Arial bar) agreed: 10/10 PASS, no console errors.
 
+### 10. First down — stadium materials, September 8, 2026
+
+At the owner's request, replaced the flat-panel first-down graphic with a
+five-second sequence (including the existing 1.6-second intro and 600 ms
+outro). The opening for **first down only** has four non-intersecting curved
+tracks from one swipe, staggered middle/outer contact, rough rubber edges,
+and a Tigers-red torn edge. The intro leaves the live scoreboard fully
+undimmed beneath it.
+The main scene uses locally drawn turf/chalk, steel chain links pulling taut,
+an orange padded sideline target planting with dirt, dimensional lettering,
+and the existing Tigers crest. Other events keep their artwork and timing;
+the Broadcast morph still borrows the operator's active widget styles.
+Explicit custom-pack durations and manual-only triggers remain intact.
+
+The 1600×700 seeded field texture is painted once and cached in memory;
+motion uses CSS transforms/opacity, with no new asset, dependency, network
+request, or continuous drawing loop. A canvas failure retains the CSS field
+and copy. Late joins show the settled composition immediately. Reduced-motion
+preferences suppress the first-down scene's entrances and dirt burst.
+
+**Verification:** full discovery **1138 tests, 0 failures, 0 errors, 3
+expected A-1 skips**, 72.292 seconds. The new offline Edge browser test uses
+actual Python-built programs at 1920×1080, 1366×768 and 640×360, checks claw
+cross-sections for intersection, headline/marker clearance, texture rendering,
+live clock updates, natural completion, cancellation during intro and main
+scene, replacement, a late join, injected canvas failure, and reduced motion.
+A director test pins the five-second published program, host timer and
+countdown to the same duration. Rendered frames were inspected; a separate
+normal-speed Edge run completed with no page errors and restored Scoreboard
+Grid. Captures and test/build logs are ignored under `captures/first-down/`.
+Verification used the available Blender CPython 3.11.11 with `src` and the
+pinned `.venv/Lib/site-packages` on `PYTHONPATH`, installed Node/Edge and
+repo-local Playwright; the broken `.venv` launcher was not changed.
+
+**Package:** rebuilt `dist/Scoreboard` from this working tree, version 0.1.0,
+825 files, 31.2 MB. Required-asset and frozen `--check` verification passed
+with isolated data. The earlier transfer ZIP was not refreshed. JavaScript
+syntax, diff whitespace, and the Markdown link checker (24 files, no broken
+relative links) passed; the pack-library tests also passed after its generated
+README wording was updated to five seconds.
+
+**Follow-up visual refinement:** the owner requested a red scratch edge and
+no board dimming. The intro and first-down surface now have transparent
+computed backgrounds; a targeted browser/program/director/schema run passed
+**93 tests**, including the transparent-overlay assertion, and the package
+was rebuilt and verified again (825 files, 31.2 MB).
+
+**Next visual check:** owner playback using **D** / **FIRST DOWN**, with
+**Built-in first down** selected. Physical LED readability, target-laptop
+performance, Phase 0 HDMI evidence and Task 12 remain open.
+
+### 11. Touchdown — the tiger takes the wall, September 8, 2026
+
+The owner found the flat-slab touchdown "boring and generic" beside the new
+first down and chose, when asked, a tiger takeover over an end-zone scene or
+pyro: a bigger version of the first down's claw for the opening, no score
+in the scene, a full takeover at the existing ten seconds. Built on
+`improvements`:
+
+- **Opening** (`cutscenes/builtin.js`, `cutscene.css`): a touchdown branch
+  of `claw_scratch` with five separated torn tracks, each a third longer and
+  wider than the first down's, one white contact flash, a red bleed that
+  pours out of the cuts around the board morph, and a board shake 2.2× the
+  ordinary strike through a `--cs-shake` multiplier the shared
+  `cs-shake` keyframes now read (1 when unset, so every other intro is
+  unchanged). The intro sets the multiplier inline on `#canvas` and removes
+  it on unmount. The board stays undimmed underneath.
+- **Scene** (`cutscenes/tigers.js`, `tigers.css`): a striped hide (13
+  seeded stripes, fur-roughened) over the navy ground; four wide claw
+  tears (the intro's torn-track shape with gold-white light inside and a
+  red rim) ripping down the right of the wall in one staggered swipe with
+  a 2 % quake, a shockwave ring and a breathing glow; TOUCHDOWN as one
+  gold-and-white metal hit on an ink extrude with a second thump; the crest punching
+  in with three roar rings; TIGERS on a red tag; 34 gold embers looping
+  through the hold. The hide starts as a static `*_MARKUP` container
+  and is filled through the DOM API in the container's own namespace, so
+  the scene file still names no URL. A first cut used a hand-drawn red paw
+  print as the hero; the owner rejected it as cartoonish the same day and
+  it was replaced by the tears, which reuse the claw language the owner had
+  already approved on the first down. Late joins get the
+  settled hold (`cs-td-resumed`); reduced motion suppresses entrances and
+  the one-shot bursts. Turnover keeps its slabs and the original claw.
+
+**Verification:** full discovery **1139 tests, 0 failures, 0 errors, 3
+expected A-1 skips**, 70.570 seconds, with Node on PATH. New
+`tests/ui/touchdown.cjs` + `test_touchdown_browser.py` drive the real
+ten-second Python program at 1920×1080, 1366×768 and 640×360: the heavier
+shake and its cleanup, five non-intersecting tracks by cross-section, a
+transparent intro, the hold's headline/crest/tag/tear clearances, generated
+piece counts, no score text in the scene, a live clock push mid-scene,
+natural completion, cancellation during intro and scene, replacement, a
+late join with the settled hold, and reduced motion. The player browser
+test's intro assertions now describe the touchdown strike. Frames were
+captured from the real spectator page with the session's stub harness and
+inspected at each beat; the round-trip through the pywebview runtime was
+not repeated this pass.
+
+**Next visual check:** owner playback using **T** / **TOUCHDOWN** with
+**Built-in touchdown** selected, then the physical wall.
+
+### 12. Pre-game and halftime defaults — Broadcast Welcome, September 8, 2026
+
+At the owner's request, replaced the built-in default Pre-game and Halftime
+screens with the **Broadcast Welcome** direction from the owner's handoff:
+a branded navy countdown screen with the matchup, the Tigers crest, a
+dashed opponent placeholder, and a scrolling announcement ticker. Two more
+starting points join the Pre-game and Halftime preset galleries alongside
+it — **Kickoff Clock** (a numeral-first countdown over rotated, drifting
+team bars with a HOME/VISITOR eyebrow) and **Fifty Yard Line** (a scrolling
+field with end-zone bands and a framed countdown) — and **Classic** stays
+in the gallery as the original centered arrangement, unchanged. Built
+against `.scratch/event-screens/spec.md`, orchestrated across four
+file-owned agents (schema/presets/packaging, renderer, editor, docs).
+
+To draw the new direction the layout schema (still v3; every new property
+defaults so an existing document validates unchanged) gained: a bundled
+condensed face (Barlow Condensed, three weights, SIL OFL, alongside the
+existing Graduate); validated gradient/stripe fills on boxes (never free
+CSS); a bounded set of named animation presets, each with an enforced
+minimum duration and a shared maximum, enforcing the palette's no-fast-
+alternation rule; a global Motion switch that is a host preference
+(`config.json`) rather than a layout property or a game command, pushed to
+every open board with `window.applyMotion`; rotation; vertical text;
+a dashed border style; a `bleed` flag letting a box cross the canvas edge
+(clipped by the board, never the safe area for text); a bundled crest
+image (`views/shared/img/tigers-crest.png`); and a new `ticker` element
+type whose announcement lines are ordinary layout content, never game
+state, edited in the inspector like any text element's wording. An
+operator's saved layout — including one built on Scoreboard Grid or Tigers
+Stadium — keeps its own event screens; only a document with no `screens` at
+all gets the new default (a migration, not a reset). See
+[the operator workflow](docs/UX_AND_LAYOUT.md#1012-broadcast-welcome-default-screens-and-motion-september-8-2026).
+
+**Verification (September 9, 2026):** full suite **1277 tests, 0 failures, 0 errors, 3 skips** (the A-1 skips), up from 1207 before this work. Browser suite
+(`tests/ui/test_event_screens_browser.py` + `event_screens.cjs`) at
+1920x1080, 1366x768, and 640x360, Motion on and off, covering both default
+screens and both new presets, boundary scores and 24-character names, every
+halftime countdown boundary, per-widget safe-area and non-overlap checks,
+ticker content, and that no animation restarts or stutters on the
+once-per-second snapshot publish; captures in `captures/event-screens/`.
+Editor contract tests plus `layout_editor.cjs` covering add/select/move/
+restyle/undo on a ticker and every new property. A real `pywebview` run
+showing the default Pre-game and Halftime screens, `set_motion(False)`
+freezing the sweep and ticker on the practice window, `set_motion(True)`
+resuming them, and the revision unchanged throughout. Results: the browser suite passes with **126 cases** and 36 captures; the editor
+contract suite passes and `layout_editor.cjs` passes with **35 checks** (six new ticker steps);
+the real `pywebview` harness `.scratch/event-screens/realrun_event_screens.py` passes
+**40 of 40 checks** (pregame welcome on the practice window, sweep advancing across
+ticks, motion off/on through the host object and through the editor toolbar,
+`config.json` `presentation.motion`, halftime after `set_quarter HALF`, halftime
+glyphs inside the safe area, revision advanced only by the quarter change). The
+owner's live layout library reads clean and keeps its own event screens.
+
+**Limits:** owner sign-off on the Broadcast Welcome default pair and
+legibility at real stadium viewing distance and resolution are both open,
+the same as every other preset in this section. Jersey M54 is deliberately
+not used on the new screens (10.12); the crest is the owner-supplied
+reference image and its rights are still to be confirmed with the school
+before public use. Phase 0 HDMI evidence, target-laptop readability, and
+Task 12 (the rehearsal task, unrelated in number to this item) remain open.
+
+### 13. One clock for halftime, and a Setup drawer for the rules — September 9, 2026
+
+At the owner's request, removed the separate halftime countdown. The
+pregame countdown already ran on the game clock; halftime ran on its own
+`EventCountdown` engine with five commands of its own and a `Halftime ▸`
+drawer the operator had to open instead of pressing the START they use
+for every other quarter. Now entering `HALF` loads the halftime countdown
+on the game clock exactly as entering `PRE` loads the kickoff countdown:
+the same START/STOP, the same correction row, the same `Reset Game
+Clock…`, the same `Discard remaining … time?` on the way out. The engine,
+its commands (`event_countdown_select/start/stop/reset/correct`), the
+`event_countdown`/`event_phase` state fields, and the drawer are gone; the
+spectator's `clocks.event` block keeps its shape (it now reads the game
+clock in both intervals), so every layout, event screen, and preset is
+untouched. The `HALFTIME`→`WARMUP` label is still derived from the
+displayed second, from the game clock now.
+
+In the drawer's place, a `Setup ▸` drawer edits the game's timing rules —
+quarter length, overtime length, pregame countdown, halftime countdown,
+warmup threshold (0:00 turns the label off), crowd `TIMEOUT` countdown, and
+timeouts per half — as one validated `GameRules` value (`domain/rules.py`)
+stored in `config.json` under `rules` and read at launch. `Save rules` is
+a host action (`rules()`/`save_rules()` on the bridge), not a command: no
+revision, no history row, and nothing already on a clock changes; each
+length is used the next time that period, a new game, or a timeout is
+loaded, so the game clock's `maximum_seconds` now carries the length of
+the period it is running (persisted in the snapshot, with a fallback for
+older files). Timeouts per half load at New Game and again on `HALF → 3rd`.
+The status clock accepts any whole number of seconds up to its 5:00
+maximum rather than only 30/60/90, so the crowd `TIMEOUT` button can send
+the configured length; the state accepts up to five timeouts a side.
+
+**Verification (September 9, 2026):** full suite passes (`unit/test_game_rules.py`,
+`integration/test_game_rules_bridge.py` added; `unit/test_event_countdown.py`
+removed); the full-game rehearsal now runs halftime through `game_clock_start`
+across the 3:01/3:00 boundary to natural expiry. Browser suites were updated
+for the new `GameState` shape (halftime is `quarter='HALF'` with the game clock
+at the halftime length) but not re-run here — the pywebview and Playwright
+rehearsal of the Setup drawer on the operator window is still owed.
+
 ## Next Action
 
-**On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed.
+**On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed. Item 12 (Broadcast Welcome default screens and motion) is built and awaiting the lead's suite run, browser-suite captures, and a real `pywebview` run before its evidence lines above can be filled in; Fifty Yard Line's full-bleed edges are the first thing to re-check once the HDMI test happens.
 
 Then, in order:
 

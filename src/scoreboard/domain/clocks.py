@@ -8,7 +8,6 @@ from typing import Callable, Final
 
 from scoreboard.domain.formatting import ceil_seconds
 from scoreboard.domain.state import (
-    MAX_EVENT_COUNTDOWN_SECONDS,
     MAX_GAME_CLOCK_SECONDS,
     MAX_PLAY_CLOCK_SECONDS,
     MAX_STATUS_CLOCK_SECONDS,
@@ -28,39 +27,34 @@ PLAY_CLOCK_PRESETS: Final[tuple[float, ...]] = (25.0, 40.0)
 #: below and .scratch/f3-i4/DESIGN.md).
 STATUS_CLOCK_PRESETS: Final[tuple[float, ...]] = (30.0, 60.0, 90.0)
 
-#: The 30:00 `KICKOFF IN` countdown and the 15:00 `UNTIL SECOND HALF`
-#: countdown (F-025). `WARMUP` is not selectable: it is the second part of the
-#: same interval countdown, which continues without a reset (F-026).
-EVENT_COUNTDOWN_LENGTHS: Final[dict[str, float]] = {
-    "PREGAME": 30 * 60.0,
-    "HALFTIME": 15 * 60.0,
-}
-SELECTABLE_EVENT_PHASES: Final[tuple[str, ...]] = tuple(EVENT_COUNTDOWN_LENGTHS)
-
-#: The interval countdown's label changes here, at a displayed 3:00 (F-026).
+#: The displayed second at which the halftime countdown's label turns from
+#: ``HALFTIME`` to ``WARMUP`` (F-026). A default since September 9, 2026:
+#: ``GameRules.warmup_seconds`` is what a running game uses.
 WARMUP_THRESHOLD_SECONDS: Final[float] = 3 * 60.0
 
 
-def event_phase_for(phase: str, seconds: float) -> str:
-    """The phase label an event countdown shows at ``seconds`` remaining.
+def event_phase_for(
+    phase: str, seconds: float, *, warmup_threshold: float = WARMUP_THRESHOLD_SECONDS
+) -> str:
+    """The phase label an interval countdown shows at ``seconds`` remaining.
 
     Pure and derived, so the label flips from ``HALFTIME`` to ``WARMUP`` at
-    3:00 while the countdown runs, without an operator command and without a
-    new state revision. It reads the *displayed* second, so the change lands
-    exactly between a shown ``3:01`` and a shown ``3:00`` (F-026).
+    the threshold while the countdown runs, without an operator command and
+    without a new state revision. It reads the *displayed* second, so the
+    change lands exactly between a shown ``3:01`` and a shown ``3:00`` for the
+    shipped 3:00 threshold (F-026). A threshold of ``0`` never shows WARMUP.
 
     ``PREGAME`` is returned unchanged: the pregame countdown has one phase.
+    Since September 9, 2026 the countdown in question is the game clock
+    itself while the quarter is ``PRE`` or ``HALF``; there is no separate
+    interval engine any more.
     """
 
     if phase == "PREGAME":
         return "PREGAME"
-    return "WARMUP" if ceil_seconds(seconds) <= WARMUP_THRESHOLD_SECONDS else "HALFTIME"
-
-
-def selected_event(phase: str) -> str:
-    """Which countdown a phase belongs to: ``WARMUP`` is part of ``HALFTIME``."""
-
-    return "PREGAME" if phase == "PREGAME" else "HALFTIME"
+    if warmup_threshold <= 0.0:
+        return "HALFTIME"
+    return "WARMUP" if ceil_seconds(seconds) <= warmup_threshold else "HALFTIME"
 
 
 def _coerce_now(
@@ -90,20 +84,25 @@ def _validate_preset(seconds: float) -> float:
 
 
 def _validate_status_preset(seconds: float) -> float:
-    """A sibling of :func:`_validate_preset` for the status clock's own presets.
+    """A sibling of :func:`_validate_preset` for the status clock.
 
     Kept separate rather than widening the play clock's validator: the two
     clocks' accepted values are unrelated facts that happen to both be
     "seconds," and a future change to one set must never silently affect the
-    other.
+    other. Since September 9, 2026 the crowd TIMEOUT button loads the
+    operator's configured timeout length (``GameRules.timeout_seconds``), so
+    this accepts any whole number of seconds the clock can hold rather than
+    only the three shipped presets, which remain the suggested values.
     """
 
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
         raise StateValidationError("status clock preset must be a number")
     numeric = float(seconds)
-    if numeric not in STATUS_CLOCK_PRESETS:
+    if numeric != numeric or numeric != int(numeric):
+        raise StateValidationError("status clock preset must be whole seconds")
+    if not 1.0 <= numeric <= MAX_STATUS_CLOCK_SECONDS:
         raise StateValidationError(
-            f"status clock preset must be one of {STATUS_CLOCK_PRESETS!r}"
+            f"status clock preset must be between 1 and {MAX_STATUS_CLOCK_SECONDS:g} seconds"
         )
     return numeric
 
@@ -749,232 +748,6 @@ class StatusCountdown:
         return self.current_value(now)
 
 
-@dataclass(frozen=True, slots=True)
-class EventCountdown:
-    """The pregame and interval countdown engine (F-025, F-027).
-
-    It uses the same monotonic-deadline model as the game and play clocks and
-    is completely independent of them: no method here reads or returns a
-    ``GameClock`` or ``PlayClock``, so a countdown can never start, stop, or
-    reset a game clock (F-025).
-
-    ``preset_seconds`` remembers the selected event's configured length so
-    ``reset`` can restore it, exactly as ``PlayClock`` remembers its preset. It
-    is engine-only bookkeeping and is not part of the persisted ``ClockValue``.
-    """
-
-    value: ClockValue = ClockValue(
-        MAX_EVENT_COUNTDOWN_SECONDS, False, MAX_EVENT_COUNTDOWN_SECONDS
-    )
-    preset_seconds: float = MAX_EVENT_COUNTDOWN_SECONDS
-    monotonic_clock: Callable[[], float] = field(
-        default_factory=lambda: time.monotonic,
-        repr=False,
-    )
-    revision: int = 0
-
-    def __post_init__(self) -> None:
-        if self.value.maximum_seconds <= 0:
-            raise StateValidationError("clock maximum_seconds must be positive")
-        if not isinstance(self.revision, int) or self.revision < 0:
-            raise StateValidationError("clock revision must be a non-negative integer")
-        if not callable(self.monotonic_clock):
-            raise StateValidationError("monotonic_clock must be callable")
-        object.__setattr__(
-            self,
-            "preset_seconds",
-            _validate_remaining(self.preset_seconds, self.value.maximum_seconds),
-        )
-
-    @classmethod
-    def from_state(
-        cls,
-        state: GameState,
-        *,
-        monotonic_clock: Callable[[], float] | None = None,
-    ) -> "EventCountdown":
-        if not isinstance(state, GameState):
-            raise TypeError("state must be a GameState")
-        clock = state.event_countdown
-        return cls(
-            value=ClockValue(
-                seconds=clock.seconds,
-                running=clock.running,
-                maximum_seconds=clock.maximum_seconds,
-                deadline_monotonic=clock.deadline_monotonic,
-                started_at_monotonic=clock.started_at_monotonic,
-            ),
-            # The configured length of the event the state says is selected, so
-            # a Reset after a restart restores the right countdown.
-            preset_seconds=EVENT_COUNTDOWN_LENGTHS[selected_event(state.event_phase)],
-            monotonic_clock=(time.monotonic if monotonic_clock is None else monotonic_clock),
-        )
-
-    @property
-    def seconds(self) -> float:
-        return self.remaining_at()
-
-    @property
-    def running(self) -> bool:
-        return self.value.running
-
-    @property
-    def maximum_seconds(self) -> float:
-        return self.value.maximum_seconds
-
-    @property
-    def expired(self) -> bool:
-        return self.remaining_at() <= 0.0
-
-    def current_value(self, now: float | None = None) -> ClockValue:
-        current_now = _coerce_now(now, self.monotonic_clock)
-        if not self.value.running or self.value.deadline_monotonic is None:
-            return ClockValue(
-                seconds=max(0.0, min(self.maximum_seconds, float(self.value.seconds))),
-                running=False if self.value.seconds <= 0.0 else self.value.running,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=None,
-                started_at_monotonic=None,
-            )
-        remaining = max(0.0, min(self.maximum_seconds, self.value.deadline_monotonic - current_now))
-        if remaining <= 0.0:
-            return ClockValue(
-                seconds=0.0,
-                running=False,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=None,
-                started_at_monotonic=None,
-            )
-        return ClockValue(
-            seconds=remaining,
-            running=True,
-            maximum_seconds=self.maximum_seconds,
-            deadline_monotonic=self.value.deadline_monotonic,
-            started_at_monotonic=self.value.started_at_monotonic,
-        )
-
-    def remaining_at(self, now: float | None = None) -> float:
-        return self.current_value(now).seconds
-
-    def start(self, *, now: float | None = None) -> "EventCountdown":
-        current_now = _coerce_now(now, self.monotonic_clock)
-        if self.value.running:
-            return self
-        remaining = self.remaining_at(current_now)
-        if remaining <= 0.0:
-            return self
-        return replace(
-            self,
-            value=ClockValue(
-                seconds=remaining,
-                running=True,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=current_now + remaining,
-                started_at_monotonic=current_now,
-            ),
-            revision=self.revision + 1,
-        )
-
-    def stop(self, *, now: float | None = None) -> "EventCountdown":
-        current_now = _coerce_now(now, self.monotonic_clock)
-        if not self.value.running:
-            return self
-        return replace(
-            self,
-            value=ClockValue(
-                seconds=self.remaining_at(current_now),
-                running=False,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=None,
-                started_at_monotonic=None,
-            ),
-            revision=self.revision + 1,
-        )
-
-    def select(self, phase: str, *, now: float | None = None) -> "EventCountdown":
-        """Load a selectable event's configured length while stopped (F-028)."""
-
-        if phase not in EVENT_COUNTDOWN_LENGTHS:
-            raise StateValidationError(
-                f"event countdown must be one of {SELECTABLE_EVENT_PHASES!r}"
-            )
-        _coerce_now(now, self.monotonic_clock)
-        length = EVENT_COUNTDOWN_LENGTHS[phase]
-        return replace(
-            self,
-            value=ClockValue(
-                seconds=length,
-                running=False,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=None,
-                started_at_monotonic=None,
-            ),
-            preset_seconds=length,
-            revision=self.revision + 1,
-        )
-
-    def reset(self) -> "EventCountdown":
-        """Restore the selected event's configured length while stopped."""
-
-        return replace(
-            self,
-            value=ClockValue(
-                seconds=self.preset_seconds,
-                running=False,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=None,
-                started_at_monotonic=None,
-            ),
-            revision=self.revision + 1,
-        )
-
-    def correct(
-        self,
-        seconds: float | None = None,
-        *,
-        target: float | None = None,
-        now: float | None = None,
-    ) -> "EventCountdown":
-        """Edit Current Time: the caller stops the countdown first (F-028)."""
-
-        if seconds is None and target is None:
-            raise StateValidationError("provide target seconds")
-        current_now = _coerce_now(now, self.monotonic_clock)
-        new_remaining = _validate_remaining(
-            target if target is not None else seconds, self.maximum_seconds
-        )
-        if self.value.running:
-            next_value = ClockValue(
-                seconds=new_remaining,
-                running=True,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=current_now + new_remaining,
-                started_at_monotonic=current_now,
-            )
-        else:
-            next_value = ClockValue(
-                seconds=new_remaining,
-                running=False,
-                maximum_seconds=self.maximum_seconds,
-                deadline_monotonic=None,
-                started_at_monotonic=None,
-            )
-        return replace(self, value=next_value, revision=self.revision + 1)
-
-    def phase_at(self, phase: str, now: float | None = None) -> str:
-        """The derived label for this countdown right now (F-026)."""
-
-        return event_phase_for(phase, self.remaining_at(now))
-
-    def apply_to_state(self, state: GameState) -> GameState:
-        if not isinstance(state, GameState):
-            raise TypeError("state must be a GameState")
-        return state.evolve(event_countdown=self.to_clock_value())
-
-    def to_clock_value(self, *, now: float | None = None) -> ClockValue:
-        return self.current_value(now)
-
-
 def clear_play_clock_on_game_clock_start(
     play_clock: "PlayClock",
     *,
@@ -1185,12 +958,9 @@ def remaining_play_clock(
 
 __all__ = [
     "DEFAULT_QUARTER_LENGTH_SECONDS",
-    "EVENT_COUNTDOWN_LENGTHS",
     "PLAY_CLOCK_PRESETS",
-    "SELECTABLE_EVENT_PHASES",
     "STATUS_CLOCK_PRESETS",
     "WARMUP_THRESHOLD_SECONDS",
-    "EventCountdown",
     "GameClock",
     "PlayClock",
     "StatusCountdown",
@@ -1205,7 +975,6 @@ __all__ = [
     "remaining_play_clock",
     "reset_game_clock",
     "reset_play_clock",
-    "selected_event",
     "start_game_clock",
     "start_play_clock",
     "stop_game_clock",

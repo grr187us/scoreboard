@@ -105,6 +105,17 @@
       </button>
     </div>
 
+    <!-- The motion switch is a host preference (config.json), not part of the
+         layout document and not game state. It pauses every animation on
+         the wall as well as in this preview. -->
+    <button type="button" id="motion-toggle" data-action="toggle_motion" aria-pressed="true"
+            title="Pauses every animation -- here and on the wall -- while off. A host preference; it is not saved with the layout.">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+        <path d="M2 8h2.2l1.6-4 2.4 8 1.6-4H14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span id="motion-label">Motion on</span>
+    </button>
+
     <div class="add-group" role="group" aria-label="Add">
       <button type="button" data-action="add_text" title="Add text">
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
@@ -125,6 +136,13 @@
           <rect x="2.5" y="2.5" width="11" height="11" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.75"/>
         </svg>
         Box
+      </button>
+      <button type="button" data-action="add_ticker" title="Add ticker (scrolling or rotating announcement lines)">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="1.5" y="5" width="13" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.75"/>
+          <path d="M4 8h5M10.5 8h1.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        Ticker
       </button>
       <input type="file" id="image-file-input" hidden accept="image/png,image/jpeg,image/gif,image/webp">
     </div>
@@ -339,6 +357,10 @@
             <span class="choices" id="prop-text_align" data-prop="text_align" role="group" aria-label="Horizontal align"></span>
             <span class="choices" id="prop-vertical_align" data-prop="vertical_align" role="group" aria-label="Vertical align"></span>
           </div>
+          <div class="prop-row labelled" id="field-orientation">
+            <label id="orientation-label">Direction</label>
+            <span class="choices" id="prop-orientation" data-prop="orientation" role="group" aria-labelledby="orientation-label"></span>
+          </div>
           <p class="hint" id="static-note" hidden>This is a fixed label. You can move, restyle, or hide it;
             its wording is set by the application.</p>
         </section>
@@ -365,6 +387,47 @@
             <label for="prop-border_width">Border width</label>
             <input type="number" id="prop-border_width" data-prop="border_width" step="0.1" title="Border width, percent of board width">
             <span class="unit">%</span>
+            <select id="prop-border_style" data-prop="border_style" aria-label="Border style"></select>
+          </div>
+          <label class="prop-row" id="field-bleed">
+            <input type="checkbox" id="prop-bleed" data-prop="bleed">
+            May overhang the board edge (bleed)
+          </label>
+          <div id="field-fill-effect">
+            <div class="prop-row labelled">
+              <label for="prop-fill_kind">Fill effect</label>
+              <select id="prop-fill_kind" data-prop="fill_kind"></select>
+            </div>
+            <div class="prop-row labelled" id="field-fill_angle">
+              <label for="prop-fill_angle">Angle</label>
+              <input type="number" id="prop-fill_angle" data-prop="fill_angle" step="1" min="0" max="360">
+              <span class="unit">&deg;</span>
+            </div>
+            <div class="prop-row labelled" id="field-fill_color_a">
+              <label for="prop-fill_color_a" id="fill-color-a-label">Colour A</label>
+              <input type="color" id="prop-fill_color_a-swatch" aria-label="Fill colour A swatch">
+              <input type="text" id="prop-fill_color_a" data-prop="fill_color_a" maxlength="7" size="8">
+              <input type="number" id="prop-fill_opacity_a" data-prop="fill_opacity_a" step="1" min="0" max="100" title="Opacity of colour A, percent" aria-label="Opacity of colour A, percent">
+              <span class="unit">%</span>
+            </div>
+            <div class="prop-row labelled" id="field-fill_color_b">
+              <label for="prop-fill_color_b">Colour B</label>
+              <input type="color" id="prop-fill_color_b-swatch" aria-label="Fill colour B swatch">
+              <input type="text" id="prop-fill_color_b" data-prop="fill_color_b" maxlength="7" size="8">
+              <input type="number" id="prop-fill_opacity_b" data-prop="fill_opacity_b" step="1" min="0" max="100" title="Opacity of colour B, percent" aria-label="Opacity of colour B, percent">
+              <span class="unit">%</span>
+            </div>
+            <div class="prop-row labelled" id="field-fill_stripes">
+              <label for="prop-fill_on">Stripe on / off</label>
+              <input type="number" id="prop-fill_on" data-prop="fill_on" step="0.1" min="0.1" max="50" title="Stripe width, percent of board width" aria-label="Stripe width, percent of board width">
+              <input type="number" id="prop-fill_off" data-prop="fill_off" step="0.1" min="0" max="100" title="Gap width, percent of board width" aria-label="Gap width, percent of board width">
+              <span class="unit">%</span>
+            </div>
+          </div>
+          <div class="prop-row labelled" id="field-rotate">
+            <label for="prop-rotate_degrees">Rotation</label>
+            <input type="number" id="prop-rotate_degrees" data-prop="rotate_degrees" step="1">
+            <span class="unit">&deg;</span>
           </div>
           <div class="prop-row labelled">
             <label for="prop-corner_radius">Corner radius</label>
@@ -385,11 +448,46 @@
           </div>
         </section>
 
+        <section class="insp-section" id="sec-motion">
+          <h3>Motion</h3>
+          <div class="prop-row labelled">
+            <label for="prop-animation_preset">Animation</label>
+            <select id="prop-animation_preset" data-prop="animation_preset"></select>
+          </div>
+          <div class="prop-row labelled" id="field-animation_seconds">
+            <label for="prop-animation_seconds">Duration</label>
+            <input type="number" id="prop-animation_seconds" data-prop="animation_seconds" step="0.5">
+            <span class="unit">s</span>
+          </div>
+          <p class="hint" id="animation-note"></p>
+        </section>
+
+        <section class="insp-section" id="sec-ticker">
+          <h3>Ticker</h3>
+          <div class="prop-row">
+            <textarea id="prop-lines" data-prop="lines" rows="4" aria-label="Announcement lines, one per row" placeholder="One announcement per line"></textarea>
+          </div>
+          <p class="hint" id="lines-note"></p>
+          <div class="prop-row labelled">
+            <label id="mode-label">Mode</label>
+            <span class="choices" id="prop-mode" data-prop="mode" role="group" aria-labelledby="mode-label"></span>
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-speed_seconds" id="speed-label">Seconds per loop</label>
+            <input type="number" id="prop-speed_seconds" data-prop="speed_seconds" step="1">
+            <span class="unit">s</span>
+          </div>
+        </section>
+
         <section class="insp-section" id="sec-image">
           <h3>Image</h3>
           <div class="prop-row">
             <img id="prop-image-thumb" alt="" class="image-thumb">
             <span class="hint" id="prop-image-size"></span>
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-asset">Picture</label>
+            <select id="prop-asset" data-prop="asset" aria-label="Bundled picture or an uploaded image"></select>
           </div>
           <div class="prop-row">
             <button type="button" data-action="replace_image">Replace image&hellip;</button>

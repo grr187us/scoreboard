@@ -100,6 +100,15 @@ class CutsceneDirectorTestCase(TemporaryDataDirectoryTest):
 
 
 class TriggerTests(CutsceneDirectorTestCase):
+    def test_first_down_countdown_and_timer_share_the_five_second_program(self) -> None:
+        director, monotonic, scheduler, link = self.make_director()
+        result = director.trigger("first_down")
+        self.assertTrue(result["ok"])
+        self.assertEqual(link.published[0]["duration_ms"], 5000)
+        self.assertEqual(scheduler.calls[0].delay_seconds, 5.0)
+        monotonic.advance(3.0)
+        self.assertEqual(director.status()["remaining_display"], "2.0s")
+
     def test_trigger_publishes_one_program_with_the_right_shape_and_schedules_the_delay(self) -> None:
         director, _monotonic, scheduler, link = self.make_director()
 

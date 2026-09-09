@@ -892,7 +892,7 @@ class ConstantSanityTests(unittest.TestCase):
         )
         self.assertEqual(
             DEFAULT_DURATION_SECONDS,
-            {"first_down": 7.0, "touchdown": 10.0, "turnover": 7.0,
+            {"first_down": 5.0, "touchdown": 10.0, "turnover": 7.0,
              "penalty": 7.0, "make_some_noise": 5.0},
         )
         self.assertEqual(

@@ -88,21 +88,32 @@ async function main(data) {
       ['F20','play_clock_start',{},'F20','Start play clock'],
       ['q','quarter_forward',{},'Q','Quarter forward'],
       ['Shift+Q','quarter_back',{},'Shift+Q','Quarter back'],
-      ['z','add_score',{team:'home',points:1},'Z','Home +1'],
-      ['x','add_score',{team:'home',points:2},'X','Home +2'],
-      ['c','add_score',{team:'home',points:3},'C','Home +3'],
-      ['v','add_score',{team:'home',points:6},'V','Home +6'],
-      ['n','add_score',{team:'away',points:1},'N','Away +1'],
-      ['m','add_score',{team:'away',points:2},'M','Away +2'],
-      [',','add_score',{team:'away',points:3},',','Away +3'],
-      ['.','add_score',{team:'away',points:6},'.','Away +6'],
+      ['z','add_score',{team:'home',points:1},'Z','Home +1 (press once to arm, again to apply)'],
+      ['x','add_score',{team:'home',points:2},'X','Home +2 (press once to arm, again to apply)'],
+      ['c','add_score',{team:'home',points:3},'C','Home +3 (press once to arm, again to apply)'],
+      ['v','add_score',{team:'home',points:6},'V','Home +6 (press once to arm, again to apply)'],
+      ['n','add_score',{team:'away',points:1},'N','Away +1 (press once to arm, again to apply)'],
+      ['m','add_score',{team:'away',points:2},'M','Away +2 (press once to arm, again to apply)'],
+      [',','add_score',{team:'away',points:3},',','Away +3 (press once to arm, again to apply)'],
+      ['.','add_score',{team:'away',points:6},'.','Away +6 (press once to arm, again to apply)'],
       ['Control+z','undo',{},'Ctrl+Z','Undo last reversible command']
     ];
+    // Scoring is two steps now (control refresh spec 2.8): the first press of
+    // a score key only arms that team and sends nothing at all.
+    const armKeys = new Set(['z','x','c','v','n','m',',','.']);
     for (const [key,command,args] of map) {
       // Quarter actions always open a confirmation now; their dedicated block
-      // below verifies that two-step path for both input adapters.
+      // below verifies that two-step path for both input adapters. Ctrl+Z
+      // confirms locally, which its own block below covers.
       if (key === 'q' || key === 'Shift+Q' || key === 'Control+z') continue;
-      const model = await reset(); await press(key);
+      const model = await reset();
+      if (armKeys.has(key)) {
+        await pressKey(page,key);
+        await page.waitForFunction(team=>document.querySelector('#'+team+'-score-controls')
+          .dataset.armed==='true',args.team);
+        assert.deepEqual(calls,[],key+' first press must send nothing');
+      }
+      await press(key);
       assert.deepEqual(calls,[[command,{...args,source:'operator-keyboard'},model.revision]],key);
       assert.equal(results[0].accepted,true,key);
       if (key==='2'||key==='4'||key==='F18'||key==='F19') assert.equal(results[0].view.clocks.play.running,false);
@@ -118,16 +129,23 @@ async function main(data) {
     assert.equal(await page.locator('#play-state').evaluate(el=>el.classList.contains('running-play')),true);
 
     // OS repeat plus duplicate non-repeat keydowns; focused button must not also click.
-    await reset(); await page.locator('[data-command="add_score"][data-team="home"][data-points="6"]').first().focus();
+    // The point buttons only exist on screen once the panel is armed, so the
+    // SCORE button is clicked first (spec 2.8's focused-button case).
+    const homeSix = '#home-armed [data-command="add_score"][data-points="6"]';
+    await reset(); await page.locator('#home-arm').click();
+    await page.locator(homeSix).focus();
     await page.keyboard.down('v'); await expectResult(0);
     await page.keyboard.down('v'); await page.keyboard.down('v');
     await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'v',code:'KeyV',bubbles:true})));
     await page.keyboard.up('v'); await settled(); assert.equal(calls.length,1);
-    await press('v'); assert.equal(calls.length,2);
-    await reset(); await page.locator('[data-command="add_score"][data-team="home"][data-points="6"]').first().focus();
+    // That press disarmed the panel, so scoring again is two presses again.
+    await pressKey(page,'v'); await press('v'); assert.equal(calls.length,2);
+    await reset(); await page.locator('#home-arm').click();
+    await page.locator(homeSix).focus();
     await press('Space'); assert.equal(calls.length,1); assert.equal(calls[0][0],'game_clock_start');
 
-    await reset(); await page.locator('[data-command="add_score"][data-team="home"][data-points="6"]').first().focus();
+    await reset(); await page.locator('#home-arm').click();
+    await page.locator(homeSix).focus();
     await page.keyboard.down('Enter'); await expectResult(0);
     await page.keyboard.down('Enter'); await page.keyboard.down('Enter');
     await page.keyboard.up('Enter'); await settled();
@@ -206,6 +224,19 @@ async function main(data) {
     const count=results.length;await page.locator('#confirm-accept').click();await expectResult(count);
     assert.equal(calls.at(-1)[2],revision);assert.equal(results.at(-1).error.code,'STALE_REVISION');
 
+    // Ctrl+Z confirms locally before anything is sent (owner decision 3), and
+    // the change line is Python's own last_action.label with a prefix.
+    await reset(); await pressKey(page,'v'); await press('v');
+    const undoRevision=(await settled()).revision; calls.length=0; results.length=0;
+    await page.keyboard.press('Control+z');
+    await page.locator('#confirm-accept').waitFor({state:'visible'});
+    assert.equal(calls.length,0,'Ctrl+Z must send nothing before it is confirmed');
+    assert.equal(await page.locator('#confirm-title').textContent(),'Undo the last action?');
+    assert.match(await page.locator('#confirm-change').textContent(),/^Reverses: .+/);
+    await page.locator('#confirm-accept').click(); await expectResult(0); await settled();
+    assert.deepEqual(calls,[['undo',{source:'operator-keyboard',confirmed:true},undoRevision]]);
+    assert.equal(results[0].accepted,true);
+
     await reset();await page.locator('#open-corrections').click();
     await page.locator('#home-name-input').focus();await page.keyboard.press('Escape');
     assert.equal(await page.locator('#corrections').isVisible(),false);assert.equal(page.isClosed(),false);
@@ -232,10 +263,16 @@ async function main(data) {
     // Live controls must still fit after adding help at both operator modes.
     for(const viewport of [{width:1366,height:768},{width:1093,height:614}]) {
       await page.setViewportSize(viewport);
-      const outside=await page.locator('button:visible').evaluateAll(buttons=>buttons.filter(b=>{
-        const r=b.getBoundingClientRect();return r.left<0||r.top<0||r.right>innerWidth+.5||r.bottom>innerHeight+.5;
-      }).map(b=>b.textContent));
-      assert.deepEqual(outside,[]);
+      // Both states of the team panel must fit: the armed row replaces the
+      // SCORE/TIMEOUT row inside one fixed-height block (U-001, spec 2.1).
+      for(const armed of [false,true]) {
+        if(armed) await page.locator('#home-arm').click();
+        const outside=await page.locator('button:visible').evaluateAll(buttons=>buttons.filter(b=>{
+          const r=b.getBoundingClientRect();return r.left<0||r.top<0||r.right>innerWidth+.5||r.bottom>innerHeight+.5;
+        }).map(b=>b.textContent));
+        assert.deepEqual(outside,[],armed?'armed at '+viewport.width:'idle at '+viewport.width);
+        if(armed) await page.locator('#home-armed [data-action="disarm_score"]').click();
+      }
     }
     // The separate startup page has no live command adapter at all.
     const startup=await browser.newPage();

@@ -43,6 +43,16 @@
  * `elements`, removes ones no longer present, updates the rest, and inserts
  * any new node just before the first widget node so a widget always draws
  * above an element at equal `z_index`.
+ *
+ * September 8, 2026 (event-screens spec section 3): a fourth element type,
+ * `ticker`, a bundled-image `asset:` src, validated gradient `fill`s built
+ * here from numbers only, a bounded named `animation` per node, rotation,
+ * vertical text, a dashed border style and a motion kill switch
+ * (`setMotion`). Animations are bound to nodes that persist: widgets are
+ * built once, elements are reconciled in place by id, and `applyModel` --
+ * the once-per-second path -- never rewrites an element node's structure or
+ * an animation attribute, so a snapshot or a layout push never restarts a
+ * running animation.
  */
 
 (function (global) {
@@ -152,13 +162,15 @@
     "impact": "Impact, 'Arial Black', sans-serif",
     "bahnschrift": "Bahnschrift, 'Segoe UI', Arial, sans-serif",
     "bahnschrift_condensed": "'Bahnschrift Condensed', Bahnschrift, 'Segoe UI', Arial, sans-serif",
+    "barlow_condensed": "'Barlow Condensed', 'Bahnschrift Condensed', Bahnschrift, Impact, sans-serif",
     "segoe": "'Segoe UI', Segoe, Arial, sans-serif",
     "segoe_black": "'Segoe UI Black', 'Segoe UI', Arial, sans-serif",
     "consolas": "Consolas, 'Courier New', monospace",
     "georgia": "Georgia, 'Times New Roman', serif",
     "verdana": "Verdana, Geneva, sans-serif",
     "trebuchet": "'Trebuchet MS', Arial, sans-serif",
-    "varsity": "'Jersey M54', Graduate, Impact, 'Arial Black', sans-serif"
+    "varsity": "'Jersey M54', Graduate, Impact, 'Arial Black', sans-serif",
+    "graduate": "Graduate, Impact, 'Arial Black', sans-serif"
   };
 
   /* Mirrors scoreboard.presentation.layout.default_layout()["screens"]: the
@@ -167,451 +179,1447 @@
    * halftime). Every widget carries the same neutral v2 style defaults as
    * the game widgets above. */
   var DEFAULT_SCREENS = {
-  "pregame": {
-    "safe_area": {
-      "top": 0.04,
-      "right": 0.04,
-      "bottom": 0.04,
-      "left": 0.04
+    "pregame": {
+      "safe_area": {
+        "top": 0.04,
+        "right": 0.04,
+        "bottom": 0.04,
+        "left": 0.04
+      },
+      "background": {
+        "color": "#071B3A"
+      },
+      "widgets": {
+        "home_name": {
+          "id": "home_name",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.191,
+          "y": 0.63,
+          "width": 0.235,
+          "height": 0.208,
+          "font_scale": 0.081,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.0,
+          "text_transform": "uppercase",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "home_score": {
+          "id": "home_score",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": false,
+          "x": 0.191,
+          "y": 0.84,
+          "width": 0.235,
+          "height": 0.05,
+          "font_scale": 0.04,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "away_name": {
+          "id": "away_name",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.574,
+          "y": 0.63,
+          "width": 0.235,
+          "height": 0.208,
+          "font_scale": 0.081,
+          "color": "#DDE7F4",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.0,
+          "text_transform": "uppercase",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "away_score": {
+          "id": "away_score",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": false,
+          "x": 0.574,
+          "y": 0.84,
+          "width": 0.235,
+          "height": 0.05,
+          "font_scale": 0.04,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "event_phase": {
+          "id": "event_phase",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": false,
+          "x": 0.1,
+          "y": 0.04,
+          "width": 0.8,
+          "height": 0.05,
+          "font_scale": 0.0266,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.1,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "event_title": {
+          "id": "event_title",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.1,
+          "y": 0.365,
+          "width": 0.8,
+          "height": 0.05,
+          "font_scale": 0.0266,
+          "color": "#F5AE08",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 600,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.3,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "event_clock": {
+          "id": "event_clock",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.1,
+          "y": 0.415,
+          "width": 0.8,
+          "height": 0.2,
+          "font_scale": 0.148,
+          "color": "#F5AE08",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": {
+            "preset": "blink_soft",
+            "duration_seconds": 1.0
+          },
+          "orientation": "horizontal"
+        },
+        "warmup": {
+          "id": "warmup",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": false,
+          "x": 0.3,
+          "y": 0.84,
+          "width": 0.4,
+          "height": 0.05,
+          "font_scale": 0.025,
+          "color": "#DDE7F4",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 500,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.1,
+          "text_transform": "uppercase",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        }
+      },
+      "elements": [
+        {
+          "id": "top_glow",
+          "type": "box",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 0.52,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": {
+            "kind": "radial",
+            "center_x": 0.5,
+            "center_y": 0.0,
+            "radius_x": 0.6,
+            "radius_y": 1.0,
+            "stops": [
+              {
+                "color": "#2C62AB",
+                "opacity": 0.5,
+                "at": 0.0
+              },
+              {
+                "color": "#2C62AB",
+                "opacity": 0.0,
+                "at": 0.72
+              }
+            ]
+          },
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "light_sweep",
+          "type": "box",
+          "visible": true,
+          "x": 0.33,
+          "y": -0.2,
+          "width": 0.34,
+          "height": 1.4,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": {
+            "kind": "linear",
+            "angle": 90.0,
+            "stops": [
+              {
+                "color": "#FFFFFF",
+                "opacity": 0.0,
+                "at": 0.0
+              },
+              {
+                "color": "#FFFFFF",
+                "opacity": 0.06,
+                "at": 0.5
+              },
+              {
+                "color": "#FFFFFF",
+                "opacity": 0.0,
+                "at": 1.0
+              }
+            ]
+          },
+          "animation": {
+            "preset": "sweep",
+            "duration_seconds": 11.0
+          },
+          "rotate_degrees": 0.0,
+          "bleed": true
+        },
+        {
+          "id": "home_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.03,
+          "y": 0.06,
+          "width": 0.28,
+          "height": 0.0056,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#C8242B",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "away_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.69,
+          "y": 0.06,
+          "width": 0.28,
+          "height": 0.0056,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#2C62AB",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "eyebrow",
+          "type": "text",
+          "visible": true,
+          "x": 0.33,
+          "y": 0.04,
+          "width": 0.34,
+          "height": 0.046,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.22,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#93A9C9",
+          "font_scale": 0.0203,
+          "font_weight": 600,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "TMSA TIGERS FOOTBALL",
+          "fit_text": true,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "welcome_to",
+          "type": "text",
+          "visible": true,
+          "x": 0.1,
+          "y": 0.09,
+          "width": 0.8,
+          "height": 0.055,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.3,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#DDE7F4",
+          "font_scale": 0.0266,
+          "font_weight": 500,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "WELCOME TO",
+          "fit_text": true,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "stadium_title",
+          "type": "text",
+          "visible": true,
+          "x": 0.05,
+          "y": 0.145,
+          "width": 0.9,
+          "height": 0.17,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#FFFFFF",
+          "font_scale": 0.122,
+          "font_weight": 700,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "TIGER STADIUM",
+          "fit_text": true,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "gold_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.41,
+          "y": 0.325,
+          "width": 0.18,
+          "height": 0.0069,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#F5AE08",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "crest_plate",
+          "type": "box",
+          "visible": true,
+          "x": 0.04,
+          "y": 0.63,
+          "width": 0.117,
+          "height": 0.208,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": "#FFFFFF",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0125,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "crest",
+          "type": "image",
+          "visible": true,
+          "x": 0.0517,
+          "y": 0.6508,
+          "width": 0.0936,
+          "height": 0.1664,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "src": "asset:tigers-crest",
+          "fit": "contain",
+          "animation": null,
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "versus",
+          "type": "text",
+          "visible": true,
+          "x": 0.46,
+          "y": 0.63,
+          "width": 0.08,
+          "height": 0.208,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#F5AE08",
+          "font_scale": 0.041,
+          "font_weight": 700,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "VS",
+          "fit_text": true,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "opponent_slot",
+          "type": "box",
+          "visible": true,
+          "x": 0.843,
+          "y": 0.63,
+          "width": 0.117,
+          "height": 0.208,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": "#DDE7F4",
+          "border_width": 0.0023,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "dashed",
+          "fill": {
+            "kind": "stripes",
+            "angle": 45.0,
+            "color": "#DDE7F4",
+            "opacity": 0.14,
+            "on": 0.002,
+            "off": 0.008
+          },
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "opponent_caption",
+          "type": "text",
+          "visible": true,
+          "x": 0.843,
+          "y": 0.63,
+          "width": 0.117,
+          "height": 0.208,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "consolas",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#DDE7F4",
+          "font_scale": 0.0188,
+          "font_weight": 400,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "OPPONENT\nLOGO",
+          "fit_text": false,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "ticker_band",
+          "type": "box",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.89,
+          "width": 1.0,
+          "height": 0.11,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#0D2B5A",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "ticker_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.89,
+          "width": 1.0,
+          "height": 0.0042,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": "#2C62AB",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "ticker",
+          "type": "ticker",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.89,
+          "width": 1.0,
+          "height": 0.1,
+          "z_index": 10,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.16,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#DDE7F4",
+          "font_scale": 0.025,
+          "font_weight": 500,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "lines": [
+            "WELCOME TO TIGER STADIUM",
+            "SENIOR NIGHT — HONORING THE CLASS OF 2027",
+            "CONCESSIONS OPEN BEHIND THE HOME STANDS",
+            "NATIONAL ANTHEM AT 6:55",
+            "SCIENCE · WISDOM · PEACE"
+          ],
+          "mode": "scroll",
+          "speed_seconds": 30.0
+        }
+      ]
     },
-    "background": {
-      "color": "#000000"
-    },
-    "widgets": {
-      "home_name": {
-        "id": "home_name",
-        "visible": true,
-        "x": 0.04,
-        "y": 0.72,
-        "width": 0.30,
-        "height": 0.12,
-        "font_scale": 0.024,
-        "color": "#FFFFFF",
-        "text_align": "right",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
+    "halftime": {
+      "safe_area": {
+        "top": 0.04,
+        "right": 0.04,
+        "bottom": 0.04,
+        "left": 0.04
       },
-      "home_score": {
-        "id": "home_score",
-        "visible": true,
-        "x": 0.35,
-        "y": 0.70,
-        "width": 0.12,
-        "height": 0.16,
-        "font_scale": 0.070,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
+      "background": {
+        "color": "#071B3A"
       },
-      "away_name": {
-        "id": "away_name",
-        "visible": true,
-        "x": 0.66,
-        "y": 0.72,
-        "width": 0.30,
-        "height": 0.12,
-        "font_scale": 0.024,
-        "color": "#FFFFFF",
-        "text_align": "left",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
+      "widgets": {
+        "home_name": {
+          "id": "home_name",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.04,
+          "y": 0.27,
+          "width": 0.27,
+          "height": 0.09,
+          "font_scale": 0.045,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.0,
+          "text_transform": "uppercase",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "home_score": {
+          "id": "home_score",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.04,
+          "y": 0.37,
+          "width": 0.27,
+          "height": 0.23,
+          "font_scale": 0.141,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "away_name": {
+          "id": "away_name",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.69,
+          "y": 0.27,
+          "width": 0.27,
+          "height": 0.09,
+          "font_scale": 0.045,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.0,
+          "text_transform": "uppercase",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "away_score": {
+          "id": "away_score",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.69,
+          "y": 0.37,
+          "width": 0.27,
+          "height": 0.23,
+          "font_scale": 0.141,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "event_phase": {
+          "id": "event_phase",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.05,
+          "y": 0.095,
+          "width": 0.9,
+          "height": 0.13,
+          "font_scale": 0.092,
+          "color": "#FFFFFF",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.04,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "event_title": {
+          "id": "event_title",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.33,
+          "y": 0.29,
+          "width": 0.34,
+          "height": 0.06,
+          "font_scale": 0.0234,
+          "color": "#F5AE08",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 600,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.26,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        },
+        "event_clock": {
+          "id": "event_clock",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.33,
+          "y": 0.36,
+          "width": 0.34,
+          "height": 0.16,
+          "font_scale": 0.092,
+          "color": "#F5AE08",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 700,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "graduate",
+          "letter_spacing": 0.0,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": {
+            "preset": "blink_soft",
+            "duration_seconds": 1.0
+          },
+          "orientation": "horizontal"
+        },
+        "warmup": {
+          "id": "warmup",
+          "display_format": "default",
+          "fit_text": true,
+          "visible": true,
+          "x": 0.42,
+          "y": 0.655,
+          "width": 0.34,
+          "height": 0.086,
+          "font_scale": 0.025,
+          "color": "#DDE7F4",
+          "text_align": "center",
+          "vertical_align": "middle",
+          "font_weight": 500,
+          "z_index": 3,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.1,
+          "text_transform": "uppercase",
+          "text_effect": "none",
+          "padding": 0.0,
+          "animation": null,
+          "orientation": "horizontal"
+        }
       },
-      "away_score": {
-        "id": "away_score",
-        "visible": true,
-        "x": 0.53,
-        "y": 0.70,
-        "width": 0.12,
-        "height": 0.16,
-        "font_scale": 0.070,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "event_phase": {
-        "id": "event_phase",
-        "visible": false,
-        "x": 0.30,
-        "y": 0.05,
-        "width": 0.40,
-        "height": 0.09,
-        "font_scale": 0.045,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "event_title": {
-        "id": "event_title",
-        "visible": true,
-        "x": 0.10,
-        "y": 0.15,
-        "width": 0.80,
-        "height": 0.10,
-        "font_scale": 0.050,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 400,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "event_clock": {
-        "id": "event_clock",
-        "visible": true,
-        "x": 0.10,
-        "y": 0.26,
-        "width": 0.80,
-        "height": 0.32,
-        "font_scale": 0.140,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "warmup": {
-        "id": "warmup",
-        "visible": false,
-        "x": 0.25,
-        "y": 0.59,
-        "width": 0.50,
-        "height": 0.07,
-        "font_scale": 0.035,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 400,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      }
-    },
-    "elements": []
-  },
-  "halftime": {
-    "safe_area": {
-      "top": 0.04,
-      "right": 0.04,
-      "bottom": 0.04,
-      "left": 0.04
-    },
-    "background": {
-      "color": "#000000"
-    },
-    "widgets": {
-      "home_name": {
-        "id": "home_name",
-        "visible": true,
-        "x": 0.04,
-        "y": 0.72,
-        "width": 0.30,
-        "height": 0.12,
-        "font_scale": 0.024,
-        "color": "#FFFFFF",
-        "text_align": "right",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "home_score": {
-        "id": "home_score",
-        "visible": true,
-        "x": 0.35,
-        "y": 0.70,
-        "width": 0.12,
-        "height": 0.16,
-        "font_scale": 0.070,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "away_name": {
-        "id": "away_name",
-        "visible": true,
-        "x": 0.66,
-        "y": 0.72,
-        "width": 0.30,
-        "height": 0.12,
-        "font_scale": 0.024,
-        "color": "#FFFFFF",
-        "text_align": "left",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "away_score": {
-        "id": "away_score",
-        "visible": true,
-        "x": 0.53,
-        "y": 0.70,
-        "width": 0.12,
-        "height": 0.16,
-        "font_scale": 0.070,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "event_phase": {
-        "id": "event_phase",
-        "visible": true,
-        "x": 0.30,
-        "y": 0.05,
-        "width": 0.40,
-        "height": 0.09,
-        "font_scale": 0.045,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "event_title": {
-        "id": "event_title",
-        "visible": true,
-        "x": 0.10,
-        "y": 0.15,
-        "width": 0.80,
-        "height": 0.10,
-        "font_scale": 0.050,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 400,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "event_clock": {
-        "id": "event_clock",
-        "visible": true,
-        "x": 0.10,
-        "y": 0.26,
-        "width": 0.80,
-        "height": 0.32,
-        "font_scale": 0.140,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 700,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      },
-      "warmup": {
-        "id": "warmup",
-        "visible": true,
-        "x": 0.25,
-        "y": 0.59,
-        "width": 0.50,
-        "height": 0.07,
-        "font_scale": 0.035,
-        "color": "#FFFFFF",
-        "text_align": "center",
-        "vertical_align": "middle",
-        "font_weight": 400,
-        "z_index": 0,
-        "font_family": "arial",
-        "letter_spacing": 0.0,
-        "text_transform": "none",
-        "text_effect": "none",
-        "background": null,
-        "background_opacity": 1.0,
-        "border_color": null,
-        "border_width": 0.0,
-        "corner_radius": 0.0,
-        "padding": 0.0,
-        "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-      }
-    },
-    "elements": []
-  }
-};
+      "elements": [
+        {
+          "id": "top_glow",
+          "type": "box",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.0,
+          "width": 1.0,
+          "height": 0.52,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": {
+            "kind": "radial",
+            "center_x": 0.5,
+            "center_y": 0.0,
+            "radius_x": 0.6,
+            "radius_y": 1.0,
+            "stops": [
+              {
+                "color": "#2C62AB",
+                "opacity": 0.5,
+                "at": 0.0
+              },
+              {
+                "color": "#2C62AB",
+                "opacity": 0.0,
+                "at": 0.72
+              }
+            ]
+          },
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "light_sweep",
+          "type": "box",
+          "visible": true,
+          "x": 0.33,
+          "y": -0.2,
+          "width": 0.34,
+          "height": 1.4,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": {
+            "kind": "linear",
+            "angle": 90.0,
+            "stops": [
+              {
+                "color": "#FFFFFF",
+                "opacity": 0.0,
+                "at": 0.0
+              },
+              {
+                "color": "#FFFFFF",
+                "opacity": 0.06,
+                "at": 0.5
+              },
+              {
+                "color": "#FFFFFF",
+                "opacity": 0.0,
+                "at": 1.0
+              }
+            ]
+          },
+          "animation": {
+            "preset": "sweep",
+            "duration_seconds": 13.0
+          },
+          "rotate_degrees": 0.0,
+          "bleed": true
+        },
+        {
+          "id": "home_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.03,
+          "y": 0.06,
+          "width": 0.28,
+          "height": 0.0056,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#C8242B",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "away_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.69,
+          "y": 0.06,
+          "width": 0.28,
+          "height": 0.0056,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#2C62AB",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "eyebrow",
+          "type": "text",
+          "visible": true,
+          "x": 0.33,
+          "y": 0.04,
+          "width": 0.34,
+          "height": 0.046,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.22,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#93A9C9",
+          "font_scale": 0.0203,
+          "font_weight": 600,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "TMSA TIGERS FOOTBALL",
+          "fit_text": true,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "amber_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.44,
+          "y": 0.225,
+          "width": 0.12,
+          "height": 0.0069,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#F5AE08",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "home_panel",
+          "type": "box",
+          "visible": true,
+          "x": 0.04,
+          "y": 0.27,
+          "width": 0.27,
+          "height": 0.34,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#0D2B5A",
+          "background_opacity": 1.0,
+          "border_color": "#2C62AB",
+          "border_width": 0.0023,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0141,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "home_banner",
+          "type": "box",
+          "visible": true,
+          "x": 0.04,
+          "y": 0.27,
+          "width": 0.27,
+          "height": 0.09,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": "#17468C",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0141,
+          "cut_corners": "top",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "away_panel",
+          "type": "box",
+          "visible": true,
+          "x": 0.69,
+          "y": 0.27,
+          "width": 0.27,
+          "height": 0.34,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#0D2B5A",
+          "background_opacity": 1.0,
+          "border_color": "#C8242B",
+          "border_width": 0.0023,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0141,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "away_banner",
+          "type": "box",
+          "visible": true,
+          "x": 0.69,
+          "y": 0.27,
+          "width": 0.27,
+          "height": 0.09,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": "#A50021",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0141,
+          "cut_corners": "top",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "chip_box",
+          "type": "box",
+          "visible": true,
+          "x": 0.24,
+          "y": 0.655,
+          "width": 0.16,
+          "height": 0.086,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#0D2B5A",
+          "background_opacity": 1.0,
+          "border_color": "#2C62AB",
+          "border_width": 0.0023,
+          "corner_radius": 0.0,
+          "corner_cut": 0.006,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "chip_text",
+          "type": "text",
+          "visible": true,
+          "x": 0.24,
+          "y": 0.655,
+          "width": 0.16,
+          "height": 0.086,
+          "z_index": 2,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.12,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#DDE7F4",
+          "font_scale": 0.0219,
+          "font_weight": 600,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "text": "SECOND HALF",
+          "fit_text": true,
+          "animation": null,
+          "orientation": "horizontal",
+          "rotate_degrees": 0.0
+        },
+        {
+          "id": "ticker_band",
+          "type": "box",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.89,
+          "width": 1.0,
+          "height": 0.11,
+          "z_index": 0,
+          "opacity": 1.0,
+          "background": "#0D2B5A",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "ticker_rule",
+          "type": "box",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.89,
+          "width": 1.0,
+          "height": 0.0042,
+          "z_index": 1,
+          "opacity": 1.0,
+          "background": "#2C62AB",
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "fill": null,
+          "animation": null,
+          "rotate_degrees": 0.0,
+          "bleed": false
+        },
+        {
+          "id": "ticker",
+          "type": "ticker",
+          "visible": true,
+          "x": 0.0,
+          "y": 0.89,
+          "width": 1.0,
+          "height": 0.1,
+          "z_index": 10,
+          "opacity": 1.0,
+          "background": null,
+          "background_opacity": 1.0,
+          "border_color": null,
+          "border_width": 0.0,
+          "corner_radius": 0.0,
+          "corner_cut": 0.0,
+          "cut_corners": "all",
+          "border_style": "solid",
+          "font_family": "barlow_condensed",
+          "letter_spacing": 0.16,
+          "text_transform": "none",
+          "text_effect": "none",
+          "padding": 0.0,
+          "color": "#DDE7F4",
+          "font_scale": 0.025,
+          "font_weight": 500,
+          "text_align": "center",
+          "vertical_align": "middle",
+          "lines": [
+            "SENIOR NIGHT — HONORING THE CLASS OF 2027",
+            "TIGER BAND TAKES THE FIELD",
+            "50/50 RAFFLE DRAWING AT THE START OF THE 3RD",
+            "SCIENCE · WISDOM · PEACE"
+          ],
+          "mode": "scroll",
+          "speed_seconds": 30.0
+        }
+      ]
+    }
+  };
 
   /* Mirrors scoreboard.presentation.layout.default_layout(). Preserves the
    * pre-widget spectator arrangement: the clock label and both timeout
@@ -623,463 +1631,548 @@
    * assigned separately below from DEFAULT_SCREENS so both literals stay
    * pure JSON on their own. */
   var DEFAULT_LAYOUT = {
-  "schema_version": 3,
-  "name": "Default",
-  "safe_area": {
-    "top": 0.04,
-    "right": 0.04,
-    "bottom": 0.04,
-    "left": 0.04
-  },
-  "background": {
-    "color": "#000000"
-  },
-  "widgets": {
-    "home_name": {
-      "id": "home_name",
-      "visible": true,
-      "x": 0.04,
-      "y": 0.04,
-      "width": 0.38,
-      "height": 0.118,
-      "font_scale": 0.028,
-      "color": "#FFFFFF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 700,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
+    "schema_version": 3,
+    "name": "Default",
+    "safe_area": {
+      "top": 0.04,
+      "right": 0.04,
+      "bottom": 0.04,
+      "left": 0.04
     },
-    "home_score": {
-      "id": "home_score",
-      "visible": true,
-      "x": 0.04,
-      "y": 0.164,
-      "width": 0.38,
-      "height": 0.242,
-      "font_scale": 0.112,
-      "color": "#FFFFFF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 700,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
+    "background": {
+      "color": "#000000"
     },
-    "possession": {
-      "id": "possession",
-      "visible": true,
-      "x": 0.43,
-      "y": 0.071,
-      "width": 0.14,
-      "height": 0.056,
-      "font_scale": 0.026,
-      "color": "#57E6A4",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 700,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
+    "widgets": {
+      "home_name": {
+        "id": "home_name",
+        "visible": true,
+        "x": 0.04,
+        "y": 0.04,
+        "width": 0.38,
+        "height": 0.118,
+        "font_scale": 0.028,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "home_score": {
+        "id": "home_score",
+        "visible": true,
+        "x": 0.04,
+        "y": 0.164,
+        "width": 0.38,
+        "height": 0.242,
+        "font_scale": 0.112,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "possession": {
+        "id": "possession",
+        "visible": true,
+        "x": 0.43,
+        "y": 0.071,
+        "width": 0.14,
+        "height": 0.056,
+        "font_scale": 0.026,
+        "color": "#57E6A4",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "away_name": {
+        "id": "away_name",
+        "visible": true,
+        "x": 0.58,
+        "y": 0.04,
+        "width": 0.38,
+        "height": 0.118,
+        "font_scale": 0.028,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "away_score": {
+        "id": "away_score",
+        "visible": true,
+        "x": 0.58,
+        "y": 0.164,
+        "width": 0.38,
+        "height": 0.242,
+        "font_scale": 0.112,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "game_clock_label": {
+        "id": "game_clock_label",
+        "visible": false,
+        "x": 0.4,
+        "y": 0.412,
+        "width": 0.2,
+        "height": 0.052,
+        "font_scale": 0.024,
+        "color": "#CFCFCF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "game_clock_value": {
+        "id": "game_clock_value",
+        "visible": true,
+        "x": 0.04,
+        "y": 0.47,
+        "width": 0.92,
+        "height": 0.2,
+        "font_scale": 0.093,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "quarter": {
+        "id": "quarter",
+        "visible": true,
+        "x": 0.04,
+        "y": 0.699,
+        "width": 0.44,
+        "height": 0.126,
+        "font_scale": 0.058,
+        "color": "#FFFFFF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "down": {
+        "id": "down",
+        "visible": true,
+        "x": 0.11,
+        "y": 0.875,
+        "width": 0.15,
+        "height": 0.059,
+        "font_scale": 0.027,
+        "color": "#CFCFCF",
+        "text_align": "right",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "distance": {
+        "id": "distance",
+        "visible": true,
+        "x": 0.272,
+        "y": 0.875,
+        "width": 0.15,
+        "height": 0.059,
+        "font_scale": 0.027,
+        "color": "#CFCFCF",
+        "text_align": "left",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "play_clock_label": {
+        "id": "play_clock_label",
+        "visible": true,
+        "x": 0.5,
+        "y": 0.733,
+        "width": 0.21,
+        "height": 0.059,
+        "font_scale": 0.027,
+        "color": "#FFFFFF",
+        "text_align": "right",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "play_clock_value": {
+        "id": "play_clock_value",
+        "visible": true,
+        "x": 0.718,
+        "y": 0.678,
+        "width": 0.242,
+        "height": 0.168,
+        "font_scale": 0.078,
+        "color": "#FFFFFF",
+        "text_align": "left",
+        "vertical_align": "middle",
+        "font_weight": 700,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "ball_on": {
+        "id": "ball_on",
+        "visible": true,
+        "x": 0.48,
+        "y": 0.854,
+        "width": 0.48,
+        "height": 0.101,
+        "font_scale": 0.024,
+        "color": "#CFCFCF",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "home_timeouts": {
+        "id": "home_timeouts",
+        "visible": false,
+        "x": 0.04,
+        "y": 0.412,
+        "width": 0.2,
+        "height": 0.052,
+        "font_scale": 0.024,
+        "color": "#CFCFCF",
+        "text_align": "left",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "away_timeouts": {
+        "id": "away_timeouts",
+        "visible": false,
+        "x": 0.76,
+        "y": 0.412,
+        "width": 0.2,
+        "height": 0.052,
+        "font_scale": 0.024,
+        "color": "#CFCFCF",
+        "text_align": "right",
+        "vertical_align": "middle",
+        "font_weight": 400,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "status_message": {
+        "id": "status_message",
+        "visible": true,
+        "x": 0.24,
+        "y": 0.408,
+        "width": 0.16,
+        "height": 0.056,
+        "font_scale": 0.026,
+        "color": "#FFC845",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 800,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      },
+      "status_clock": {
+        "id": "status_clock",
+        "visible": true,
+        "x": 0.6,
+        "y": 0.408,
+        "width": 0.16,
+        "height": 0.056,
+        "font_scale": 0.026,
+        "color": "#FFC845",
+        "text_align": "center",
+        "vertical_align": "middle",
+        "font_weight": 800,
+        "z_index": 0,
+        "font_family": "arial",
+        "letter_spacing": 0.0,
+        "text_transform": "none",
+        "text_effect": "none",
+        "background": null,
+        "background_opacity": 1.0,
+        "border_color": null,
+        "border_width": 0.0,
+        "corner_radius": 0.0,
+        "corner_cut": 0.0,
+        "cut_corners": "all",
+        "padding": 0.0,
+        "border_style": "solid",
+        "animation": null,
+        "orientation": "horizontal",
+        "display_format": "default",
+        "fit_text": false
+      }
     },
-    "away_name": {
-      "id": "away_name",
-      "visible": true,
-      "x": 0.58,
-      "y": 0.04,
-      "width": 0.38,
-      "height": 0.118,
-      "font_scale": 0.028,
-      "color": "#FFFFFF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 700,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "away_score": {
-      "id": "away_score",
-      "visible": true,
-      "x": 0.58,
-      "y": 0.164,
-      "width": 0.38,
-      "height": 0.242,
-      "font_scale": 0.112,
-      "color": "#FFFFFF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 700,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "game_clock_label": {
-      "id": "game_clock_label",
-      "visible": false,
-      "x": 0.4,
-      "y": 0.412,
-      "width": 0.2,
-      "height": 0.052,
-      "font_scale": 0.024,
-      "color": "#CFCFCF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "game_clock_value": {
-      "id": "game_clock_value",
-      "visible": true,
-      "x": 0.04,
-      "y": 0.47,
-      "width": 0.92,
-      "height": 0.2,
-      "font_scale": 0.093,
-      "color": "#FFFFFF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "quarter": {
-      "id": "quarter",
-      "visible": true,
-      "x": 0.04,
-      "y": 0.699,
-      "width": 0.44,
-      "height": 0.126,
-      "font_scale": 0.058,
-      "color": "#FFFFFF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "down": {
-      "id": "down",
-      "visible": true,
-      "x": 0.11,
-      "y": 0.875,
-      "width": 0.15,
-      "height": 0.059,
-      "font_scale": 0.027,
-      "color": "#CFCFCF",
-      "text_align": "right",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "distance": {
-      "id": "distance",
-      "visible": true,
-      "x": 0.272,
-      "y": 0.875,
-      "width": 0.15,
-      "height": 0.059,
-      "font_scale": 0.027,
-      "color": "#CFCFCF",
-      "text_align": "left",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "play_clock_label": {
-      "id": "play_clock_label",
-      "visible": true,
-      "x": 0.5,
-      "y": 0.733,
-      "width": 0.21,
-      "height": 0.059,
-      "font_scale": 0.027,
-      "color": "#FFFFFF",
-      "text_align": "right",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "play_clock_value": {
-      "id": "play_clock_value",
-      "visible": true,
-      "x": 0.718,
-      "y": 0.678,
-      "width": 0.242,
-      "height": 0.168,
-      "font_scale": 0.078,
-      "color": "#FFFFFF",
-      "text_align": "left",
-      "vertical_align": "middle",
-      "font_weight": 700,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "ball_on": {
-      "id": "ball_on",
-      "visible": true,
-      "x": 0.48,
-      "y": 0.854,
-      "width": 0.48,
-      "height": 0.101,
-      "font_scale": 0.024,
-      "color": "#CFCFCF",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "home_timeouts": {
-      "id": "home_timeouts",
-      "visible": false,
-      "x": 0.04,
-      "y": 0.412,
-      "width": 0.2,
-      "height": 0.052,
-      "font_scale": 0.024,
-      "color": "#CFCFCF",
-      "text_align": "left",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "away_timeouts": {
-      "id": "away_timeouts",
-      "visible": false,
-      "x": 0.76,
-      "y": 0.412,
-      "width": 0.2,
-      "height": 0.052,
-      "font_scale": 0.024,
-      "color": "#CFCFCF",
-      "text_align": "right",
-      "vertical_align": "middle",
-      "font_weight": 400,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "status_message": {
-      "id": "status_message",
-      "visible": true,
-      "x": 0.240,
-      "y": 0.408,
-      "width": 0.160,
-      "height": 0.056,
-      "font_scale": 0.026,
-      "color": "#FFC845",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 800,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    },
-    "status_clock": {
-      "id": "status_clock",
-      "visible": true,
-      "x": 0.600,
-      "y": 0.408,
-      "width": 0.160,
-      "height": 0.056,
-      "font_scale": 0.026,
-      "color": "#FFC845",
-      "text_align": "center",
-      "vertical_align": "middle",
-      "font_weight": 800,
-      "z_index": 0,
-      "font_family": "arial",
-      "letter_spacing": 0.0,
-      "text_transform": "none",
-      "text_effect": "none",
-      "background": null,
-      "background_opacity": 1.0,
-      "border_color": null,
-      "border_width": 0.0,
-      "corner_radius": 0.0,
-      "padding": 0.0,
-      "display_format": "default", "fit_text": false,
-        "corner_cut": 0.0, "cut_corners": "all"
-    }
-  },
-  "elements": []
-};
+    "elements": []
+  };
 
   /* Assigned outside the DEFAULT_LAYOUT literal so both stay pure JSON on
    * their own (see the header comment and spec section 2). */
@@ -1106,8 +2199,33 @@
     box: {
       visible: true, x: 0, y: 0, width: 0.1, height: 0.1, z_index: 0, opacity: 1,
       background: null, background_opacity: 1, border_color: null, border_width: 0, corner_radius: 0
+    },
+    ticker: {
+      visible: true, x: 0, y: 0.89, width: 1, height: 0.1, z_index: 0, opacity: 1,
+      background: null, background_opacity: 1, border_color: null, border_width: 0, corner_radius: 0,
+      color: '#FFFFFF', font_scale: 0.025, font_family: 'arial', font_weight: 500,
+      letter_spacing: 0, text_transform: 'none', text_effect: 'none',
+      text_align: 'center', vertical_align: 'middle', padding: 0,
+      lines: [], mode: 'scroll', speed_seconds: 30
     }
   };
+
+  /* Mirrors scoreboard.presentation.layout.BUNDLED_IMAGES: the images that
+   * ship inside views/ (path relative to views/). An image element whose
+   * `src` is `asset:<key>` draws BUNDLED_IMAGES[key]; both pages that include
+   * this file sit one level below views/, so the path is prefixed `../`.
+   * Strict JSON, like the other contract literals. */
+  var BUNDLED_IMAGES = {"tigers-crest": "shared/img/tigers-crest.png"};
+
+  /* The animation presets board.css knows keyframes for (mirrors
+   * scoreboard.presentation.layout.ANIMATION_PRESETS minus "none"). */
+  var ANIMATION_LOOKUP = {sweep: true, drift: true, scroll_x: true, marquee: true, blink_soft: true};
+
+  /* What a scrolling/static ticker puts between its lines (mirrors
+   * scoreboard.presentation.layout.TICKER_SEPARATOR). */
+  var TICKER_SEPARATOR = '  \u2022  ';
+
+  var BUNDLED_IMAGE_KEY = /^asset:([a-z0-9-]{1,40})$/;
 
   function buildOptionalLookup(ids) {
     var lookup = {};
@@ -1212,6 +2330,84 @@
     return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
   }
 
+  /** The URL an image element actually loads for its layout `src`: a data
+   * URI as-is, a bundled `asset:<key>` as its packaged path, anything else
+   * null. */
+  function resolveImageSrc(src) {
+    if (typeof src !== 'string') return null;
+    if (IMAGE_SRC_PREFIX.test(src)) return src;
+    var match = BUNDLED_IMAGE_KEY.exec(src);
+    if (match && Object.prototype.hasOwnProperty.call(BUNDLED_IMAGES, match[1])) {
+      return '../' + BUNDLED_IMAGES[match[1]];
+    }
+    return null;
+  }
+
+  /** A finite number within [low, high], else null. */
+  function boundedNumber(value, low, high) {
+    if (typeof value !== 'number' || !isFinite(value) || value < low || value > high) return null;
+    return value;
+  }
+
+  /** The comma-separated colour stops of a gradient `fill`, or null when
+   * any stop is malformed (2..4 stops, hex colours, 0..1 opacity, `at`
+   * non-decreasing). */
+  function gradientStops(stops) {
+    if (!Array.isArray(stops) || stops.length < 2 || stops.length > 4) return null;
+    var parts = [];
+    var previous = 0;
+    for (var i = 0; i < stops.length; i += 1) {
+      var stop = stops[i];
+      if (!isPlainObject(stop)) return null;
+      var at = boundedNumber(stop.at, previous, 1);
+      var opacity = boundedNumber(stop.opacity, 0, 1);
+      var color = hexToRgba(stop.color, opacity === null ? 1 : opacity);
+      if (at === null || opacity === null || !color) return null;
+      previous = at;
+      parts.push(color + ' ' + (at * 100) + '%');
+    }
+    return parts.join(', ');
+  }
+
+  /** Build the CSS background for a validated `fill` descriptor (spec
+   * section 2.4) from its numbers and hex colours alone -- the document
+   * never carries a CSS string. Returns {background, period} (period is the
+   * stripes repeat in canvas-width fractions, else null), or null when the
+   * descriptor is not one of the three known shapes, in which case the flat
+   * `background` colour is used instead. */
+  function fillToCss(fill) {
+    if (!isPlainObject(fill)) return null;
+    if (fill.kind === 'linear') {
+      var angle = boundedNumber(fill.angle, 0, 360);
+      var stops = gradientStops(fill.stops);
+      if (angle === null || !stops) return null;
+      return {background: 'linear-gradient(' + angle + 'deg, ' + stops + ')', period: null};
+    }
+    if (fill.kind === 'radial') {
+      var cx = boundedNumber(fill.center_x, 0, 1);
+      var cy = boundedNumber(fill.center_y, 0, 1);
+      var rx = boundedNumber(fill.radius_x, 0.05, 2);
+      var ry = boundedNumber(fill.radius_y, 0.05, 2);
+      var radialStops = gradientStops(fill.stops);
+      if (cx === null || cy === null || rx === null || ry === null || !radialStops) return null;
+      return {background: 'radial-gradient(' + (rx * 100) + '% ' + (ry * 100) + '% at ' +
+        (cx * 100) + '% ' + (cy * 100) + '%, ' + radialStops + ')', period: null};
+    }
+    if (fill.kind === 'stripes') {
+      var stripeAngle = boundedNumber(fill.angle, 0, 360);
+      var on = boundedNumber(fill.on, 0.001, 0.5);
+      var off = boundedNumber(fill.off, 0, 1);
+      var stripeOpacity = boundedNumber(fill.opacity, 0, 1);
+      var stripeColor = hexToRgba(fill.color, stripeOpacity === null ? 1 : stripeOpacity);
+      if (stripeAngle === null || on === null || off === null || stripeOpacity === null || !stripeColor) return null;
+      var onLength = 'calc(var(--canvas-width) * ' + on + ')';
+      var periodLength = 'calc(var(--canvas-width) * ' + (on + off) + ')';
+      return {background: 'repeating-linear-gradient(' + stripeAngle + 'deg, ' + stripeColor + ' 0 ' + onLength +
+        ', transparent ' + onLength + ' ' + periodLength + ')', period: on + off};
+    }
+    return null;
+  }
+
   /** Toggle an element's hidden state from its two independent reasons: the
    * layout said "not visible", or (for an optional widget) the model gave it
    * nothing to show. Either reason hides it; neither call needs to know
@@ -1236,9 +2432,20 @@
     var cornerRadius = numberOr(source.corner_radius, numberOr(fallback.corner_radius, 0));
     var cornerCut = numberOr(source.corner_cut, numberOr(fallback.corner_cut, 0));
     var cutCorners = stringOr(source.cut_corners, stringOr(fallback.cut_corners, 'all'));
+    var borderStyle = stringOr(source.border_style, stringOr(fallback.border_style, 'solid'));
+    var fill = fillToCss('fill' in source ? source.fill : fallback.fill);
 
     var background = backgroundColor ? (hexToRgba(backgroundColor, backgroundOpacity) || 'transparent') : 'transparent';
-    node.style.setProperty('--bg', background);
+    // A validated gradient fill wins over the flat colour; a fill of unknown
+    // shape falls back to it. `--sx` is the stripes period the scroll_x
+    // animation slides by, so the loop lands exactly on itself.
+    node.style.setProperty('--bg', fill ? fill.background : background);
+    if (fill && fill.period !== null) {
+      node.style.setProperty('--sx', fill.period);
+    } else {
+      node.style.removeProperty('--sx');
+    }
+    node.style.setProperty('--bs', borderStyle === 'dashed' ? 'dashed' : 'solid');
     node.style.setProperty('--bc', borderColor || 'transparent');
     node.style.setProperty('--bw', borderWidth);
     node.style.setProperty('--br', cornerRadius);
@@ -1270,6 +2477,38 @@
 
     node.classList.toggle('effect-shadow', textEffect === 'shadow');
     node.classList.toggle('effect-outline', textEffect === 'outline');
+
+    var orientation = stringOr(source.orientation, stringOr(fallback.orientation, 'horizontal'));
+    if (orientation === 'vertical' || orientation === 'vertical_flipped') {
+      if (node.dataset.orientation !== orientation) node.dataset.orientation = orientation;
+    } else if (node.dataset.orientation !== undefined) {
+      delete node.dataset.orientation;
+    }
+  }
+
+  /** Set `data-anim`/`--anim-s` from the entry's validated `animation`
+   * ({preset, duration_seconds}), or remove them when it is null. Each is
+   * written only when its value actually changed: rewriting the same
+   * attribute would be harmless, but a *different* animation name restarts
+   * the animation, and a layout push that changes nothing must not. */
+  function applyMotionAttributes(node, source, fallback) {
+    var animation = 'animation' in source ? source.animation : fallback.animation;
+    var preset = null;
+    var seconds = null;
+    if (isPlainObject(animation) && ANIMATION_LOOKUP[animation.preset] === true) {
+      var duration = numberOr(animation.duration_seconds, 0);
+      if (duration > 0) {
+        preset = animation.preset;
+        seconds = duration + 's';
+      }
+    }
+    if (preset === null) {
+      if (node.dataset.anim !== undefined) delete node.dataset.anim;
+      if (node.style.getPropertyValue('--anim-s') !== '') node.style.removeProperty('--anim-s');
+      return;
+    }
+    if (node.dataset.anim !== preset) node.dataset.anim = preset;
+    if (node.style.getPropertyValue('--anim-s') !== seconds) node.style.setProperty('--anim-s', seconds);
   }
 
   /** Empty the container and append one widget element per the chosen
@@ -1310,10 +2549,10 @@
     if (!isPlainObject(entry) || typeof entry.id !== 'string' || entry.id === '') {
       return false;
     }
-    if (entry.type !== 'text' && entry.type !== 'image' && entry.type !== 'box') {
+    if (entry.type !== 'text' && entry.type !== 'image' && entry.type !== 'box' && entry.type !== 'ticker') {
       return false;
     }
-    if (entry.type === 'image' && (typeof entry.src !== 'string' || !IMAGE_SRC_PREFIX.test(entry.src))) {
+    if (entry.type === 'image' && resolveImageSrc(entry.src) === null) {
       return false;
     }
     return true;
@@ -1334,10 +2573,120 @@
       var img = document.createElement('img');
       img.alt = '';
       node.appendChild(img);
+    } else if (type === 'ticker') {
+      node.className = 'widget element element-ticker';
+      var track = document.createElement('div');
+      track.className = 'ticker-track';
+      node.appendChild(track);
     } else {
       node.className = 'element element-box';
     }
     return node;
+  }
+
+  /** The ticker's lines as the layout gave them: non-empty strings only. */
+  function tickerLines(value) {
+    var lines = [];
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i += 1) {
+        if (typeof value[i] === 'string' && value[i] !== '') lines.push(value[i]);
+      }
+    }
+    return lines;
+  }
+
+  /** Whether animations may run for `node`: the motion kill switch
+   * (`data-motion="off"` on a container) and the viewer's reduced-motion
+   * preference both turn it off. */
+  function motionEnabledFor(node) {
+    if (node.closest && node.closest('[data-motion="off"]')) return false;
+    if (global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    return true;
+  }
+
+  function clearTickerTimer(node) {
+    if (node._tickerTimer) {
+      clearTimeout(node._tickerTimer);
+      node._tickerTimer = null;
+    }
+  }
+
+  /** Rotate mode: every `stepMs` fade the run out, swap in the next line,
+   * fade back in. A chain of timeouts rather than one interval, so a rebuild
+   * or removal can always cancel exactly the pending step. */
+  function scheduleTickerStep(node, run, lines, index, stepMs) {
+    node._tickerTimer = setTimeout(function () {
+      run.classList.add('ticker-fade');
+      node._tickerTimer = setTimeout(function () {
+        var next = index + 1 < lines.length ? index + 1 : 0;
+        run.textContent = lines[next];
+        run.classList.remove('ticker-fade');
+        scheduleTickerStep(node, run, lines, next, stepMs);
+      }, 400);
+    }, stepMs);
+  }
+
+  /** Build (or leave alone) a ticker node's track from its layout `entry`
+   * (spec section 3.3). The track is rebuilt only when the lines, mode,
+   * speed or motion state changed, so a layout push carrying the same
+   * ticker never restarts it. Scroll: two identical runs slid by one run
+   * (board.css). Rotate: one run, cross-faded line by line on a timer.
+   * Motion off: one static run with every line, shrunk to fit. */
+  function applyTicker(node, entry, defaults) {
+    var lines = tickerLines(entry.lines);
+    if (!lines.length) lines = tickerLines(defaults.lines);
+    var mode = entry.mode === 'rotate' ? 'rotate' : 'scroll';
+    var speed = numberOr(entry.speed_seconds, 0);
+    if (!(speed > 0)) speed = mode === 'rotate' ? 5 : numberOr(defaults.speed_seconds, 30);
+    var motion = motionEnabledFor(node);
+    var key = lines.join('\n') + '|' + mode + '|' + speed + '|' + motion;
+    node._tickerEntry = entry;
+    if (node._tickerKey === key) return;
+    node._tickerKey = key;
+    clearTickerTimer(node);
+
+    var track = node.querySelector('.ticker-track');
+    if (!track) {
+      track = document.createElement('div');
+      track.className = 'ticker-track';
+      node.appendChild(track);
+    }
+    track.textContent = '';
+    var shownMode = motion ? mode : 'static';
+    var runCount = shownMode === 'scroll' ? 2 : 1;
+    var text = shownMode === 'scroll' ? lines.join(TICKER_SEPARATOR) + TICKER_SEPARATOR
+      : (shownMode === 'rotate' ? (lines[0] || '') : lines.join(TICKER_SEPARATOR));
+    var firstRun = null;
+    for (var i = 0; i < runCount; i += 1) {
+      var run = document.createElement('span');
+      run.className = 'widget-text ticker-run';
+      run.textContent = text;
+      track.appendChild(run);
+      if (!firstRun) firstRun = run;
+    }
+    node.dataset.tickerMode = shownMode;
+    node.style.setProperty('--anim-s', speed + 's');
+    // Only the static line shrinks to fit; a moving run keeps its size.
+    node.dataset.fitText = shownMode === 'static' ? '1' : '0';
+    node._fitKey = null;
+    if (shownMode === 'rotate' && lines.length > 1) {
+      scheduleTickerStep(node, firstRun, lines, 0, speed * 1000);
+    }
+    if (shownMode === 'static') fitWidgetText(node, firstRun);
+  }
+
+  /** Re-run applyTicker for every ticker under `root` from the entry it last
+   * applied (after the motion switch flips, or the OS preference changes). */
+  function refreshTickers(root) {
+    var tickers = root.querySelectorAll('.element-ticker');
+    for (var i = 0; i < tickers.length; i += 1) {
+      var node = tickers[i];
+      try {
+        applyTicker(node, node._tickerEntry || {}, ELEMENT_DEFAULTS.ticker);
+      } catch (error) {
+        // One bad ticker must not stop the others from refreshing.
+      }
+    }
   }
 
   /** Place and style one already-created element node from its layout
@@ -1363,7 +2712,14 @@
 
     applyPaint(node, entry, defaults);
 
-    if (entry.type === 'text') {
+    if (entry.type !== 'ticker') {
+      // Rotation (text/image/box) and the bounded animation; a ticker has
+      // neither -- its motion is its own scroll/rotate mode below.
+      node.style.setProperty('--rot', numberOr(entry.rotate_degrees, 0));
+      applyMotionAttributes(node, entry, defaults);
+    }
+
+    if (entry.type === 'text' || entry.type === 'ticker') {
       applyTextStyle(node, entry, defaults);
       var color = stringOr(entry.color, defaults.color);
       var fontScale = numberOr(entry.font_scale, defaults.font_scale);
@@ -1375,18 +2731,29 @@
       node.style.setProperty('--fw', fontWeight);
       node.style.setProperty('--ta', textAlign);
       node.style.setProperty('--va', verticalAlign);
+    }
+
+    if (entry.type === 'text') {
       var textElement = node.querySelector('.widget-text');
       var text = typeof entry.text === 'string' ? entry.text : defaults.text;
       if (textElement && textElement.textContent !== text) {
         textElement.textContent = text;
       }
+      // Opt-in single-line shrink-to-fit, exactly as for a widget; measured
+      // once the node is laid out (fitWidgetText caches by geometry).
+      node.dataset.fitText = entry.fit_text === true ? '1' : '0';
+      node._fitKey = null;
+      fitWidgetText(node, textElement);
     } else if (entry.type === 'image') {
       var fit = stringOr(entry.fit, defaults.fit);
       node.style.setProperty('--fit', fit);
       var img = node.querySelector('img');
-      if (img && img.getAttribute('src') !== entry.src) {
-        img.src = entry.src;
+      var src = resolveImageSrc(entry.src);
+      if (img && src !== null && img.getAttribute('src') !== src) {
+        img.src = src;
       }
+    } else if (entry.type === 'ticker') {
+      applyTicker(node, entry, defaults);
     }
   }
 
@@ -1415,6 +2782,7 @@
       if (node && node.getAttribute('data-element-type') !== entry.type) {
         // The type changed, so the node's own shape (an <img> versus a text
         // span) no longer fits: drop it and start fresh below.
+        clearTickerTimer(node);
         node.parentNode.removeChild(node);
         node = null;
       }
@@ -1436,6 +2804,7 @@
     for (var existingId in existingById) {
       if (Object.prototype.hasOwnProperty.call(existingById, existingId) && !seenIds[existingId]) {
         var stale = existingById[existingId];
+        clearTickerTimer(stale);
         stale.parentNode.removeChild(stale);
       }
     }
@@ -1507,6 +2876,7 @@
 
         applyPaint(element, widget, fallback);
         applyTextStyle(element, widget, fallback);
+        applyMotionAttributes(element, widget, fallback);
       } catch (error) {
         // A malformed single widget entry must not break the rest of the board.
       }
@@ -1532,19 +2902,70 @@
     } catch (error) {
       // Leave whatever free elements were already on the board.
     }
+    // A board that is hidden right now (the spectator's event board before
+    // its first snapshot) has no geometry to fit text elements against; note
+    // it, and applyModel finishes the fit the first time the board has size.
+    fitElementText(boardRoot);
     // A format edit must repaint immediately even while clocks are stopped.
     if (boardRoot._lastModel) applyModel(container, boardRoot._lastModel);
   }
 
+  /** Fit every shrink-to-fit text element and static ticker under
+   * `boardRoot` once it has a size; until then mark the fit as pending. */
+  function fitElementText(boardRoot) {
+    var box = boardRoot.getBoundingClientRect();
+    boardRoot._elementFitPending = !(box.width && box.height);
+    if (boardRoot._elementFitPending) return;
+    var nodes = boardRoot.querySelectorAll('[data-element][data-fit-text="1"]');
+    for (var i = 0; i < nodes.length; i += 1) {
+      fitWidgetText(nodes[i], nodes[i].querySelector('.widget-text'));
+    }
+  }
+
+  /** Mark the node that owns `textElement` as carrying colon spans (or
+   * not), so board.css can blink only the colons of a clock. Written only on
+   * change: the attribute is part of the blink's selector. */
+  function setColonFlag(textElement, hasColon) {
+    var owner = textElement.parentNode;
+    if (!owner || !owner.dataset) return;
+    if (hasColon) {
+      if (owner.dataset.colon !== '1') owner.dataset.colon = '1';
+    } else if (owner.dataset.colon !== undefined) {
+      delete owner.dataset.colon;
+    }
+  }
+
   /** Write `text` into a widget's text node. A colon is wrapped in its own
    * span so a clock's separator can be raised to sit between the digits
-   * (board.css, per font); the node's textContent stays exactly `text`. */
+   * (board.css, per font) and blinked on its own; the node's textContent
+   * stays exactly `text`. The children always alternate text node, colon
+   * span, text node, ... (empty text nodes included), so when the new text
+   * has the same number of colon-separated parts as the current content the
+   * text nodes are updated in place and the existing `.clock-colon` spans
+   * -- and any animation running on them -- survive the tick. */
   function setWidgetText(textElement, text) {
     if (text.indexOf(':') === -1) {
       textElement.textContent = text;
+      setColonFlag(textElement, false);
       return;
     }
     var parts = text.split(':');
+    var children = textElement.childNodes;
+    var inPlace = children.length === parts.length * 2 - 1;
+    for (var c = 0; inPlace && c < children.length; c += 1) {
+      var expectsText = c % 2 === 0;
+      var isText = children[c].nodeType === 3;
+      var isColon = !isText && children[c].nodeType === 1 && children[c].className === 'clock-colon';
+      if (expectsText ? !isText : !isColon) inPlace = false;
+    }
+    if (inPlace) {
+      for (var p = 0; p < parts.length; p += 1) {
+        var textNode = children[p * 2];
+        if (textNode.nodeValue !== parts[p]) textNode.nodeValue = parts[p];
+      }
+      setColonFlag(textElement, true);
+      return;
+    }
     textElement.textContent = '';
     for (var i = 0; i < parts.length; i += 1) {
       if (i > 0) {
@@ -1553,8 +2974,9 @@
         colon.textContent = ':';
         textElement.appendChild(colon);
       }
-      if (parts[i]) textElement.appendChild(document.createTextNode(parts[i]));
+      textElement.appendChild(document.createTextNode(parts[i]));
     }
+    setColonFlag(textElement, true);
   }
 
   var measureContext = null;
@@ -1574,7 +2996,42 @@
     if ('letterSpacing' in measureContext) measureContext.letterSpacing = style.letterSpacing;
     var metrics = measureContext.measureText(text);
     if (typeof metrics.actualBoundingBoxAscent !== 'number') return null;
-    return {height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent};
+    return {
+      height: metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent,
+      ascent: metrics.actualBoundingBoxAscent,
+      descent: metrics.actualBoundingBoxDescent,
+      fontAscent: typeof metrics.fontBoundingBoxAscent === 'number' ? metrics.fontBoundingBoxAscent : null
+    };
+  }
+
+  /** Centre a fitted, middle-aligned line by its glyph ink rather than its
+   * line box. A display face whose ascent and descent are unequal around
+   * the capitals (Barlow Condensed, Graduate) otherwise sits visibly high or
+   * low in a box authored to the ink height, and can overhang it. The nudge
+   * is written in em so it stays right at any canvas size without being
+   * re-measured. Vertical text and top/bottom alignment are left to the
+   * line box. */
+  function centreInk(element, textElement, style, vertical) {
+    textElement.style.top = '';
+    if (vertical || style.alignItems !== 'center') return;
+    var spanStyle = window.getComputedStyle(textElement);
+    var metrics = inkExtent(transformedText(textElement.textContent, spanStyle), spanStyle);
+    if (!metrics || metrics.fontAscent === null) return;
+    var range = document.createRange();
+    range.selectNodeContents(textElement);
+    var line = range.getBoundingClientRect();
+    var fontSize = Number(spanStyle.fontSize.slice(0, -2));
+    if (!line.height || !fontSize) return;
+    // A text range's rect is the font's content area, so its top plus the
+    // font ascent is the baseline; the ink sits between the actual ascent
+    // and descent around it.
+    var baseline = line.top + metrics.fontAscent;
+    var inkCentre = baseline - metrics.ascent + metrics.height / 2;
+    var box = element.getBoundingClientRect();
+    var top = box.top + Number(style.borderTopWidth.slice(0, -2)) + Number(style.paddingTop.slice(0, -2));
+    var bottom = box.bottom - Number(style.borderBottomWidth.slice(0, -2)) - Number(style.paddingBottom.slice(0, -2));
+    var shift = (top + bottom) / 2 - inkCentre;
+    if (shift > 0.5 || shift < -0.5) textElement.style.top = (shift / fontSize) + 'em';
   }
 
   function transformedText(text, style) {
@@ -1589,6 +3046,7 @@
     if (!textElement) return;
     if (element.dataset.fitText !== '1') {
       textElement.style.fontSize = '';
+      textElement.style.top = '';
       return;
     }
     var box = element.getBoundingClientRect();
@@ -1606,12 +3064,16 @@
     var range = document.createRange();
     range.selectNodeContents(textElement);
     var ink = range.getBoundingClientRect();
-    var glyphs = inkExtent(transformedText(textElement.textContent, style), style);
+    // Vertical text: the range rect already describes both axes as drawn
+    // (the glyph ink measurement is a horizontal line's height).
+    var vertical = element.dataset.orientation === 'vertical' || element.dataset.orientation === 'vertical_flipped';
+    var glyphs = vertical ? null : inkExtent(transformedText(textElement.textContent, style), style);
     if (glyphs) ink = {width: ink.width, height: glyphs.height};
     if (width <= 0 || height <= 0 || !ink.width || !ink.height) return;
     var factor = width / ink.width;
     if (height / ink.height < factor) factor = height / ink.height;
     if (factor < 1) textElement.style.fontSize = (factor * 96) + '%';
+    centreInk(element, textElement, style, vertical);
   }
 
   /** Re-run every fitted widget's fit under every board root in the
@@ -1626,7 +3088,7 @@
   function refitAllWidgetText() {
     var roots = document.querySelectorAll('[data-board-root]');
     for (var r = 0; r < roots.length; r += 1) {
-      var elements = roots[r].querySelectorAll('[data-widget][data-fit-text="1"]');
+      var elements = roots[r].querySelectorAll('[data-fit-text="1"]');
       for (var i = 0; i < elements.length; i += 1) {
         var element = elements[i];
         element._fitKey = null;
@@ -1643,6 +3105,20 @@
     document.fonts.ready.then(refitAllWidgetText, function () {});
     document.fonts.addEventListener('loadingdone', refitAllWidgetText);
   }
+  // The viewer's OS preference flipping mid-game is treated like the kill
+  // switch: every ticker is rebuilt for its new mode.
+  if (global.matchMedia) {
+    try {
+      var reducedMotion = global.matchMedia('(prefers-reduced-motion: reduce)');
+      if (reducedMotion && reducedMotion.addEventListener) {
+        reducedMotion.addEventListener('change', function () {
+          if (global.document) refreshTickers(document);
+        });
+      }
+    } catch (error) {
+      // No media query support: tickers keep the mode they were built with.
+    }
+  }
 
   /** Write every widget's text found under `container` from `model`, using
    * the registry that matches the board root's `data-board-kind`. A static
@@ -1652,7 +3128,10 @@
    * simply renders an empty box. Never derives a value: text is only ever
    * copied from the model or from the texts map, never computed or rounded.
    * Free elements are untouched here -- a text element's text is copied once
-   * from the layout in applyLayout() and never from the model. */
+   * from the layout in applyLayout() and never from the model -- with one
+   * deliberate exception: a text element's deferred shrink-to-fit, which
+   * only sets a font size on its inner span once the board first has a size
+   * and never rewrites an element node or an animation attribute. */
   function applyModel(container, model) {
     if (!container || !window.ScoreboardRender) {
       return;
@@ -1661,6 +3140,7 @@
     var registry = registryForRoot(boardRoot);
     var read = window.ScoreboardRender.read;
     boardRoot._lastModel = model;
+    if (boardRoot._elementFitPending) fitElementText(boardRoot);
     for (var index = 0; index < registry.ids.length; index += 1) {
       var id = registry.ids[index];
       var element = boardRoot.querySelector('[data-widget="' + id + '"]');
@@ -1722,6 +3202,22 @@
     return screen || DEFAULT_SCREENS[screenId];
   }
 
+  /** The motion kill switch (spec section 3.2): `enabled === false` puts
+   * `data-motion="off"` on `container` (board.css then stops every animation
+   * beneath it), rebuilds each ticker under it as one static line, and
+   * re-fits text; `true` removes the attribute and rebuilds the tickers in
+   * their moving modes. A host preference, never game state. */
+  function setMotion(container, enabled) {
+    if (!container || !container.dataset) return;
+    if (enabled === false) {
+      if (container.dataset.motion !== 'off') container.dataset.motion = 'off';
+    } else if (container.dataset.motion !== undefined) {
+      delete container.dataset.motion;
+    }
+    refreshTickers(container);
+    refitAllWidgetText();
+  }
+
   global.ScoreboardBoard = {
     WIDGET_IDS: WIDGET_IDS,
     WIDGET_FIELDS: WIDGET_FIELDS,
@@ -1734,7 +3230,9 @@
     DEFAULT_LAYOUT: DEFAULT_LAYOUT,
     DEFAULT_SCREENS: DEFAULT_SCREENS,
     FONT_FAMILIES: FONT_FAMILIES,
+    BUNDLED_IMAGES: BUNDLED_IMAGES,
     build: build,
+    setMotion: setMotion,
     applyLayout: applyLayout,
     applyModel: applyModel,
     screenForLifecycle: screenForLifecycle,

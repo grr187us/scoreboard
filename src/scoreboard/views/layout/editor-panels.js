@@ -34,6 +34,7 @@
     if (kind === 'text') return icon('text');
     if (kind === 'image') return icon('image');
     if (kind === 'box') return icon('box');
+    if (kind === 'ticker') return icon('ticker');
     return icon('field');
   }
 
@@ -140,10 +141,23 @@
       var text = (element.text || '').trim();
       return text ? '“' + text + '”' : element.id;
     }
-    if (element.type === 'image') {
-      return element.id;
+    if (element.type === 'ticker') {
+      var lines = Object.prototype.toString.call(element.lines) === '[object Array]' ? element.lines : [];
+      var first = typeof lines[0] === 'string' ? lines[0].trim() : '';
+      return first ? 'Ticker “' + first + '”' : element.id;
     }
     return element.id;
+  }
+
+  /** Every free element type; the widget kind and the pseudo-kinds
+   * ('board', 'multi', 'none') are not in it. */
+  function isElementKind(kind) {
+    return kind === 'text' || kind === 'image' || kind === 'box' || kind === 'ticker';
+  }
+
+  /** Kinds that carry the text style set (colour, face, size, tracking...). */
+  function hasTextStyle(kind) {
+    return kind === 'widget' || kind === 'text' || kind === 'ticker';
   }
 
   function renderLayers(app) {
@@ -283,6 +297,90 @@
     if (typeof limits.max_text_length === 'number') {
       textarea.maxLength = limits.max_text_length;
     }
+
+    // Event-screens additions. Every list has a fallback equal to the schema
+    // constant so the controls exist before Python starts reporting them.
+    populateChoiceGroup('prop-orientation', limits.orientations || ORIENTATIONS_FALLBACK, function (value) {
+      return ORIENTATION_LABELS[value] || value;
+    });
+    populateSelectOnce(el('prop-border_style'), limits.border_styles || BORDER_STYLES_FALLBACK, function (value) {
+      return { value: value, text: value };
+    });
+    populateSelectOnce(el('prop-fill_kind'), ['none'].concat(limits.fill_kinds || FILL_KINDS_FALLBACK), function (value) {
+      return { value: value, text: FILL_KIND_LABELS[value] || value };
+    });
+    populateSelectOnce(el('prop-animation_preset'), limits.animation_presets || ANIMATION_PRESETS_FALLBACK, function (value) {
+      return { value: value, text: ANIMATION_LABELS[value] || value };
+    });
+    populateChoiceGroup('prop-mode', limits.ticker_modes || TICKER_MODES_FALLBACK, function (value) {
+      return TICKER_MODE_LABELS[value] || value;
+    });
+    var assets = [{ id: '', label: 'Uploaded image' }].concat(limits.bundled_images || []);
+    populateSelectOnce(el('prop-asset'), assets, function (entry) {
+      return { value: entry.id, text: entry.label };
+    });
+    var rotate = el('prop-rotate_degrees');
+    var maxRotate = typeof limits.max_rotate_degrees === 'number' ? limits.max_rotate_degrees : 180;
+    rotate.min = String(-maxRotate);
+    rotate.max = String(maxRotate);
+    var seconds = el('prop-animation_seconds');
+    if (typeof limits.max_animation_seconds === 'number') {
+      seconds.max = String(limits.max_animation_seconds);
+    }
+    var linesArea = el('prop-lines');
+    var maxLines = typeof limits.max_ticker_lines === 'number' ? limits.max_ticker_lines : 8;
+    var maxLineLength = typeof limits.max_ticker_line_length === 'number' ? limits.max_ticker_line_length : 80;
+    el('lines-note').textContent = 'Up to ' + maxLines + ' lines of ' + maxLineLength + ' characters, one per row.';
+    linesArea.rows = maxLines < 4 ? maxLines : 4;
+  }
+
+  var ORIENTATIONS_FALLBACK = ['horizontal', 'vertical', 'vertical_flipped'];
+  var ORIENTATION_LABELS = { horizontal: 'Across', vertical: 'Downward', vertical_flipped: 'Upward' };
+  var BORDER_STYLES_FALLBACK = ['solid', 'dashed'];
+  var FILL_KINDS_FALLBACK = ['linear', 'radial', 'stripes'];
+  var FILL_KIND_LABELS = { none: 'Flat colour only', linear: 'Linear gradient', radial: 'Radial glow', stripes: 'Stripes' };
+  var ANIMATION_PRESETS_FALLBACK = ['none', 'sweep', 'drift', 'scroll_x', 'marquee', 'blink_soft'];
+  var ANIMATION_LABELS = {
+    none: 'None', sweep: 'Light sweep', drift: 'Drift up and down', scroll_x: 'Scroll sideways',
+    marquee: 'Marquee text', blink_soft: 'Soft blink'
+  };
+  var ANIMATION_MIN_FALLBACK = { sweep: 8, drift: 6, scroll_x: 10, marquee: 20, blink_soft: 1 };
+  var TICKER_MODES_FALLBACK = ['scroll', 'rotate'];
+  var TICKER_MODE_LABELS = { scroll: 'Scroll', rotate: 'Rotate lines' };
+  var TICKER_SPEED_FALLBACK = { scroll: [20, 120], rotate: [3, 60] };
+
+  /** The seconds an animation preset may not go under, from `state.limits`
+   * with the schema's own table as the fallback. */
+  function animationMinSeconds(limits, preset) {
+    var table = (limits && limits.animation_min_seconds) || ANIMATION_MIN_FALLBACK;
+    return typeof table[preset] === 'number' ? table[preset] : 1;
+  }
+
+  function animationMaxSeconds(limits) {
+    return typeof limits.max_animation_seconds === 'number' ? limits.max_animation_seconds : 120;
+  }
+
+  /** `[low, high]` seconds for a ticker mode. */
+  function tickerSpeedRange(limits, mode) {
+    var table = (limits && limits.ticker_speed_range) || TICKER_SPEED_FALLBACK;
+    var range = table[mode] || TICKER_SPEED_FALLBACK[mode] || [1, 120];
+    return [Number(range[0]), Number(range[1])];
+  }
+
+  /** The bundled image entry (`{id, label, path}`) an `asset:<id>` src
+   * names, or null. */
+  function bundledImageFor(limits, src) {
+    if (typeof src !== 'string' || src.indexOf('asset:') !== 0) {
+      return null;
+    }
+    var key = src.slice('asset:'.length);
+    var found = null;
+    ((limits && limits.bundled_images) || []).forEach(function (entry) {
+      if (entry && entry.id === key) {
+        found = entry;
+      }
+    });
+    return found || { id: key, label: key, path: null };
   }
 
   function setChoiceCurrent(hostId, value) {
@@ -306,22 +404,28 @@
 
     setHidden('sec-position', kind === 'board' || kind === 'none');
     setHidden('sec-layer', kind === 'board' || kind === 'none' || kind === 'multi');
-    setHidden('sec-text', kind !== 'widget' && kind !== 'text');
+    setHidden('sec-text', !hasTextStyle(kind));
     setHidden('sec-fill', kind === 'board' || kind === 'none' || kind === 'multi');
+    setHidden('sec-motion', kind !== 'widget' && kind !== 'text' && kind !== 'image' && kind !== 'box');
+    setHidden('sec-ticker', kind !== 'ticker');
     setHidden('sec-image', kind !== 'image');
     setHidden('sec-actions', kind === 'board' || kind === 'none');
     setHidden('sec-board', kind !== 'board');
     setHidden('inspector-empty', kind !== 'none');
 
     setHidden('action-reset_widget', kind !== 'widget');
-    setHidden('action-duplicate', kind !== 'text' && kind !== 'image' && kind !== 'box' && kind !== 'multi');
-    setHidden('action-delete_element', kind !== 'text' && kind !== 'image' && kind !== 'box' && kind !== 'multi');
+    setHidden('action-duplicate', !isElementKind(kind) && kind !== 'multi');
+    setHidden('action-delete_element', !isElementKind(kind) && kind !== 'multi');
 
-    setHidden('field-padding', kind !== 'widget' && kind !== 'text');
-    setHidden('field-opacity', kind !== 'text' && kind !== 'image' && kind !== 'box' && kind !== 'multi');
+    setHidden('field-padding', !hasTextStyle(kind));
+    setHidden('field-opacity', !isElementKind(kind) && kind !== 'multi');
     setHidden('field-text', kind !== 'text');
     setHidden('field-display_format', true);
-    setHidden('field-fit_text', kind !== 'widget');
+    setHidden('field-fit_text', kind !== 'widget' && kind !== 'text');
+    setHidden('field-orientation', kind !== 'widget' && kind !== 'text');
+    setHidden('field-bleed', kind !== 'box');
+    setHidden('field-fill-effect', kind !== 'box');
+    setHidden('field-rotate', kind !== 'text' && kind !== 'image' && kind !== 'box');
     setHidden('align-distribute', kind !== 'multi');
 
     if (kind === 'board') {
@@ -377,7 +481,7 @@
       el('prop-visible').checked = Boolean(item.visible);
       el('prop-fit_text').checked = Boolean(item.fit_text);
 
-      if (kind === 'widget' || kind === 'text') {
+      if (hasTextStyle(kind)) {
         setColorField('prop-color', item.color);
         el('prop-font_family').value = item.font_family || 'arial';
         el('prop-font_weight').value = String(item.font_weight);
@@ -389,9 +493,15 @@
         setChoiceCurrent('prop-vertical_align', item.vertical_align);
         el('prop-padding').value = percentText(item.padding || 0);
         el('static-note').hidden = !(descriptor && descriptor.static_text);
+        setChoiceCurrent('prop-orientation', item.orientation || 'horizontal');
       }
       if (kind === 'text') {
         el('prop-text').value = item.text || '';
+      }
+      if (kind === 'ticker') {
+        renderTickerFields(app, item);
+      } else {
+        renderMotionFields(app, item);
       }
       if (kind !== 'widget' && kind !== 'board') {
         el('prop-opacity').value = percentText(typeof item.opacity === 'number' ? item.opacity : 1);
@@ -406,11 +516,25 @@
         el('prop-corner_radius').value = percentText(item.corner_radius || 0);
         el('prop-corner_cut').value = percentText(item.corner_cut || 0);
         el('prop-cut_corners').value = item.cut_corners || 'all';
+        el('prop-border_style').value = item.border_style || 'solid';
+        el('prop-rotate_degrees').value = String(typeof item.rotate_degrees === 'number' ? item.rotate_degrees : 0);
+      }
+      if (kind === 'box') {
+        el('prop-bleed').checked = item.bleed === true;
+        renderFillFields(item);
       }
       if (kind === 'image') {
         el('prop-fit').value = item.fit || 'contain';
+        var bundled = bundledImageFor(app.state.limits || {}, item.src);
+        el('prop-asset').value = bundled ? bundled.id : '';
         var thumb = el('prop-image-thumb');
-        if (item.src) {
+        if (bundled) {
+          if (bundled.path) {
+            thumb.src = '../' + bundled.path;
+          } else {
+            thumb.removeAttribute('src');
+          }
+        } else if (item.src) {
           thumb.src = item.src;
         } else {
           thumb.removeAttribute('src');
@@ -420,6 +544,81 @@
     } finally {
       app.suppress = false;
     }
+  }
+
+  /** The gradient/stripes controls for a box: only the fields the chosen
+   * kind uses are shown. Colour A/B are the first and last stops; anything
+   * in between is preserved untouched by layout.js's composite write. */
+  function renderFillFields(item) {
+    var fill = item.fill && typeof item.fill === 'object' ? item.fill : null;
+    var kindValue = fill && typeof fill.kind === 'string' ? fill.kind : 'none';
+    el('prop-fill_kind').value = kindValue;
+    var isGradient = kindValue === 'linear' || kindValue === 'radial';
+    var isStripes = kindValue === 'stripes';
+    setHidden('field-fill_angle', !(kindValue === 'linear' || isStripes));
+    setHidden('field-fill_color_a', !(isGradient || isStripes));
+    setHidden('field-fill_color_b', !isGradient);
+    setHidden('field-fill_stripes', !isStripes);
+    el('fill-color-a-label').textContent = isStripes ? 'Stripe colour' : 'Colour A';
+    if (!fill) {
+      return;
+    }
+    el('prop-fill_angle').value = String(typeof fill.angle === 'number' ? fill.angle : 0);
+    if (isStripes) {
+      setColorField('prop-fill_color_a', fill.color);
+      el('prop-fill_opacity_a').value = percentText(typeof fill.opacity === 'number' ? fill.opacity : 1);
+      el('prop-fill_on').value = percentText(typeof fill.on === 'number' ? fill.on : 0);
+      el('prop-fill_off').value = percentText(typeof fill.off === 'number' ? fill.off : 0);
+      return;
+    }
+    var stops = Object.prototype.toString.call(fill.stops) === '[object Array]' ? fill.stops : [];
+    var first = stops[0] || {};
+    var last = stops[stops.length - 1] || {};
+    setColorField('prop-fill_color_a', first.color);
+    el('prop-fill_opacity_a').value = percentText(typeof first.opacity === 'number' ? first.opacity : 1);
+    setColorField('prop-fill_color_b', last.color);
+    el('prop-fill_opacity_b').value = percentText(typeof last.opacity === 'number' ? last.opacity : 1);
+  }
+
+  function renderMotionFields(app, item) {
+    var limits = app.state.limits || {};
+    var animation = item.animation && typeof item.animation === 'object' ? item.animation : null;
+    var preset = animation && typeof animation.preset === 'string' ? animation.preset : 'none';
+    el('prop-animation_preset').value = preset;
+    var seconds = el('prop-animation_seconds');
+    var note = el('animation-note');
+    if (preset === 'none') {
+      setHidden('field-animation_seconds', true);
+      note.textContent = 'Every animation pauses while Motion is off.';
+      return;
+    }
+    setHidden('field-animation_seconds', false);
+    var low = animationMinSeconds(limits, preset);
+    seconds.min = String(low);
+    seconds.value = String(typeof animation.duration_seconds === 'number' ? animation.duration_seconds : low);
+    note.textContent = 'At least ' + low + ' s for this effect (the LED rules forbid fast flashing); at most '
+      + animationMaxSeconds(limits) + ' s.';
+  }
+
+  function renderTickerFields(app, item) {
+    var limits = app.state.limits || {};
+    var lines = Object.prototype.toString.call(item.lines) === '[object Array]' ? item.lines : [];
+    var linesArea = el('prop-lines');
+    // Rewriting the textarea while the operator types would move the caret;
+    // only refresh it when the draft's lines differ from what it shows.
+    var shown = linesArea.value.split('\n').map(function (line) { return line.trim(); })
+      .filter(function (line) { return line !== ''; });
+    if (shown.join('\n') !== lines.join('\n')) {
+      linesArea.value = lines.join('\n');
+    }
+    var mode = item.mode === 'rotate' ? 'rotate' : 'scroll';
+    setChoiceCurrent('prop-mode', mode);
+    var range = tickerSpeedRange(limits, mode);
+    var speed = el('prop-speed_seconds');
+    speed.min = String(range[0]);
+    speed.max = String(range[1]);
+    speed.value = String(typeof item.speed_seconds === 'number' ? item.speed_seconds : range[0]);
+    el('speed-label').textContent = mode === 'rotate' ? 'Seconds per line' : 'Seconds per loop';
   }
 
   function renderMultiSection(app) {
@@ -638,6 +837,10 @@
     togglePopover: togglePopover,
     fromPercentInput: fromPercentInput,
     percentText: percentText,
-    selectionKind: selectionKind
+    selectionKind: selectionKind,
+    animationMinSeconds: animationMinSeconds,
+    animationMaxSeconds: animationMaxSeconds,
+    tickerSpeedRange: tickerSpeedRange,
+    bundledImageFor: bundledImageFor
   };
 })(window);

@@ -373,7 +373,7 @@ class OperatorControlTests(unittest.TestCase):
         """The drawer scrolls inside itself, so no live control is displaced."""
 
         drawer = self.html.split('<div class="drawer" id="corrections"', 1)[1]
-        drawer = drawer.split('<div class="drawer" id="event-drawer"', 1)[0]
+        drawer = drawer.split('<div class="drawer" id="setup-drawer"', 1)[0]
 
         self.assertIn('data-action="choose_data_folder"', drawer)
 

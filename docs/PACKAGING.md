@@ -1,6 +1,18 @@
 # Windows packaging and offline launch
 
-**Status:** Rebuilt and verified on the development host September 8, 2026,
+**Latest local build:** September 8, 2026, from the working tree with the
+five-second first-down redesign, red scratch edge, undimmed claw intro, and
+the preceding cutscene colour fix.
+`dist/Scoreboard` contains version 0.1.0, 825 files, 31.2 MB. Required assets
+and frozen `--check` passed using an isolated folder under
+`captures/first-down/package-check`; source/browser verification passed 1138
+tests with the three expected A-1 skips. This used the available Blender
+CPython 3.11.11 plus pinned `.venv/Lib/site-packages`, as described below.
+The older `dist/Scoreboard-0.1.0.zip` was **not** refreshed; use the current
+`dist/Scoreboard` folder for this build. Physical display and target-laptop
+acceptance remain open.
+
+**Previous transfer build:** Rebuilt and verified on the development host September 8, 2026,
 from commit `a6b2a47` (field status, Scoreboard Grid, the bundled Graduate
 font under `views/shared/fonts/`, Tigers Stadium, and the current
 cutscenes). `dist/Scoreboard` contains version 0.1.0, 782 files, 27.9 MB.

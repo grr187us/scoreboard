@@ -12,17 +12,45 @@
  * letter spacing, text transform, fill colour, border colour/width, corner
  * radius, and inner inset. `--op` is opacity for a free element only -- a
  * widget has no such property. `--fit` picks an image element's object-fit.
- * Every one of the newer custom properties carries a fallback in its var()
- * so a layout saved before these properties existed still draws correctly.
+ * September 8, 2026 (event-screens spec section 3.1): `--bs` is the border
+ * style (solid/dashed), `--rot` a free element's rotation in degrees, `--sx`
+ * a stripes fill's period (fraction of canvas width), `--anim-s` the duration
+ * of the named animation in `data-anim`, and `data-orientation` turns a text
+ * run vertical. Every one of the newer custom properties carries a fallback
+ * in its var() so a layout saved before these properties existed still draws
+ * correctly.
  */
 
-/* The one bundled face (SIL Open Font License, see fonts/Graduate-OFL.txt):
- * a collegiate block font for scores and clocks. Loaded from the package,
- * never from a network. */
+/* The bundled faces (SIL Open Font License, see fonts/Graduate-OFL.txt and
+ * fonts/Barlow-OFL.txt): Graduate, a collegiate block font for scores and
+ * clocks, and Barlow Condensed (500/600/700), the headline face of the
+ * Broadcast Welcome event screens. Loaded from the package, never from a
+ * network. */
 @font-face {
   font-family: "Graduate";
   src: url("fonts/Graduate-Regular.ttf") format("truetype");
   font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("fonts/BarlowCondensed-Bold.ttf") format("truetype");
+  font-weight: 700;
   font-style: normal;
   font-display: block;
 }
@@ -46,7 +74,7 @@
   letter-spacing: calc(var(--ls, 0) * 1em);
   text-transform: var(--tt, none);
   background: var(--bg, transparent);
-  border: calc(var(--canvas-width) * var(--bw, 0)) solid var(--bc, transparent);
+  border: calc(var(--canvas-width) * var(--bw, 0)) var(--bs, solid) var(--bc, transparent);
   border-radius: calc(var(--canvas-width) * var(--br, 0));
   padding: calc(var(--canvas-width) * var(--pad, 0));
 }
@@ -63,6 +91,9 @@
   overflow-wrap: normal;
   line-height: 1;
   letter-spacing: calc(var(--ls, 0) * 1em);
+  /* board.js centres the fitted line by its glyph ink with an inline `top`
+   * in em (see centreInk); relative so that nudge has something to move. */
+  position: relative;
 }
 
 /* A free element (text/image/box) placed alongside the widgets. A text
@@ -77,9 +108,20 @@
   height: calc(var(--h, 0.1) * 100%);
   opacity: var(--op, 1);
   background: var(--bg, transparent);
-  border: calc(var(--canvas-width) * var(--bw, 0)) solid var(--bc, transparent);
+  border: calc(var(--canvas-width) * var(--bw, 0)) var(--bs, solid) var(--bc, transparent);
   border-radius: calc(var(--canvas-width) * var(--br, 0));
+  /* The individual `rotate` property, not `transform`, so an animation's
+   * keyframe transforms below compose with the rotation instead of
+   * replacing it. */
+  rotate: calc(var(--rot, 0) * 1deg);
 }
+
+/* Vertical text (`orientation` on a widget or text element): the run is laid
+ * out top-to-bottom; the flipped variant reads bottom-to-top, as on the left
+ * end-zone band of the Fifty Yard Line screen. */
+[data-orientation] > .widget-text { min-height: 0; }
+[data-orientation="vertical"] > .widget-text { writing-mode: vertical-rl; }
+[data-orientation="vertical_flipped"] > .widget-text { writing-mode: vertical-rl; rotate: 180deg; }
 
 /* Clip the picture to its box so a corner radius rounds the image too. */
 .element-image { overflow: hidden; }
@@ -164,3 +206,92 @@
  * .widget.running-game .widget-text { color: var(--game-running); }
  * .widget.running-play .widget-text { color: var(--play-running); }
  */
+
+/* ---- Bounded motion (event-screens spec section 3.1) --------------------
+ * board.js puts `data-anim="<preset>"` and `--anim-s: <seconds>s` on a node
+ * whose layout entry carries a validated `animation`, and only rewrites them
+ * when the value actually changes, so a layout push never restarts a running
+ * animation. Every preset is a pure transform/opacity loop on a node that
+ * persists across snapshots. The keyframe names are pinned by the spec. */
+@keyframes sb-sweep {
+  from { transform: translateX(-120%) skewX(-18deg); }
+  to { transform: translateX(calc(var(--canvas-width) * 1.3)) skewX(-18deg); }
+}
+@keyframes sb-drift {
+  from { transform: translateY(-8%); }
+  to { transform: translateY(8%); }
+}
+@keyframes sb-scroll-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-1 * var(--canvas-width) * var(--sx, 0.0833))); }
+}
+@keyframes sb-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes sb-blink {
+  0% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+[data-anim="sweep"] { animation: sb-sweep var(--anim-s, 11s) linear infinite; }
+[data-anim="drift"] { animation: sb-drift var(--anim-s, 9s) ease-in-out infinite alternate; }
+[data-anim="scroll_x"] { animation: sb-scroll-x var(--anim-s, 14s) linear infinite; }
+[data-anim="marquee"] > .widget-text {
+  white-space: nowrap;
+  animation: sb-marquee var(--anim-s, 30s) linear infinite;
+}
+/* A clock blinks only its colon(s) (board.js wraps each in .clock-colon and
+ * marks the node data-colon="1"); any other text blinks as a whole. */
+[data-anim="blink_soft"][data-colon="1"] .clock-colon {
+  animation: sb-blink var(--anim-s, 1s) steps(1, end) infinite;
+}
+[data-anim="blink_soft"]:not([data-colon="1"]) > .widget-text {
+  animation: sb-blink var(--anim-s, 1s) steps(1, end) infinite;
+}
+
+/* The motion kill switch: `data-motion="off"` on the container passed to
+ * applyLayout (`#canvas` on both pages), set by ScoreboardBoard.setMotion
+ * from the host's presentation.motion preference. Also honoured for a
+ * viewer who asked the OS for reduced motion. Every animated node snaps to
+ * its resting transform; rotation (`rotate`) is untouched, so a tilted bar
+ * stays tilted. */
+[data-motion="off"] [data-anim],
+[data-motion="off"] [data-anim] *,
+[data-motion="off"] .ticker-track {
+  animation: none !important;
+  transform: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-anim],
+  [data-anim] *,
+  .ticker-track {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* ---- Ticker element (spec section 3.3) -----------------------------------
+ * `.element-ticker` is a widget-styled box holding one `.ticker-track`. In
+ * scroll mode the track carries two identical runs and slides by exactly one
+ * run (-50%), so the loop is seamless; in rotate mode one run cross-fades
+ * between lines on a timer; with motion off (`static`) one run shows every
+ * line on a single shrink-to-fit line, so no information lives only in a
+ * moving element. */
+.element-ticker { overflow: hidden; }
+.element-ticker[data-ticker-mode="scroll"] { justify-content: flex-start; }
+.ticker-track {
+  display: flex;
+  white-space: nowrap;
+  width: max-content;
+}
+.ticker-run {
+  flex: none;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  transition: opacity .4s;
+}
+.ticker-fade { opacity: 0; }
+[data-ticker-mode="scroll"] .ticker-track {
+  animation: sb-marquee var(--anim-s, 30s) linear infinite;
+}

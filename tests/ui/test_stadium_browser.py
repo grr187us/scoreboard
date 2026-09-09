@@ -36,9 +36,9 @@ class StadiumBrowserTests(unittest.TestCase):
         games.append(spectator_view_model(replace(game, play_clock_cleared=True,
                                                  down=None, distance=None, ball_on=None)))
         events = [spectator_view_model(GameState())]
-        events += [spectator_view_model(replace(game, lifecycle='HALFTIME',
+        events += [spectator_view_model(replace(game, quarter='HALF', lifecycle='HALFTIME',
                     home_name='W' * 24, away_name='W' * 24, home_score=199, away_score=199,
-                    event_phase='HALFTIME', event_countdown=ClockValue(s, False, 1800)))
+                    game_clock=ClockValue(s, False, 900)))
                    for s in (900, 181, 180, 0)]
         with tempfile.TemporaryDirectory(prefix='stadium-editor-') as folder:
             layouts = PresentationLayouts(resolve_paths(Path(folder)).ensure())

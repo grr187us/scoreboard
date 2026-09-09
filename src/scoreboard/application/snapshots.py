@@ -37,14 +37,17 @@ def state_to_snapshot(state: GameState) -> dict[str, Any]:
         "quarter": state.quarter,
         "lifecycle": state.lifecycle,
         "clocks": {
-            "game": {"seconds": state.game_clock.seconds, "running": state.game_clock.running},
-            "play": {"seconds": state.play_clock.seconds, "running": state.play_clock.running},
-            "event": {
-                "seconds": state.event_countdown.seconds,
-                "running": state.event_countdown.running,
+            "game": {
+                "seconds": state.game_clock.seconds,
+                "running": state.game_clock.running,
+                # The length of the period this clock is running (a
+                # configured quarter, overtime, kickoff, or halftime), so a
+                # resumed game's Reset returns to the right value. Additive
+                # since September 9, 2026; see snapshot_to_state's fallback.
+                "maximum_seconds": state.game_clock.maximum_seconds,
             },
+            "play": {"seconds": state.play_clock.seconds, "running": state.play_clock.running},
         },
-        "event_phase": state.event_phase,
         "play_clock_cleared": state.play_clock_cleared,
         "football": {
             "down": state.down,
@@ -97,7 +100,9 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
         away = teams["away"]
         game = clocks["game"]
         play = clocks["play"]
-        event = clocks["event"]
+        # Snapshots written before September 9, 2026 carried a separate
+        # "event" countdown and an event phase label; both are ignored now. The
+        # halftime countdown is the game clock while the quarter is HALF.
         # Additive since the football-state expansion: a snapshot written
         # before that change has no "football" key at all, and must still
         # load with the same defaults a fresh GameState() carries (P-004,
@@ -129,11 +134,15 @@ def snapshot_to_state(snapshot: Mapping[str, Any]) -> GameState:
             game_clock=ClockValue(
                 game["seconds"],
                 game["running"],
-                MAX_PREGAME_CLOCK_SECONDS if snapshot["quarter"] == "PRE" else MAX_GAME_CLOCK_SECONDS,
+                game.get(
+                    "maximum_seconds",
+                    # An older snapshot without the maximum: the shipped
+                    # lengths its build used.
+                    MAX_PREGAME_CLOCK_SECONDS if snapshot["quarter"] == "PRE"
+                    else MAX_GAME_CLOCK_SECONDS,
+                ),
             ),
             play_clock=ClockValue(play["seconds"], play["running"], 40),
-            event_countdown=ClockValue(event["seconds"], event["running"], 30 * 60),
-            event_phase=snapshot["event_phase"],
             play_clock_cleared=snapshot.get("play_clock_cleared",
                                             play["seconds"] == 0 and not play["running"]),
             down=football.get("down"),

@@ -21,9 +21,10 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any, Callable
 
-from scoreboard.application.service import ScoreboardService
+from scoreboard.application.service import ScoreboardService, initial_state
 from scoreboard.application.snapshots import state_to_snapshot
-from scoreboard.domain.state import APP_VERSION, GameState, default_state
+from scoreboard.domain.rules import GameRules
+from scoreboard.domain.state import APP_VERSION, GameState
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.local_time import format_local_timestamp
 from scoreboard.infrastructure.paths import ScoreboardPaths
@@ -288,6 +289,7 @@ def resume_recovered_game(
     report: RecoveryReport,
     *,
     monotonic_clock: Callable[[], float] | None = None,
+    rules: GameRules | None = None,
 ) -> ScoreboardService:
     """Seed a service from the recovered, already-stopped state.
 
@@ -302,19 +304,27 @@ def resume_recovered_game(
 
     if report.state is None:
         raise ValueError("this recovery report has no state to resume")
-    return ScoreboardService(state=report.state, monotonic_clock=monotonic_clock)
+    return ScoreboardService(
+        state=report.state, monotonic_clock=monotonic_clock, rules=rules
+    )
 
 
 def start_new_game(
-    *, monotonic_clock: Callable[[], float] | None = None
+    *,
+    monotonic_clock: Callable[[], float] | None = None,
+    rules: GameRules | None = None,
 ) -> ScoreboardService:
     """Begin from the documented stopped pregame baseline, discarding nothing.
 
     Any recovered database rows stay on disk; starting new opens a new game
     identity at the persistence layer rather than deleting the previous game.
+    The baseline loads the operator's configured pregame length and timeouts
+    per half (``rules``), or the shipped defaults.
     """
 
-    return ScoreboardService(state=default_state(), monotonic_clock=monotonic_clock)
+    return ScoreboardService(
+        state=initial_state(rules), monotonic_clock=monotonic_clock, rules=rules
+    )
 
 
 __all__ = [

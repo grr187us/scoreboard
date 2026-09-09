@@ -63,10 +63,8 @@ class RestartRecoveryTests(TemporaryDataDirectoryTest):
         self.assertEqual(report.state.home_score, 6)
         self.assertEqual(report.state.away_score, 3)
         self.assertEqual(report.state.quarter, "2nd")
-        self.assertEqual(report.state.event_phase, "PREGAME")
         self.assertFalse(report.state.game_clock.running)
         self.assertFalse(report.state.play_clock.running)
-        self.assertFalse(report.state.event_countdown.running)
 
     def test_checkpoint_is_also_offered_as_readable_eastern_time(self) -> None:
         """Operator-facing recovery timestamps are shown in Eastern time.

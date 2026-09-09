@@ -43,9 +43,9 @@ class GridBrowserTests(unittest.TestCase):
                 'layout': presets['grid'], 'classic': presets['classic'],
                 'models': [spectator_view_model(s) for s in states],
                 'clock_start': spectator_view_model(clock_start),
-                'pregame': spectator_view_model(GameState(event_countdown=ClockValue(900, False, 1800))),
-                'halftime': spectator_view_model(replace(state, lifecycle='HALFTIME',
-                    event_phase='HALFTIME', event_countdown=ClockValue(181, False, 1800))),
+                'pregame': spectator_view_model(GameState(game_clock=ClockValue(900, False, 1800))),
+                'halftime': spectator_view_model(replace(state, quarter='HALF', lifecycle='HALFTIME',
+                    game_clock=ClockValue(181, False, 900))),
                 'state': library.state(), 'valid': library.preview(presets['grid']),
             })
             self.assertEqual(result['cases'],35)

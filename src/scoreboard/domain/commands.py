@@ -17,18 +17,15 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Final, Mapping
 
-from scoreboard.domain.clocks import (
-    PLAY_CLOCK_PRESETS,
-    SELECTABLE_EVENT_PHASES,
-    STATUS_CLOCK_PRESETS,
-)
+from scoreboard.domain.clocks import PLAY_CLOCK_PRESETS
 from scoreboard.domain.field_assistant import FieldAction
 from scoreboard.domain.state import (
     GAME_STATUS_LABELS,
     MAX_DISTANCE,
     MAX_DOWN,
     MAX_SCORE,
-    MAX_TIMEOUTS,
+    MAX_STATUS_CLOCK_SECONDS,
+    MAX_TIMEOUTS_CAP,
     MAX_YARD_LINE,
     MIN_DOWN,
     QUARTER_LABELS,
@@ -70,11 +67,6 @@ class CommandType(str, Enum):
     PLAY_CLOCK_CLEAR = "play_clock_clear"
     PLAY_CLOCK_RESET = "play_clock_reset"
     PLAY_CLOCK_CORRECT = "play_clock_correct"
-    EVENT_COUNTDOWN_SELECT = "event_countdown_select"
-    EVENT_COUNTDOWN_START = "event_countdown_start"
-    EVENT_COUNTDOWN_STOP = "event_countdown_stop"
-    EVENT_COUNTDOWN_RESET = "event_countdown_reset"
-    EVENT_COUNTDOWN_CORRECT = "event_countdown_correct"
     #: Expanded football state (deferred from Task 5; see
     #: docs/PHASE_2_BACKLOG.md "Deferred scoreboard fields"): down, distance,
     #: possession, ball-on field position, and timeouts remaining.
@@ -118,7 +110,6 @@ NOTHING_TO_UNDO: Final[str] = "NOTHING_TO_UNDO"
 NOT_UNDOABLE: Final[str] = "NOT_UNDOABLE"
 INVALID_CLOCK_TIME: Final[str] = "INVALID_CLOCK_TIME"
 INVALID_PLAY_CLOCK_PRESET: Final[str] = "INVALID_PLAY_CLOCK_PRESET"
-INVALID_EVENT_PHASE: Final[str] = "INVALID_EVENT_PHASE"
 STALE_REVISION: Final[str] = "STALE_REVISION"
 INVALID_DOWN: Final[str] = "INVALID_DOWN"
 INVALID_DISTANCE: Final[str] = "INVALID_DISTANCE"
@@ -374,19 +365,9 @@ def validate_command(command: Command) -> CommandError | None:
                 "The play clock loads only the 25-second or 40-second preset.",
             )
 
-    if command.type is CommandType.EVENT_COUNTDOWN_SELECT:
-        if command.label not in SELECTABLE_EVENT_PHASES:
-            return CommandError(
-                INVALID_EVENT_PHASE,
-                "Choose the pregame or the halftime countdown; got "
-                f"{command.label!r}. WARMUP is part of the halftime countdown "
-                "and is not selected separately.",
-            )
-
     if command.type in (
         CommandType.GAME_CLOCK_CORRECT,
         CommandType.PLAY_CLOCK_CORRECT,
-        CommandType.EVENT_COUNTDOWN_CORRECT,
     ):
         if not _is_number(command.seconds):
             return CommandError(
@@ -433,10 +414,10 @@ def validate_command(command: Command) -> CommandError | None:
             )
 
     if command.type is CommandType.SET_TIMEOUTS:
-        if not _is_int(command.value) or not 0 <= command.value <= MAX_TIMEOUTS:
+        if not _is_int(command.value) or not 0 <= command.value <= MAX_TIMEOUTS_CAP:
             return CommandError(
                 INVALID_TIMEOUT_TARGET,
-                f"Timeouts remaining must be between 0 and {MAX_TIMEOUTS}.",
+                f"Timeouts remaining must be between 0 and {MAX_TIMEOUTS_CAP}.",
             )
 
     if command.type is CommandType.SET_GAME_STATUS:
@@ -448,11 +429,14 @@ def validate_command(command: Command) -> CommandError | None:
                 + ".",
             )
         if command.seconds is not None and (
-            not _is_number(command.seconds) or float(command.seconds) not in STATUS_CLOCK_PRESETS
+            not _is_number(command.seconds)
+            or float(command.seconds) != int(float(command.seconds))
+            or not 1 <= float(command.seconds) <= MAX_STATUS_CLOCK_SECONDS
         ):
             return CommandError(
                 INVALID_STATUS_CLOCK_PRESET,
-                "The status countdown loads only the 30, 60, or 90-second preset.",
+                "The status countdown loads a whole number of seconds, "
+                f"from 1 to {MAX_STATUS_CLOCK_SECONDS:g}.",
             )
 
     if command.type is CommandType.FINALIZE_FIELD_ACTION and not isinstance(
@@ -557,30 +541,6 @@ def play_clock_correct(seconds: float, *, source: str = "operator") -> Command:
     return Command(CommandType.PLAY_CLOCK_CORRECT, seconds=seconds, source=source)
 
 
-def event_countdown_select(label: str, *, source: str = "operator") -> Command:
-    """Load the 30:00 pregame or 15:00 interval countdown while stopped."""
-
-    return Command(CommandType.EVENT_COUNTDOWN_SELECT, label=label, source=source)
-
-
-def event_countdown_start(*, source: str = "operator") -> Command:
-    return Command(CommandType.EVENT_COUNTDOWN_START, source=source)
-
-
-def event_countdown_stop(*, source: str = "operator") -> Command:
-    return Command(CommandType.EVENT_COUNTDOWN_STOP, source=source)
-
-
-def event_countdown_reset(*, source: str = "operator") -> Command:
-    return Command(CommandType.EVENT_COUNTDOWN_RESET, source=source)
-
-
-def event_countdown_correct(seconds: float, *, source: str = "operator") -> Command:
-    """Edit Current Time; the service stops the countdown before applying."""
-
-    return Command(CommandType.EVENT_COUNTDOWN_CORRECT, seconds=seconds, source=source)
-
-
 def set_down(down: int | None, *, source: str = "operator") -> Command:
     """Direct-select 1st through 4th down, or clear it with ``down=None``."""
 
@@ -618,7 +578,7 @@ def timeout_correct(team: str, points: int, *, source: str = "operator") -> Comm
 
 
 def set_timeouts(team: str, value: int, *, source: str = "operator") -> Command:
-    """Directly set ``team``'s timeouts remaining (0 to :data:`MAX_TIMEOUTS`)."""
+    """Directly set ``team``'s timeouts remaining (0 to :data:`MAX_TIMEOUTS_CAP`)."""
 
     return Command(CommandType.SET_TIMEOUTS, team=team, value=value, source=source)
 
@@ -673,7 +633,6 @@ __all__ = [
     "INVALID_COMMAND",
     "INVALID_DISTANCE",
     "INVALID_DOWN",
-    "INVALID_EVENT_PHASE",
     "INVALID_FIELD_ACTION",
     "INVALID_GAME_STATUS",
     "INVALID_PLAY_CLOCK_PRESET",
@@ -714,11 +673,6 @@ __all__ = [
     "clear_game_status",
     "correct_score",
     "end_game",
-    "event_countdown_correct",
-    "event_countdown_reset",
-    "event_countdown_select",
-    "event_countdown_start",
-    "event_countdown_stop",
     "finalize_field_action",
     "game_clock_correct",
     "game_clock_reset",

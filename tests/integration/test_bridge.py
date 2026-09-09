@@ -62,11 +62,6 @@ COMMAND_PAYLOADS: dict[str, dict] = {
     "play_clock_clear": {},
     "play_clock_reset": {},
     "play_clock_correct": {"seconds": 12.0},
-    "event_countdown_select": {"label": "HALFTIME"},
-    "event_countdown_start": {},
-    "event_countdown_stop": {},
-    "event_countdown_reset": {},
-    "event_countdown_correct": {"seconds": 120.0},
     "set_down": {"value": 2},
     "set_distance": {"value": 8},
     "set_possession": {"team": "home"},
@@ -427,8 +422,11 @@ class ConfirmationTests(BridgeTestCase):
             r'data-command="([a-z_]+)"[^>]*data-confirm="local"', OPERATOR_HTML
         )
 
+        # "undo" joined them on September 8, 2026 (owner decision 3): the one
+        # control on the main screen that could rewrite history in a single
+        # accidental press now names what it reverses first.
         for command in ("set_score", "game_clock_correct", "play_clock_correct",
-                        "game_clock_reset", "end_game", "event_countdown_correct"):
+                        "game_clock_reset", "end_game", "undo"):
             with self.subTest(command=command):
                 self.assertIn(command, confirming)
 
@@ -888,7 +886,21 @@ class SpectatorBridgeTests(BridgeTestCase):
 
         # get_layout was added alongside the presentation layout editor
         # (spec section 6.1); it is read-only in exactly the same way.
-        self.assertEqual(public, {"get_snapshot", "get_layout", "get_cutscene"})
+        # close_display (control-refresh spec 1.3) is the one action this
+        # surface has: it closes the window it belongs to and can reach
+        # nothing else -- no score, no clock, no quarter (D-005). Built
+        # without a close hook, as here, it closes nothing at all.
+        self.assertEqual(
+            public, {"get_snapshot", "get_layout", "get_cutscene", "get_motion", "close_display"}
+        )
+        self.assertEqual(
+            spectator.close_display(),
+            {
+                "closed": False,
+                "message": "This display cannot close itself in this build.",
+            },
+        )
+        self.assertEqual(self.service.revision, 0)
 
     def test_it_returns_a_complete_json_snapshot(self) -> None:
         self.send("add_score", {"team": "home", "points": 6})
@@ -901,8 +913,13 @@ class SpectatorBridgeTests(BridgeTestCase):
         self.assertEqual(snapshot["clocks"]["game"]["display"], "30:00")
 
     def test_the_spectator_page_carries_no_control(self) -> None:
+        # "Control-free" means no *game command*: nothing on this page can
+        # change a score, a clock, or a quarter. Owner request 5 gave the wall
+        # one button, id="close-display", which closes only its own window
+        # (D-005), so the button check is now "exactly that one and no other".
         self.assertNotIn("data-command", SPECTATOR_HTML)
-        self.assertNotIn("<button", SPECTATOR_HTML)
+        self.assertEqual(SPECTATOR_HTML.count("<button"), 1)
+        self.assertIn('id="close-display"', SPECTATOR_HTML)
 
     def test_a_spectator_rendering_error_is_caught_in_the_page(self) -> None:
         # R-002: the page reports its own failure rather than throwing into
@@ -936,8 +953,10 @@ class SpectatorBridgeTests(BridgeTestCase):
         self.assertEqual(event["warmup_display"], "Warmup follows: 3:00")
 
         # Once the countdown drops to the warmup threshold, the phase flips
-        # to WARMUP and both fields go quiet together.
-        self.send("event_countdown_correct", {"seconds": 180})
+        # to WARMUP and both fields go quiet together. The halftime countdown
+        # is the game clock (September 9, 2026), so its correction is the
+        # ordinary game-clock one.
+        self.send("game_clock_correct", {"seconds": 180})
         event = self.bridge.spectator_snapshot()["clocks"]["event"]
         self.assertEqual(event["phase"], "WARMUP")
         self.assertIsNone(event["warmup_follows"])

@@ -17,15 +17,21 @@
     {key: 'f20', label: 'F20', action: 'Start play clock', command: 'play_clock_start'},
     {key: 'q', label: 'Q', action: 'Quarter forward', command: 'quarter_forward'},
     {key: 'q', shift: true, label: 'Shift+Q', action: 'Quarter back', command: 'quarter_back'},
-    {key: 'z', label: 'Z', action: 'Home +1', command: 'add_score', args: {team: 'home', points: 1}},
-    {key: 'x', label: 'X', action: 'Home +2', command: 'add_score', args: {team: 'home', points: 2}},
-    {key: 'c', label: 'C', action: 'Home +3', command: 'add_score', args: {team: 'home', points: 3}},
-    {key: 'v', label: 'V', action: 'Home +6', command: 'add_score', args: {team: 'home', points: 6}},
-    {key: 'n', label: 'N', action: 'Away +1', command: 'add_score', args: {team: 'away', points: 1}},
-    {key: 'm', label: 'M', action: 'Away +2', command: 'add_score', args: {team: 'away', points: 2}},
-    {key: ',', label: ',', action: 'Away +3', command: 'add_score', args: {team: 'away', points: 3}},
-    {key: '.', label: '.', action: 'Away +6', command: 'add_score', args: {team: 'away', points: 6}},
-    {key: 'z', ctrl: true, label: 'Ctrl+Z', action: 'Undo last reversible command', command: 'undo'},
+    // Scoring is two steps for the keyboard too (control refresh spec 2.8):
+    // `arm` routes the key through `options.score`, which arms that team on
+    // the first press and sends the command the binding already names on the
+    // second. The command and args are unchanged, so the help table and the
+    // bridge still see exactly the same eight scoring shortcuts.
+    {key: 'z', label: 'Z', action: 'Home +1 (press once to arm, again to apply)', command: 'add_score', args: {team: 'home', points: 1}, arm: 'home'},
+    {key: 'x', label: 'X', action: 'Home +2 (press once to arm, again to apply)', command: 'add_score', args: {team: 'home', points: 2}, arm: 'home'},
+    {key: 'c', label: 'C', action: 'Home +3 (press once to arm, again to apply)', command: 'add_score', args: {team: 'home', points: 3}, arm: 'home'},
+    {key: 'v', label: 'V', action: 'Home +6 (press once to arm, again to apply)', command: 'add_score', args: {team: 'home', points: 6}, arm: 'home'},
+    {key: 'n', label: 'N', action: 'Away +1 (press once to arm, again to apply)', command: 'add_score', args: {team: 'away', points: 1}, arm: 'away'},
+    {key: 'm', label: 'M', action: 'Away +2 (press once to arm, again to apply)', command: 'add_score', args: {team: 'away', points: 2}, arm: 'away'},
+    {key: ',', label: ',', action: 'Away +3 (press once to arm, again to apply)', command: 'add_score', args: {team: 'away', points: 3}, arm: 'away'},
+    {key: '.', label: '.', action: 'Away +6 (press once to arm, again to apply)', command: 'add_score', args: {team: 'away', points: 6}, arm: 'away'},
+    // Undo names what it reverses before it sends anything (owner decision 3).
+    {key: 'z', ctrl: true, label: 'Ctrl+Z', action: 'Undo last reversible command', command: 'undo', confirm: true, title: 'Undo the last action?'},
     {key: 'escape', label: 'Esc', action: 'Close dialog / drawer', close: true},
     // Cutscenes are a host concern, not a Command: these route through
     // `options.host(name, args)` instead of `options.submit`, but otherwise
@@ -78,6 +84,15 @@
       if (!snapshot) return;
       if (binding.host) {
         options.host(binding.host, binding.args || []);
+        return;
+      }
+      if (binding.arm) {
+        options.score(binding);
+        return;
+      }
+      if (binding.confirm) {
+        options.confirm(binding.command, Object.assign({}, binding.args),
+          {title: binding.title});
         return;
       }
       var command = binding.clock ?

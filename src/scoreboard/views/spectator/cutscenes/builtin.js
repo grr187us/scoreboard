@@ -293,6 +293,76 @@
    * the class off on every path out, so this timer is only the tidy case. */
   var SHAKE_CLEAR_MS = 400;
 
+  /* First down's material opening: four translated copies of one curved
+   * swipe. Middle digits contact slightly earlier; outer digits leave
+   * shorter tracks. Their 21-unit lateral spacing exceeds the maximum tear
+   * width throughout the stroke, including the opening animation. No
+   * independently rotated gouges or unrelated cartoon paw silhouette. */
+  var FIELD_CLAW_PATH = 'M 0 0 C 1 22 13 52 31 89 C 24 56 8 24 0 0 Z';
+  var FIELD_CLAW_PLACES = [
+    'translate(25 4) scale(1 .86)',
+    'translate(46 -5)',
+    'translate(67 -4)',
+    'translate(88 5) scale(1 .88)'
+  ];
+  var FIELD_CLAW_MARKUP = [
+    '<div class="cs-field-claw-surface"></div>',
+    '<svg class="cs-field-claw-svg" viewBox="0 0 160 90"',
+    ' preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">',
+    '<defs><filter id="cs-field-torn-edge" x="-30%" y="-10%" width="160%" height="120%">',
+    '<feTurbulence type="fractalNoise" baseFrequency=".65" numOctaves="2" seed="31" result="grain"/>',
+    '<feDisplacementMap in="SourceGraphic" in2="grain" scale=".65" xChannelSelector="R" yChannelSelector="G"/>',
+    '</filter></defs>',
+    FIELD_CLAW_PLACES.map(function (place) {
+      return '<g class="cs-field-claw-track" transform="' + place + '">'
+        + '<g class="cs-field-claw-reveal">'
+        + '<path class="cs-field-claw-shadow" d="' + FIELD_CLAW_PATH + '"/>'
+        + '<path class="cs-field-claw-edge" d="' + FIELD_CLAW_PATH + '"/>'
+        + '<path class="cs-field-claw-cut" d="' + FIELD_CLAW_PATH + '"/>'
+        + '</g></g>';
+    }).join(''),
+    '</svg>'
+  ].join('');
+
+  /* Touchdown's opening: the same material claw as first down, but the
+   * whole paw. Five tracks instead of four, each a third longer and wider,
+   * spread 24 units apart (wider than any track's maximum tear, so the cuts
+   * never merge), a single white impact flash, and a red bleed that pours
+   * out of the cuts at the moment the board morphs beneath them. The board
+   * itself takes a shake twice as heavy as the ordinary strike, through the
+   * `--cs-shake` multiplier the cs-shake keyframes read. */
+  var TOUCHDOWN_CLAW_PLACES = [
+    'translate(12 8) scale(1.22 1.04)',
+    'translate(36 -6) scale(1.3 1.18)',
+    'translate(60 -12) scale(1.32 1.24)',
+    'translate(84 -8) scale(1.3 1.18)',
+    'translate(108 6) scale(1.22 1.04)'
+  ];
+  var TOUCHDOWN_CLAW_MARKUP = [
+    '<div class="cs-td-claw-bleed"></div>',
+    '<div class="cs-td-claw-flash"></div>',
+    '<svg class="cs-field-claw-svg" viewBox="0 0 160 90"',
+    ' preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">',
+    '<defs><filter id="cs-td-torn-edge" x="-30%" y="-10%" width="160%" height="120%">',
+    '<feTurbulence type="fractalNoise" baseFrequency=".55" numOctaves="2" seed="47" result="grain"/>',
+    '<feDisplacementMap in="SourceGraphic" in2="grain" scale=".9" xChannelSelector="R" yChannelSelector="G"/>',
+    '</filter></defs>',
+    TOUCHDOWN_CLAW_PLACES.map(function (place) {
+      return '<g class="cs-td-claw-track" transform="' + place + '">'
+        + '<g class="cs-field-claw-reveal cs-td-claw-reveal">'
+        + '<path class="cs-field-claw-shadow" d="' + FIELD_CLAW_PATH + '"/>'
+        + '<path class="cs-field-claw-edge" d="' + FIELD_CLAW_PATH + '"/>'
+        + '<path class="cs-field-claw-cut" d="' + FIELD_CLAW_PATH + '"/>'
+        + '</g></g>';
+    }).join(''),
+    '</svg>'
+  ].join('');
+
+  /** How much heavier the touchdown strike shakes the board than the
+   * ordinary claw (`cs-shake` in cutscene.css multiplies its offsets by
+   * `--cs-shake`, which is 1 when unset). */
+  var TOUCHDOWN_SHAKE = 2.2;
+
   register('claw_scratch', function (stageEl, program) {
     var root = null;
     var shakeTimer = null;
@@ -303,6 +373,30 @@
 
     return {
       mount: function () {
+        if (program.event === 'first_down') {
+          root = sceneRoot('claw_scratch', 'cs-field-claw');
+          root.style.setProperty('--cs-intro-ms', introMs(program) + 'ms');
+          root.innerHTML = FIELD_CLAW_MARKUP;
+          stageEl.appendChild(root);
+          return;
+        }
+        if (program.event === 'touchdown') {
+          root = sceneRoot('claw_scratch', 'cs-field-claw cs-td-claw');
+          root.style.setProperty('--cs-intro-ms', introMs(program) + 'ms');
+          root.innerHTML = TOUCHDOWN_CLAW_MARKUP;
+          stageEl.appendChild(root);
+          var struck = canvasNode();
+          if (struck) {
+            struck.style.setProperty('--cs-shake', String(TOUCHDOWN_SHAKE));
+            struck.classList.add('shake');
+            shakeTimer = global.setTimeout(function () {
+              shakeTimer = null;
+              struck.classList.remove('shake');
+              struck.style.removeProperty('--cs-shake');
+            }, SHAKE_CLEAR_MS);
+          }
+          return;
+        }
         root = sceneRoot('claw_scratch', 'cs-claw');
         root.style.setProperty('--cs-intro-ms', introMs(program) + 'ms');
         root.innerHTML = CLAW_MARKUP;
@@ -325,6 +419,7 @@
         var canvas = canvasNode();
         if (canvas) {
           canvas.classList.remove('shake');
+          canvas.style.removeProperty('--cs-shake');
         }
         if (root && root.parentNode) {
           root.parentNode.removeChild(root);

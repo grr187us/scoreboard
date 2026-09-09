@@ -41,7 +41,9 @@ async function main(data) {
           layout_state: () => { record('layout_state'); return Promise.resolve(payload.state); },
           get_snapshot: () => { record('get_snapshot'); return Promise.resolve(payload.snapshot); },
           preview_layout: draft => {
-            record('preview_layout');
+            // A copy: the page hands over its live draft object, and the
+            // ticker scenario below reads the draft as it stood at each step.
+            record('preview_layout', JSON.parse(JSON.stringify(draft)));
             return Promise.resolve(invalid(draft) ? payload.invalidPreview : payload.validPreview);
           },
           clamp_layout: draft => { record('clamp_layout', draft); return Promise.resolve(payload.clamped); },
@@ -340,6 +342,83 @@ async function main(data) {
     assert.equal(await page.locator('[data-item="quarter"]').count(), 1,
       'deleting an element must never remove a widget');
     checks.push('delete element');
+
+    // --- Ticker element (event screens, September 8, 2026) ------------------
+    //
+    // Add a ticker, type two lines, switch it to rotate mode, set its speed,
+    // step back and forward through history, then delete it -- asserting the
+    // draft after every step. The draft is read back from the last
+    // preview_layout call, which the page makes after each edit.
+    const lastDraft = () => page.evaluate(() => {
+      const previews = window.__calls.filter(c => c.name === 'preview_layout');
+      return previews[previews.length - 1].args;
+    });
+    const tickerIn = draft => (draft.elements || []).filter(e => e.type === 'ticker');
+    const rowsBeforeTicker = await page.evaluate(() =>
+      document.querySelectorAll('#rail-elements-body .rail-row').length);
+    await page.click('[data-action="add_ticker"]');
+    await page.waitForFunction(
+      count => document.querySelectorAll('#rail-elements-body .rail-row').length === count,
+      rowsBeforeTicker + 1);
+    let ticker = tickerIn(await lastDraft());
+    assert.equal(ticker.length, 1, 'adding a ticker must put exactly one in the draft');
+    assert.deepEqual(
+      { x: ticker[0].x, y: ticker[0].y, width: ticker[0].width, height: ticker[0].height },
+      { x: 0, y: 0.89, width: 1, height: 0.1 });
+    assert.deepEqual(ticker[0].lines, ['NEW ANNOUNCEMENT']);
+    assert.equal(ticker[0].mode, 'scroll');
+    assert.equal(ticker[0].speed_seconds, 30);
+    assert.equal(ticker[0].font_family, 'barlow_condensed');
+    assert.equal(await page.isVisible('#sec-ticker'), true, 'the Ticker section must open for it');
+    assert.equal(await page.isVisible('#sec-motion'), false, 'a ticker takes no animation preset');
+    assert.match(await page.textContent('#inspector-title'), /NEW ANNOUNCEMENT/);
+    // The stub answers every preview with the Python payload for a
+    // ticker-less draft, so the issue count for a ticker draft is not
+    // asserted here; tests/unit/test_event_screens.py validates tickers.
+    checks.push('add ticker');
+
+    await page.fill('#prop-lines', 'GO TIGERS\n  SENIOR NIGHT  \n');
+    await page.dispatchEvent('#prop-lines', 'input');
+    // Leaving the field fires the native 'change' -- one history entry, as
+    // an operator's typing would (a dispatched 'change' on top of it would
+    // record the same draft twice and make the history steps below lie).
+    await page.locator('#prop-lines').blur();
+    ticker = tickerIn(await lastDraft());
+    assert.deepEqual(ticker[0].lines, ['GO TIGERS', 'SENIOR NIGHT'],
+      'lines split on newline, trimmed, empties dropped');
+    checks.push('ticker lines');
+
+    await page.click('#prop-mode [data-choice="rotate"]');
+    ticker = tickerIn(await lastDraft());
+    assert.equal(ticker[0].mode, 'rotate');
+    assert.equal(await page.textContent('#speed-label'), 'Seconds per line');
+    checks.push('ticker rotate mode');
+
+    await page.fill('#prop-speed_seconds', '8');
+    await page.dispatchEvent('#prop-speed_seconds', 'input');
+    await page.locator('#prop-speed_seconds').blur();
+    ticker = tickerIn(await lastDraft());
+    assert.equal(ticker[0].speed_seconds, 8);
+    checks.push('ticker speed');
+
+    await page.click('[data-action="history_back"]');
+    await page.waitForFunction(() => Number(document.getElementById('prop-speed_seconds').value) === 30);
+    ticker = tickerIn(await lastDraft());
+    assert.equal(ticker[0].speed_seconds, 30, 'history back must restore the previous speed');
+    assert.equal(ticker[0].mode, 'rotate', 'history back steps one edit, not two');
+    await page.click('[data-action="history_forward"]');
+    await page.waitForFunction(() => Number(document.getElementById('prop-speed_seconds').value) === 8);
+    ticker = tickerIn(await lastDraft());
+    assert.equal(ticker[0].speed_seconds, 8, 'history forward must re-apply the speed');
+    checks.push('ticker history');
+
+    await page.click('#action-delete_element');
+    await page.waitForFunction(
+      count => document.querySelectorAll('#rail-elements-body .rail-row').length === count,
+      rowsBeforeTicker);
+    assert.equal(tickerIn(await lastDraft()).length, 0, 'deleting must remove the ticker from the draft');
+    assert.equal(await page.locator('[data-item="quarter"]').count(), 1);
+    checks.push('delete ticker');
 
     // --- The screen switcher: Pre-game has its own widgets, presets, and
     // elements, entirely separate from the Game screen's ---------------------

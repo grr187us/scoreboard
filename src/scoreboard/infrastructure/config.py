@@ -26,6 +26,7 @@ import json
 import os
 from typing import Any, Final
 
+from scoreboard.domain.rules import GameRules, RulesError, default_rules
 from scoreboard.infrastructure.paths import ScoreboardPaths
 
 #: Bumped only when an older build could misread a newer file. Unknown sections
@@ -34,6 +35,18 @@ CONFIG_SCHEMA_VERSION: Final[int] = 1
 
 #: The section holding the spectator display identity (Task 10).
 DISPLAY_SECTION: Final[str] = "display"
+
+#: The section holding presentation preferences (event-screens spec section
+#: 2.9): ``{"motion": bool}`` -- the global animation kill switch for the
+#: spectator boards. A host preference like the display, never game state.
+PRESENTATION_SECTION: Final[str] = "presentation"
+
+#: The section holding the game's timing rules (September 9, 2026): quarter,
+#: overtime, pregame, and halftime lengths, the warmup threshold, the crowd
+#: timeout length, and timeouts per half. See ``domain.rules``. A laptop
+#: preference like the display -- a league's rules outlive any one game and
+#: should not travel with a game database.
+RULES_SECTION: Final[str] = "rules"
 
 
 def read_config(paths: ScoreboardPaths) -> dict[str, Any]:
@@ -109,11 +122,63 @@ def write_section(paths: ScoreboardPaths, section: str, value: Any) -> bool:
     return write_config(paths, document)
 
 
+def read_motion(paths: ScoreboardPaths) -> bool:
+    """Whether board animations are on. Absent or unreadable means **on**:
+    motion is the designed look, and a damaged preference file must never
+    quietly freeze the wall (same contract as every other preference).
+    """
+
+    section = read_section(paths, PRESENTATION_SECTION)
+    if not isinstance(section, dict):
+        return True
+    motion = section.get("motion")
+    return motion if isinstance(motion, bool) else True
+
+
+def write_motion(paths: ScoreboardPaths, enabled: bool) -> bool:
+    """Store the motion switch, keeping any other presentation key intact."""
+
+    section = read_section(paths, PRESENTATION_SECTION)
+    document = dict(section) if isinstance(section, dict) else {}
+    document["motion"] = bool(enabled)
+    return write_section(paths, PRESENTATION_SECTION, document)
+
+
+def read_rules(paths: ScoreboardPaths) -> GameRules:
+    """The stored timing rules, or the shipped defaults.
+
+    Same contract as every other preference: a section that is missing,
+    malformed, or carries a value the current build refuses reads as "no
+    preference set" -- the whole section falls back, never half of it, so
+    the operator sees one coherent set of defaults rather than a mix.
+    """
+
+    section = read_section(paths, RULES_SECTION)
+    if not isinstance(section, dict):
+        return default_rules()
+    try:
+        return GameRules.from_payload(section)
+    except RulesError:
+        return default_rules()
+
+
+def write_rules(paths: ScoreboardPaths, rules: GameRules) -> bool:
+    """Store the timing rules, keeping every other section intact."""
+
+    return write_section(paths, RULES_SECTION, rules.to_dict())
+
+
 __all__ = [
     "CONFIG_SCHEMA_VERSION",
     "DISPLAY_SECTION",
+    "PRESENTATION_SECTION",
+    "RULES_SECTION",
     "read_config",
+    "read_motion",
+    "read_rules",
     "read_section",
     "write_config",
+    "write_motion",
+    "write_rules",
     "write_section",
 ]

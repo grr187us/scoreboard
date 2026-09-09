@@ -8,7 +8,7 @@
 Build the MVP as a **single local Python application process** with:
 
 - a pure authoritative state/command core;
-- monotonic, deadline-based game, play, and event-countdown clocks owned by that core;
+- monotonic, deadline-based game, play, and crowd-status clocks owned by that core (the game clock is also the kickoff and halftime countdown while the quarter is `PRE` or `HALF`; the separate event-countdown engine was removed September 9, 2026);
 - local JSON configuration plus an embedded SQLite recovery database and automatic backup;
 - a durable append-only action history stored with recoverable state;
 - two primary HTML/CSS/JavaScript views hosted in managed `pywebview` windows: operator and spectator;
@@ -262,8 +262,43 @@ Startup recovery uses a separate `StartupBridge` with report/resume/new methods.
 - The bridge calls a host-only accepted-command callback after persistence; the host immediately notifies both windows. Ticks retain timed refresh/checkpoint work. No new JavaScript API method is needed. Python notifies both windows after an accepted command or clock-display boundary. The JavaScript renderer replaces displayed values from the snapshot.
 - **Publishing never holds the command lock (audit C4, September 6, 2026).** The installed WebView2 backend implements `evaluate_js` as a synchronous `Invoke` followed by an untimed semaphore wait, and `Window.run_js` uses the same path, so there is no non-blocking way to reach a window. `ScoreboardApplication.tick()` and `_publish()` therefore build an immutable batch — sequence, revision, operator view, and spectator snapshot — under `_command_lock` and deliver only after release. The bridge's `command()` and `finalize_field_action()` likewise invoke the accepted-command callback after release, and unexpected exceptions become logged `INTERNAL_ERROR` rejections rather than escaping into the window. `host/publisher.py` moves the blocking call to one daemon worker, retains only the latest pending view per window, and emits one `PUBLISH_STALLED`/`PUBLISH_RECOVERED` pair around a slow call. Thus a blocked webview cannot stop commands, clock derivation, persistence, or checkpoints.
 - **Known C4 deviation, reopened by the September 6 reconciliation.** The current `_publish_lock` covers only the `(revision, sequence)` check/update; it is released before the batch's per-window offers. Two caller threads can therefore pass the check in order but interleave an older spectator offer after a newer one. The existing ordering test invokes batches serially and does not force this schedule. In addition, one `WindowPublisher` worker drains all window names, so a blocked delivery delays later deliveries to otherwise healthy windows. These are presentation-delivery defects, not authoritative-state failures, but the stronger stale-proof/per-window-isolation contract is not yet met. C4 remains open until the implementation and a forced-interleaving test close both gaps. `publish_layout()` also remains a direct layout-bridge webview call outside the command lock.
-- The spectator bridge exposes no mutating API.
-- The presentation-layout editor bridge follows the same rule. `host/layout_bridge.py`'s `LayoutEditorBridge` can read a live snapshot and validate/preview/save/select/delete/reset a layout, but it has deliberately no `command()` method and no way to change a score, clock, quarter, or any other game value. Its window follows the same ownership pattern as the Field Assistant helper: `WindowHost.open_layout_editor` opens it independently of the operator and spectator windows, and its closed-callback clears only its own slot, so closing or losing the editor affects no other window and advances no state revision.
+- The spectator bridge exposes no mutating API. **Added September 8, 2026
+  (owner request 5, decision 6).** `SpectatorBridge` is read-only about the
+  game; its one action closes its own window. `close_display()` -- optional
+  keyword `close` at construction, feature-detected by the spectator page as
+  `typeof api.close_display === 'function'` so an older host answers plainly
+  instead of throwing -- reaches nothing but the window it belongs to: no
+  score, no clock, no quarter, not even another window (D-005). `DisplayLink`
+  (`host/bridge.py`) gained the matching `close()` hook, overridden by
+  `WindowHost` the same way `reopen()` already is; on its own it closes
+  nothing. `ScoreboardBridge.close_display()` is the operator-side host
+  action in the `reopen_display()` family -- under `_lock`, contained like
+  every other diagnostics-reporting host action, advancing no revision and
+  writing no history row -- and returns the same `displays()` payload
+  `reopen_display()` does so the Display drawer can re-render from it.
+  `WindowHost.close_spectator()` (`host/app.py`) is what both bridges'
+  `close` callables ultimately reach: it destroys the spectator window
+  outside the lock (as `open_spectator` already does), publishes the pinned
+  `CLOSED_BY_OPERATOR_DETAIL` sentence through `spectator_closed()`, and
+  leaves the saved display and `can_reopen` untouched so one click reopens
+  it. The later `closed` event pywebview fires for the now-destroyed window
+  is a no-op, because `_spectator_closed` already guards on window identity.
+  The practice test window gets its own small `close_test_window()`, which
+  touches no display health at all -- it was never part of that contract.
+- **Added September 8, 2026 (owner request 5, decision 1).** The operator
+  view model gains a `setup` block (`operator_view_model()`,
+  `_setup_view()` in `host/bridge.py`): `teams_pending`/`home_pending`/
+  `away_pending` booleans and a `detail` sentence, present only while the
+  game is pregame and a team name is still its shipped placeholder. Python
+  owns the sentence -- `scoreboard.domain.state.setup_prompt_detail()` is the
+  one function that produces it, so the Teams-drawer prompt and the kickoff
+  confirmation that repeats it can never disagree about the wording -- and
+  the operator page only copies `detail` into the drawer and the `NOT
+  CHOSEN` panel line. The spectator view model deliberately has no `setup`
+  key at all: the wall never shows an instruction meant for the booth. An
+  older operator build with no `setup` key is tolerated the same way a
+  missing `undo_history` already is.
+- The presentation-layout editor bridge follows the same rule. `host/layout_bridge.py`'s `LayoutEditorBridge` can read a live snapshot and validate/preview/save/select/delete/reset a layout, but it has deliberately no `command()` method and no way to change a score, clock, quarter, or any other game value. Its window follows the same ownership pattern as the Field Assistant helper: `WindowHost.open_layout_editor` opens it independently of the operator and spectator windows, and its closed-callback clears only its own slot, so closing or losing the editor affects no other window and advances no state revision. The editor's Motion switch (added September 8, 2026) is held to the same rule from the other side: it is a *host preference* in `config.json`, not a layout property, so `LayoutEditorBridge.set_motion`/`PresentationLayouts.set_motion` advance no revision and write no history row, and `WindowHost.publish_motion` pushes the on/off state to the spectator, practice, and layout windows with `window.applyMotion` the same way `publish_layout` pushes a layout. A layout's `ticker` element, by contrast, is ordinary layout content, not a preference or game state: its announcement lines live in the layout document and are edited exactly like a text element's wording.
 - The Field Assistant bridge is narrow in a different direction: `host/bridge.py`'s `FieldAssistantBridge` exposes `get_snapshot`, `preview_field_action` (read-only, advances no revision), and `finalize_field_action` (the one composite command), all JSON-compatible. It has no other mutating method, and the helper window it serves is opened, closed, and reopened independently of the operator and spectator windows (`host/app.py`); a helper push failure destroys only the helper. `ScoreboardBridge` also defines those two methods so `FieldAssistantBridge` can delegate to it, so the isolation claim is about the *consumer*, not reachability: the Field Assistant page is the only caller, and the operator page never invokes them.
 - All bridge payloads are JSON-compatible, versioned dictionaries; domain objects do not leak into JavaScript.
 - If a view notification fails, log it, keep the core running, mark display health, and allow recreation from the latest snapshot.
@@ -305,7 +340,7 @@ Scoreboard/
     application.log
 ```
 
-- `config.json`: schema version, defaults, display identity/geometry, operator preferences, shortcut map. In use since Task 10 for the display section; read tolerantly, so a damaged or newer-version file reads as "no preferences" and never stops a launch.
+- `config.json`: schema version, defaults, display identity/geometry, operator preferences, shortcut map. In use since Task 10 for the display section, and since September 9, 2026 for the `rules` section (`domain/rules.py`'s `GameRules`: quarter/overtime/pregame/halftime lengths, warmup threshold, crowd timeout length, timeouts per half — a laptop preference the Setup drawer edits through the `rules()`/`save_rules()` host actions, never game state); read tolerantly, so a damaged or newer-version file reads as "no preferences" and never stops a launch.
 - `data-location.json`: the chosen data-folder pointer, kept only under the platform-default Scoreboard root so the next launch can locate `config.json`, databases, layouts, teams, and logs in the chosen folder. `infrastructure/paths.py`, not `config.py`, owns this bootstrap layer; a bad pointer falls back safely.
 - `scoreboard.db`: schema version, app version, state revision, lifecycle, teams/scores/quarter, materialized clock values, last command metadata, and append-only action history.
 - `scoreboard.backup.db`: automatically refreshed last-known-good database backup. Since September 6, 2026 (audit C4) the refresh is bounded: the first commit of a session, `record_shutdown`, and `close()` refresh it immediately, and any other verified commit refreshes it at once only when `BACKUP_MIN_INTERVAL_SECONDS` (2 s) have passed since the last refresh — otherwise the refresh is marked pending and the next clock checkpoint flushes it once the interval has elapsed. A full SQLite copy no longer runs inside every accepted command under the command lock.
@@ -452,7 +487,7 @@ property of the event, not an argument: `EVENT_TEAM` maps every event to
 `CutsceneDirector.trigger()`, `CutscenesBridge.trigger()`, and
 `ScoreboardBridge.trigger_cutscene()` all take an event and nothing else.
 The sibling tables `EVENT_DEFAULT_INTRO` and `DEFAULT_DURATION_SECONDS`
-give the claw strike and 7/10/7 s to first down, touchdown, and turnover,
+give the claw strike and 5/10/7 s to first down, touchdown, and turnover,
 and no intro at all to the 7 s penalty and the 5 s make-some-noise crowd
 prompt (at 5 s a 1.6 s claw would eat a third of the scene). `EVENT_SUBLINE`
 is the per-event subline template — `{team}`, `{team}`, `{team} BALL`,

@@ -104,7 +104,7 @@ class SpectatorFoundationTests(ApplicationTestCase):
         self.assertEqual(bridge.spectator_snapshot()['clocks']['event']['display'], '15:00')
         for seconds, display, phase in [(900, '15:00', 'HALFTIME'), (181, '3:01', 'HALFTIME'),
                                         (180, '3:00', 'WARMUP'), (0, '0:00', 'WARMUP')]:
-            bridge.command('event_countdown_correct', {'seconds': seconds})
+            bridge.command('game_clock_correct', {'seconds': seconds})
             event = bridge.spectator_snapshot()['clocks']['event']
             self.assertEqual((event['display'], event['phase']), (display, phase))
             self.assertEqual(event['warmup_follows'], '3:00' if phase == 'HALFTIME' else None)

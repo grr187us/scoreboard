@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from scoreboard.infrastructure import config
 from scoreboard.infrastructure import layouts as layouts_infra
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import ScoreboardPaths
@@ -66,6 +67,12 @@ class LayoutLink:
 
     def publish(self, layout: dict[str, Any]) -> None:
         """Overridden by the host. On its own this pushes nothing anywhere."""
+
+        return None
+
+    def publish_motion(self, enabled: bool) -> None:
+        """Overridden by the host: tells every open board whether to animate
+        (event-screens spec section 2.9). On its own this pushes nothing."""
 
         return None
 
@@ -142,7 +149,40 @@ class PresentationLayouts:
             "fell_back": library.fell_back,
             "saved": self._saved,
             "message": self._message,
+            # The global animation switch (event-screens spec section 2.9):
+            # a host preference in config.json, always present here.
+            "motion": self.motion_enabled(),
         }
+
+    def motion_enabled(self) -> bool:
+        """Whether board animations are on. Absent or unreadable means on."""
+
+        return config.read_motion(self._paths)
+
+    def set_motion(self, enabled: Any) -> dict[str, Any]:
+        """Turn every board animation on or off, everywhere at once.
+
+        A host preference exactly like the display: written to
+        ``config.json``, pushed to the open boards through the link, and
+        never a game command -- no revision, no history row. A non-bool is
+        refused without writing anything.
+        """
+
+        if not isinstance(enabled, bool):
+            payload = self.state()
+            payload["ok"] = False
+            payload["message"] = "Motion must be on or off."
+            return payload
+        config.write_motion(self._paths, enabled)
+        self._message = "Motion is on." if enabled else "Motion is off."
+        self._diagnostics.note("LAYOUT_MOTION", enabled=enabled)
+        try:
+            self._link.publish_motion(enabled)
+        except Exception as exc:  # noqa: BLE001 - a publish must never fail the switch (R-002)
+            self._diagnostics.unhandled_error(context="layout_publish_motion", error=exc)
+        payload = self.state()
+        payload["ok"] = True
+        return payload
 
     def preview(self, payload: Any) -> dict[str, Any]:
         """Validate a draft without writing or publishing anything."""
@@ -340,6 +380,11 @@ class LayoutEditorBridge:
 
     def reset_layout(self) -> dict[str, Any]:
         return self._layouts.reset()
+
+    def set_motion(self, enabled: Any) -> dict[str, Any]:
+        """The Motion toggle: a host preference, not a game command."""
+
+        return self._layouts.set_motion(enabled)
 
 
 __all__ = [

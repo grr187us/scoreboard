@@ -15,13 +15,26 @@ Phase 2 is operated from one laptop by the primary operator. A second person is 
 
 | Frequency/risk | Controls | Treatment |
 |---|---|---|
-| Constant, time-critical | Game Start/Stop; play-clock 25/40; score `+1/+2/+3/+6` | Large, always visible, one action, keyboard-accessible |
-| Frequent | Quarter next; Undo | Visible on main screen; every quarter move confirms |
-| Corrective | Score minus/direct set; clock edit; quarter back/direct set | Collapsed correction drawer with old/new preview |
-| Pregame | Team names; quarter length; display choice; shortcut help | Setup panel before the game; locked/collapsed during play |
-| Dangerous | New Game; reset game clock; End Game | Separate danger area with confirmation or hold/arm pattern |
+| Constant, time-critical | Game Start/Stop; play-clock 25/40; score `SCORE ▸` arm then `+1/+2/+3/+6` | Large, always visible, keyboard-accessible; scoring is two-step armed on the main screen |
+| One press, undoable | `HOME TIMEOUT` / `AWAY TIMEOUT` (quick timeout) | Charges the timeout only; no confirmation, but reversible through Undo |
+| Frequent | Quarter next; Undo | Visible on main screen; every quarter move confirms; Undo also confirms, naming exactly what it reverses |
+| Corrective | Score minus/direct set; score `+1/+2/+3/+6` inside the drawer; clock edit; quarter back/direct set | Collapsed correction drawer with old/new preview |
+| Pregame | Team names; quarter length; display choice; shortcut help | Setup panel before the game; locked/collapsed during play; a soft, dismissible prompt (never a lock) points at unchosen teams |
+| Dangerous | New Game; reset game clock; End Game | Separate danger area (the `Game ▸` drawer) with confirmation |
 
 Color is supplemental, not the only state signal. Text labels such as `RUNNING`, `STOPPED`, `DISPLAY CLOSED`, and `STATE SAVED` remain visible.
+
+**Added September 8, 2026 (owner request 5, the control refresh).** Two rows
+above are new. Scoring moved from a single always-exposed row of point
+buttons to a two-step arm/apply pattern per team, so a stray press can no
+longer add points by itself; Undo, previously a one-press reversible action,
+now opens the same local confirmation dialog every other reversible-but-risky
+control uses, naming what it will reverse in Python's own words. The quick
+timeout is the one exception the owner asked for explicitly: one press,
+charges `timeout_used` for that team, touches nothing else, and stays
+undoable. `New Game`/`Reset Game Clock`/`End Game` moved out of the
+always-visible tool bar into their own `Game ▸` drawer, which is this table's
+"separate danger area" made literal.
 
 ## 3. Spectator display wireframe
 
@@ -71,24 +84,32 @@ Visual priorities are scores first, game clock second, team names third, then qu
 ├──────────────────────────┬──────────────────────────┬────────────────────────┤
 │ HOME                     │ CLOCKS                   │ AWAY                   │
 │ EAGLES              14   │                          │ TIGERS              7  │
-│ [ +1 ] [ +2 ] [ +3 ]    │ GAME CLOCK               │ [ +1 ] [ +2 ] [ +3 ]  │
-│ [       +6       ]       │       12:00              │ [       +6       ]     │
-│                          │ [ START ]    [ STOP ]     │                        │
-│                          │ STOPPED                  │                        │
-│                          │                          │                        │
+│ (identity stripe)        │ GAME CLOCK               │ (identity stripe)      │
+│ NOT CHOSEN               │       12:00              │ NOT CHOSEN             │
+│ [SCORE▸][TIMEOUT · 3]    │ [ START ]    [ STOP ]     │ [SCORE▸][TIMEOUT · 2] │
+│  armed→[+1][+2][+3][+6][✕]│ STOPPED                  │                        │
 │                          │ PLAY CLOCK      40       │                        │
 │                          │ [ 25 LOAD ]   [40 LOAD]│                        │
 │                          │ [ START ]      [ STOP ]  │                        │
 ├──────────────────────────┴──────────────────────────┴────────────────────────┤
 │ CROWD  [TIMEOUT]  [FLAG][TIMEOUT][INJURY][DELAY][CLEAR]  1:00 [START][STOP]  │
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ QUARTER [◀] 1st [▶] 3rd & 7 · EAGLES 35 · TO 3/2 LAST: Away +6 (7) ×3 [UNDO] │
+│ QUARTER [◀] 1st [▶] 3rd & 7 · EAGLES 35 · TO 3/2 LAST: Away +6 (7) ×3 [UNDO…]│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ [ Teams ▸ ] [ Corrections ▸ ] [ Halftime ▸ ] [ Field ▸ ] [ Field Assistant ] │
-│ [ Shortcut Help ] [ Advanced ▸ ]                                             │
-│                                              [ End Game… ] [ New Game… ]     │
+│ [Teams▸][Corrections▸][Setup▸][Field▸][Field Assistant][Cutscenes]          │
+│ [Shortcut Help][Advanced ▸]                                     [ Game ▸ ] │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Added September 8, 2026 (owner request 5, the control refresh).** The
+wireframe above replaced the exposed `+1/+2/+3/+6` row it used to show. Each
+team panel's `NOT CHOSEN` line (soft prompt, section 5d) and the idle row's
+`[SCORE ▸]`/`[TIMEOUT · N]` pair sit inside the same fixed-height block the
+armed row (`+1 +2 +3 +6 ✕`) swaps into, so the panel's height never changes
+whether it is idle or armed (U-001). `UNDO` grew an ellipsis because it now
+opens a confirmation like every other reversible-but-risky control. The tool
+bar lost its three danger buttons; it now ends in a spacer and `[ Game ▸ ]`
+(section 5c) instead of `End Game…`/`New Game…` sitting exposed.
 
 ### Main-screen rules
 
@@ -127,13 +148,39 @@ Visual priorities are scores first, game clock second, team names third, then qu
   border) so `Reopen Display`'s warm border stays the one to reach for when
   the wall has gone dark. Both are 44px targets; measured heights and
   overflow results are recorded in section 8.
+- **Added September 8, 2026 (owner request 5, the control refresh).** Scoring
+  is two-step and armed, not a bare row of point buttons. Pressing a team's
+  `SCORE ▸` reveals that team's `+1/+2/+3/+6` and a `✕` cancel in the same
+  space (a fixed-height block; nothing else on the page moves); a point press
+  applies and disarms. Only one team can be armed at a time -- arming one
+  disarms the other -- and arming auto-disarms after 8 seconds with no point
+  press. It also disarms on: opening any drawer, a confirmation dialog
+  opening, window blur, and Escape (with nothing else open, Escape just
+  disarms). The armed panel is never announced by color alone: its heading
+  gains the text ` · SCORING` (U-002) alongside the accent border. The score
+  keys (`Z X C V` / `N M , .`) are the same two steps -- first press arms,
+  second applies -- see the keyboard map below.
+- **Added September 8, 2026.** Undo (the quarter-bar button and Ctrl+Z) opens
+  a local confirmation naming exactly what it will reverse (`Reverses: ` plus
+  Python's own `last_action.label`), the same round trip every other local
+  confirmation takes. It is the one main-screen control besides the quick
+  timeout that used to be a single accidental press away from changing the
+  board; it no longer is.
+- **Added September 8, 2026.** `HOME TIMEOUT` / `AWAY TIMEOUT` on the main
+  screen are a quick, one-press, undoable charge: they send `timeout_used`
+  for that team and nothing else -- no crowd message, no countdown, no clock.
+  They are disabled at zero timeouts remaining. This is deliberately
+  different from the crowd row's own `TIMEOUT` button (section 6.5a), which
+  raises the word on the wall and starts the 1:00 countdown but charges
+  nothing; the two controls stay in different places so they are never
+  confused for each other.
 
 ## 5. Corrections drawer
 
 ```text
 ┌──────────────────────────── CORRECTIONS ─────────────────────────────────────┐
-│ Home score: 14  [−1] [−2] [−3] [−6]  Set [ 14 ] [Preview / Apply…]          │
-│ Away score:  7  [−1] [−2] [−3] [−6]  Set [  7 ] [Preview / Apply…]          │
+│ Home score: 14  [+1][+2][+3][+6] [−1] [−2] [−3] [−6]  Set [ 14 ] [Apply…]   │
+│ Away score:  7  [+1][+2][+3][+6] [−1] [−2] [−3] [−6]  Set [  7 ] [Apply…]   │
 │ Game clock: [12]:[00]  (must be stopped)                  [Preview / Apply…] │
 │ Quarter: [PRE | 1st | 2nd | HALF | 3rd | 4th | OT | FINAL] [Apply…]          │
 │ Play clock: [00]  (must be stopped)                       [Preview / Apply…] │
@@ -142,6 +189,15 @@ Visual priorities are scores first, game clock second, team names third, then qu
 ```
 
 Typing does not change live state. Apply opens a confirmation such as `Change HOME score from 14 to 8?`; cancel is the default focused action for destructive corrections. Minus corrections are logged and undoable.
+
+**Added September 8, 2026 (owner request 5, the control refresh).** `+1/+2/+3/+6`
+now sit before the existing `−1…−6`, ahead of them in reading order because a
+correction upward is exactly as common as one downward. They are plain
+`add_score` commands with no confirmation of their own -- the drawer itself is
+the protection (an operator has already opened a menu to reach them), the same
+argument that exempted the field-status controls in section 5a. This is not
+the same control as the main screen's armed `+1/+2/+3/+6` (section 4); the two
+never share markup or a keyboard binding.
 
 ## 5a. Field status drawer (added September 5, 2026)
 
@@ -254,6 +310,58 @@ scoreboard.
   -- this is a convenience layer over an existing command, never a dependency
   of it.
 
+## 5c. Game drawer (added September 8, 2026, owner request 5)
+
+```text
+┌──────────────────────────────── GAME ─────────────────────────────────────────┐
+│ Nothing here happens without a confirmation. Scores and clocks stay on the    │
+│ main screen.                                                                  │
+│ Game clock  12:00                          [Reset Game Clock…]               │
+│ This game                                  [End Game…]                       │
+│ Next game                                  [New Game…]                       │
+│                                                                Close          │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+`New Game`, `End Game`, and `Reset Game Clock` moved out of the always-visible
+tool bar into this drawer, which is section 2's "separate danger area" made
+literal: none of the three is now one stray press away from a control used
+during normal play (U-004). All three keep the `danger` styling and their
+existing local confirmations unchanged -- `Reset Game Clock…`'s confirmation
+detail still adapts for `PRE`, `End Game…` still names teams/score/quarter,
+and `New Game…` still asks the service's own confirmation. Opening the drawer
+disarms any armed scoring panel (section 4), the same as opening any other
+drawer.
+
+## 5d. Teams prompt, soft (added September 8, 2026, owner request 5, decision 1)
+
+The Teams drawer (5b) gains a sentence at its top,
+`<p id="teams-prompt">`, shown only while a team name is still its shipped
+placeholder (`HOME`/`AWAY`) before kickoff. Its wording is Python's
+(`setup.detail`, `src/scoreboard/domain/state.py`'s `setup_prompt_detail`),
+copied verbatim -- the operator page never writes its own version of this
+sentence:
+
+- both unchosen: `Choose the HOME and AWAY teams before kickoff.`
+- one unchosen: `Choose the HOME team before kickoff.` / `Choose the AWAY team before kickoff.`
+- neither unchosen: the prompt and the panels' `NOT CHOSEN` lines are hidden, and the row costs no space.
+
+This is deliberately a **soft** prompt, not a lock (the owner's decision):
+nothing on the page prevents kicking off with a placeholder name. But "teams
+not chosen" is made hard to miss three ways at once -- the drawer's sentence,
+a `NOT CHOSEN` line on the affected team panel (warn colour, small caps, text
+first, under 20px so it costs nothing against U-001), and a warm border plus
+title on the `Teams ▸` tool-bar button (text and border together, never
+colour alone -- U-002). The drawer opens itself, once, in exactly two
+situations: right after a `New Game` is accepted, and on the very first
+rendered view of a freshly launched or recovered pregame board whose names
+are still placeholders. It never reopens on its own after that, so a
+dismissed prompt stays dismissed until the next New Game. The kickoff
+confirmation (moving off `PRE`) repeats the same sentence as the start of its
+own `detail` when a name is still a placeholder, so the "hard to miss" half
+of the soft prompt reaches the operator even if the drawer was dismissed
+without being read.
+
 ## 6. Workflows
 
 ### 6.1 Pregame setup
@@ -261,17 +369,26 @@ scoreboard.
 1. Launch the application once; both windows open.
 2. If recoverable state exists, choose `Resume recovered game` or `Start new game`. Recovered clocks are stopped.
 3. Select the spectator display from the settings panel and enter fullscreen.
-4. Enter home and away names; verify the stopped 30:00 PRE Game Clock and selected display.
+4. **Added September 8, 2026 (owner request 5, decision 1).** The Teams
+   drawer opens by itself here, because a fresh game still has both
+   placeholder names -- dismiss it or choose teams from it now. Either team
+   panel still showing a placeholder name reads `NOT CHOSEN` until it is
+   renamed; this is a soft prompt, not a lock, so play can start with it
+   still showing. If the operator moves the quarter off `PRE` while a name is
+   still a placeholder, the kickoff confirmation names it in words
+   (`Choose the HOME and AWAY teams before kickoff. Change quarter from PRE
+   to 1st. ...`) before it can be confirmed away. Enter home and away names;
+   verify the stopped 30:00 PRE Game Clock and selected display.
 5. Verify 0–0, `PRE`, `KICKOFF IN 30:00`, stopped play clock, `DISPLAY OPEN`, and `STATE SAVED`.
 6. Visually confirm the spectator display and run a short score/clock rehearsal, then restore the starting state through `New Game`.
 
 ### 6.1a Pregame, halftime, and warmup presentation
 
-- PRE renders the authoritative Game Clock as `KICKOFF IN 30:00`; the operator Game Clock card shows that same value and state. HALF shows the separate interval, and playing quarters show the game board.
+- PRE renders the authoritative Game Clock as `KICKOFF IN 30:00`; the operator's clock card (titled `KICKOFF COUNTDOWN` there) shows that same value and state. HALF renders it as `UNTIL SECOND HALF 15:00` (card title `HALFTIME COUNTDOWN`), and playing quarters show the game board under `GAME CLOCK`.
 - Before kickoff, Game Clock Start/Stop/Reset/Edit control only the PRE countdown. It does not enter 1st quarter or affect the play clock; natural expiry remains PRE at `0:00`.
-- At halftime, the spectator display shows one `UNTIL SECOND HALF` 15:00 countdown. While more than 3:00 remains it labels the current phase `HALFTIME` and visibly states `Warmup follows: 3:00`.
-- At 3:00, the same countdown continues without a reset and its current-phase label changes to `WARMUP`.
-- The halftime countdown uses the same reliable timing model but remains a separate control. Pregame has no second countdown control.
+- **One clock, every quarter (September 9, 2026).** Entering HALF loads the halftime countdown on the same game-clock engine, exactly as entering PRE loads the kickoff countdown, and the same START/STOP, correction row, and `Reset Game Clock…` run it. The separate halftime countdown engine, its five commands, and the `Halftime ▸` drawer were removed; natural expiry stays in HALF at `0:00`, touches no play clock, and the second half is still the operator's explicit, confirmed quarter change. Leaving HALF with time on the countdown asks `Discard remaining halftime time?`, the same way leaving PRE does.
+- At halftime, the spectator display shows the countdown as `UNTIL SECOND HALF`. While more than the warmup threshold remains (3:00 by default) it labels the current phase `HALFTIME` and visibly states `Warmup follows: 3:00`; at the threshold the same countdown continues without a reset and its current-phase label changes to `WARMUP`. A threshold of 0:00 turns the WARMUP label off.
+- **Setup ▸ (September 9, 2026).** Every length above is a rule, not a constant: the `Setup ▸` tool-bar drawer edits the quarter length, overtime length, pregame countdown, halftime countdown, warmup threshold, crowd timeout countdown, and timeouts per half. `Save rules` is a host action (`api.save_rules`), not a game command — no revision, no history row — stored in `config.json` under `rules` and read at the next launch. Saving changes nothing already on a clock: each length is used the next time that period, a new game, or a timeout is loaded, so a rule changed mid-quarter applies from the next quarter. Timeouts per half are loaded at New Game and again when the quarter moves from HALF to 3rd (NFHS: a fresh allotment each half); the crowd `TIMEOUT` button loads the configured timeout length.
 - **Added September 6, 2026 (verified in the real pywebview runtime the same day).** The on-screen arrangement of this presentation is now the operator's choice: the pregame and halftime screens described above are drawn from the active layout's Pre-game and Halftime screens — the same stored layout document that draws the game board — using a dedicated set of *event widgets* (home/away team name and score, phase label, countdown title, countdown, and warmup line). Every value named above (`KICKOFF IN 30:00`, `UNTIL SECOND HALF`, the `HALFTIME`/`WARMUP` phase label, `Warmup follows: 3:00`) is still produced in Python exactly as this section describes; only where each value is drawn, and how it looks, is now an editable presentation choice. See section 10.9 for the switcher, the event widget inventory, and the per-screen presets.
 
 ### 6.2 Start and stop the game clock
@@ -297,13 +414,28 @@ scoreboard.
 
 ### 6.4 Update scores
 
-- Click the appropriate team increment or use its shortcut.
+- **Added September 8, 2026 (owner request 5, decision 2).** Scoring on the
+  main screen is two steps. Press the team's `SCORE ▸` (or its keyboard
+  binding) to arm that team -- no bridge call yet, no game value changes --
+  then press the point button (or the same key again) to apply it. Arming
+  disarms after 8 seconds untouched, on a point press either way, on Escape,
+  on opening a drawer or a confirmation, or on window blur, so an armed panel
+  never survives the operator's attention moving elsewhere. Only one team can
+  be armed at a time.
 - The new score appears in both views, the last-action strip identifies the change, and Undo becomes available.
 - Held keys and double-generated browser events must not repeat a score.
+- A correction upward (`+1/+2/+3/+6`) or downward (`−1…−6`) with no arming
+  step is still available inside the Corrections drawer (section 5), for
+  when the main screen's two-step pattern is not the right tool -- the
+  drawer itself is the protection there.
 
 ### 6.5 Correct a mistake
 
-1. For the immediately preceding reversible command, use Undo.
+1. For the immediately preceding reversible command, use Undo. **Added
+   September 8, 2026 (owner request 5, decision 3):** Undo (the button and
+   Ctrl+Z) now opens a local confirmation naming exactly what it will
+   reverse, in Python's own words (`Reverses: ` + `last_action.label`), before
+   sending anything.
 2. Otherwise open Corrections and use a labeled minus control or direct set.
 3. Direct set displays the team, old value, and proposed value before confirmation.
 4. A correction is appended to history; the original event is never erased.
@@ -370,6 +502,29 @@ previously **Corrections → Spectator display**, one panel away from
 destructive Apply buttons -- see audit item C5 and the closing section of this
 document).
 
+**Added September 8, 2026 (owner request 5, decision 6): closing the display
+from the window itself.** The spectator window can now be put away on purpose
+from three places, all reaching the same host action and none of them
+touching game state (D-005):
+
+- **Esc** on the spectator window.
+- A **pointer-revealed corner button** (`✕ CLOSE DISPLAY (Esc)`): hidden by
+  default, shown for 3 seconds after mouse or pointer movement over the
+  window, then hidden again. A wall with no pointer attached never sees it.
+- **`Close Display`** in the operator's Display drawer, shown only while
+  `health.display.open` is true.
+
+Whichever surface is used, the operator's health strip shows `DISPLAY
+CLOSED` with the pinned detail sentence: *"The display window was closed on
+purpose. Reopen Display puts it back on the saved display."* -- worded so it
+reads at a glance as deliberate rather than a crash or an unplugged cable, and
+so the one-click way back is named in the same sentence. `Reopen Display`
+still meets the C5 44px target and still opens on the saved display in one
+click. The game clock, and every other authoritative value, is untouched:
+closing a monitor is something about this laptop, not something that happened
+in the football game (D-005, R-002) -- a running clock keeps running and the
+state revision does not move.
+
 ### 6.8a Practice with a small spectator preview
 
 - **Advanced → Open test window** opens a bordered, fixed 640×360 (16:9)
@@ -384,7 +539,10 @@ document).
 
 ### 6.9 End a game
 
-1. Click `End Game…` in the separated danger area.
+1. Open `Game ▸` (the tool bar's last button, added September 8, 2026, owner
+   request 5) and click `End Game…` there -- the separated danger area is now
+   this drawer (section 5c) rather than a footer button; `Reset Game Clock…`
+   and `New Game…` live in it too.
 2. Review a confirmation showing teams, final score, quarter, and stopped-clock effect.
 3. Confirm to stop both clocks, set `FINAL`, persist, and close/flush the event log.
 4. Leave the final scoreboard visible until the operator deliberately starts a new game or closes the display.
@@ -430,6 +588,25 @@ Held shortcut keys and held Enter on a focused button cannot repeat scores.
 Mouse and keyboard confirmations preserve the reviewed revision and original
 input source. Real numpad and Windows repeat timing require target-laptop rehearsal.
 
+**Added September 8, 2026 (owner request 5, decisions 2 and 3).** The score
+keys and Ctrl+Z changed shape:
+
+| Key | Action |
+|---|---|
+| `Z` / `X` / `C` / `V` | Home +1 / +2 / +3 / +6 -- press once to arm, again to apply |
+| `N` / `M` / `,` / `.` | Away +1 / +2 / +3 / +6 -- press once to arm, again to apply |
+| `Ctrl+Z` | Undo -- opens the same confirmation the button does, naming what it reverses; Confirm resubmits |
+
+The first press of a score key only arms that team (no bridge call, no game
+value changes) and disarms whichever team was armed before; the second press
+of the same key sends `add_score` and disarms. Arming a different team's key
+switches the arm to that team instead of stacking. Ctrl+Z no longer sends
+`undo` directly -- it opens the confirmation dialog exactly like clicking
+`UNDO…`, and Confirm sends the same `undo` command as before. Everything else
+in this section -- Space, 2/4, P/S, Q/Shift+Q, and the repeat/editable-field
+guards -- is unchanged. Escape gained one more effect: with no dialog or
+drawer open and a team armed, it disarms scoring instead of doing nothing.
+
 ## 8. Accessibility and rehearsal checklist
 
 - Minimum 44×44 CSS-pixel hit targets; clock and preset controls substantially larger. **`Reopen Display` meets this as of September 6, 2026 (audit item C5).** The health strip's `.chip-button` rule (`operator.css`) is `min-height: var(--touch)` (44px), matching the base button rule instead of the 32px concession recorded here through Task 10. The strip is allowed to grow a few pixels rather than the button being squeezed, and at the narrowest supported width the brand text and chip padding shrink first (never the strip wrapping). Measured in the real Chromium engine (Playwright/Edge, headless) against a real bridge-produced view model with `health.display.can_reopen: true`, at both U-001 viewports:
@@ -449,6 +626,21 @@ input source. Real numpad and Windows repeat timing require target-laptop rehear
   | 1366×768 | 768 = 768 | 1366 = 1366 | 1348 ≤ 1348 (none) | all 36px | 44px / 44px | 510px |
 
   The new row costs the board its height and nothing else, because `.board` is the only `minmax(0, 1fr)` row in the page grid; every clock button stayed inside the viewport and the page reported no script errors at any of the three. The crowd buttons sit at the quarter bar's 36px floor rather than the 44px floor, which is the same trade the quarter bar's own controls already make — the 44px floor is held for the display-recovery path (C5) and the large scoring and clock controls. Windows 125% scaling remains a manual rehearsal check, as it is for every other row.
+- **U-001 re-measured for the control refresh (added September 8, 2026, owner
+  request 5).** The team panel's fixed-height `.score-controls` block --
+  idle (`SCORE ▸` / `TIMEOUT · N`) and armed (`+1 +2 +3 +6 ✕`) -- must never
+  be the thing that pushes a live control off screen in either state.
+  `tests/ui/keyboard.cjs` checks every visible button's bounding rect against
+  the viewport at both U-001 viewports (1366×768 and 1093×614), twice per
+  viewport: once idle, once with HOME armed (clicking `#home-arm` first,
+  disarming through `#home-armed [data-action="disarm_score"]` after) -- no
+  button lands outside the viewport at either viewport in either state. It
+  was then re-measured in the real pywebview/WebView2 window (not headless
+  Edge) at the shipped operator window size: `documentElement.scrollHeight`
+  equalled `clientHeight` (and `scrollWidth` equalled `clientWidth`) at
+  681×1164 with a team armed, matching the stub-bridge result. This is one of
+  the 45/45 checks in `.scratch/control-refresh/realrun_control_refresh.py`
+  (see `PROJECT_ROADMAP.md`'s owner request 5 entry).
 - Keyboard focus ring always visible; logical tab order; labels connected to inputs.
 - Contrast target of at least WCAG AA for operator text where practical.
 - Do not encode home/away or running/stopped solely by red/green.
@@ -567,7 +759,7 @@ Both are presentation defaults, not rules: an operator can restore any size thro
 
 ### 10.6 Safe-area policy
 
-The safe area is a margin inset from all four edges of the logical 16:9 canvas, expressed as a fraction of canvas width/height. It defaults to 4% on every side and is itself an editable, validated property: an operator can widen or narrow it only within a documented minimum and maximum inset, and the four insets together must always leave at least half of the canvas usable on both axes. Every visible widget, and every **text** element, must fit entirely inside the safe area. An **image** or **box** element only has to stay inside the canvas itself and is deliberately allowed to cross the safe area (10.4a). A layout that violates any of this is **rejected outright** with an error naming the widget, the element, or the safe area — it is never silently clamped or accepted (`Fit to safe area…` is an explicit, operator-requested repair, not something `Save` does on its own).
+The safe area is a margin inset from all four edges of the logical 16:9 canvas, expressed as a fraction of canvas width/height. It defaults to 4% on every side and is itself an editable, validated property: an operator can widen or narrow it only within a documented minimum and maximum inset, and the four insets together must always leave at least half of the canvas usable on both axes. Every visible widget, and every **text** element, must fit entirely inside the safe area. An **image** or **box** element only has to stay inside the canvas itself and is deliberately allowed to cross the safe area (10.4a). A **box** element additionally marked `bleed` may cross the canvas edge itself, not just the safe area (10.12) — the board clips it, so nothing beyond the canvas is ever visible; a ticker's scrolling text is also allowed to pass through the horizontal inset while it moves (10.12), though it still shows a complete line inside the inset whenever Motion is off. A layout that violates any of this is **rejected outright** with an error naming the widget, the element, or the safe area — it is never silently clamped or accepted (`Fit to safe area…` is an explicit, operator-requested repair, not something `Save` does on its own).
 
 ### 10.7 A bad layout
 
@@ -579,7 +771,11 @@ Validation is strict: a value out of range, an unrecognized color format, a widg
 
 ### 10.8 What v2 still does not support
 
-- OBS, media playback, animations, sponsor rotation, or video.
+- OBS, media playback, sponsor rotation, or video. Animation is now
+  supported, but only as a bounded, named set (10.12): a fixed list of
+  presets, each with an enforced minimum duration and a shared maximum,
+  never a free-form or user-authored motion, and always stoppable in one
+  place by the Motion switch or a viewer's own reduced-motion setting.
 - Networking or cloud storage of a layout; every layout, including its embedded images, is a local file.
 - Physical controllers.
 - Binding a text element's wording to a game field, or any other way to make free text a computed value — a text element's content is fixed operator-typed copy (10.1, 10.4a).
@@ -735,6 +931,129 @@ are ordinary boxes; text and image elements keep the 2 percent minimum so
 they stay legible and easy to grab. The per-screen element limit rose from
 24 to 40 to leave room for such trim.
 
+### 10.12 Broadcast Welcome default screens and motion (September 8, 2026)
+
+**The built-in Pre-game and Halftime screens changed.** The Classic
+arrangement described in 10.9b is no longer what a new layout gets by
+default; the built-in default for both screens is now **Broadcast Welcome**
+— a countdown over a branded navy field with the matchup, the Tigers crest,
+a dashed placeholder for the opponent's mark, and a scrolling announcement
+line. Two more starting points join the Pre-game and Halftime preset
+galleries: **Kickoff Clock** (the countdown fills the board over rotated,
+drifting team bars, with the HOME/VISITOR eyebrow doing the job color alone
+is not allowed to do) and **Fifty Yard Line** (a scrolling field with
+end-zone bands and a framed countdown). **Classic** stays in the gallery
+unchanged, exactly as it rendered before this change, for an operator who
+wants the plain centered countdown back. Applying any preset works the same
+way as every other preset in this document (10.9b): it replaces only the
+selected screen's mini-document, under the same dirty-draft confirmation,
+with the same validation.
+
+**An operator's saved layout is not touched by this.** The new default only
+applies to a layout document that has no `screens` at all — a v1/v2 layout
+being opened for the first time, or the built-in default itself. A layout
+that already has its own Pre-game and Halftime screens, including one built
+on the Scoreboard Grid or Tigers Stadium presets, keeps exactly the event
+screens it was saved with; this is a migration, not a reset (10.7).
+
+**Announcement ticker.** Every Broadcast Welcome, Kickoff Clock, and Fifty
+Yard Line screen carries a scrolling or rotating line of announcement text —
+a new `ticker` element, edited like any other element in the **Ticker**
+section of the inspector (one line of text per row, a scroll-or-rotate
+choice, and a speed). The lines are ordinary layout content: they live in
+the layout document the same way a text element's wording does, they are
+never derived from game state, and they ship with sensible defaults (senior
+night, concessions, the anthem time, the school motto for Pre-game; senior
+night, the band, and the raffle for Halftime) that the operator is free to
+retype. With the Motion switch off, a ticker stops scrolling or rotating and
+shows all of its lines as one static, shrunk-to-fit line — nothing on these
+screens depends on a moving element to be read.
+
+**The Motion switch.** A new toolbar button in the layout editor, labeled
+"Motion on" / "Motion off", pauses or resumes every animation on the wall —
+the light sweep, the drifting bars, the scrolling yard lines, the
+blinking countdown colon, and every ticker. It is a host preference, not a
+layout property and not a game command: it lives in `config.json`'s
+`presentation` section (`{"motion": true|false}`) beside the display
+preference, it advances no revision and writes no history row, and flipping
+it pushes to every open board (the spectator wall, the practice test
+window, and the editor's own preview) the same way a layout push does,
+through `window.applyMotion`. A viewer's own `prefers-reduced-motion`
+setting stops the same animations independent of the switch. Use Motion off
+for the HDMI test, for a practice window, or any time the wall needs to hold
+still and stay legible without turning anything off in the layout itself.
+
+**New element properties, in plain words.**
+
+- **Fill effect** (boxes only): instead of one flat background color, a box
+  can carry a straight gradient, a radial glow, or a repeating stripe
+  pattern, picked from a small set of validated shapes with colors, an
+  angle, and stop positions — never free-form CSS. This is how the welcome
+  screen's top glow and light sweep, and the yard-line stripes, are built.
+- **Border style**: solid (as before) or dashed — the dashed style is how
+  the opponent placeholder box reads as "not filled in yet."
+- **Rotation**: any widget, text, image, or box can be turned up to 180
+  degrees either way, which is how the Kickoff Clock's angled team bars are
+  drawn.
+- **Vertical text**: a widget or text element can run its text top-to-bottom
+  or bottom-to-top instead of left-to-right, used for the Fifty Yard Line's
+  end-zone team names.
+- **Bleed** (boxes only): a box marked `bleed` is allowed to extend past the
+  canvas edge — normally an element only has to stay inside the canvas
+  itself (10.6) even when it isn't a text element, but a bleed box may
+  cross that boundary outright. This is what lets the rotated bars, the
+  light sweep, and the scrolling yard-line texture run off the edge of the
+  board the way a broadcast graphic does; the board clips anything that
+  overhangs, so nothing spills onto the desktop behind it.
+- **Animation presets**: a bounded set of named motions — a light sweep, a
+  slow drift, a horizontal scroll, a marquee, and a soft blink — each with
+  its own minimum duration (8, 6, 10, 20, and 1 second) and a shared
+  120-second maximum. The minimums exist to enforce the palette's rule
+  against fast orange/navy alternation (`brand-baseline/palette.json`): an
+  animation on this board is never allowed to flicker or alternate quickly
+  enough to look like strobing.
+- **Shrink-to-fit on text elements**: the existing widget-only "shrink to
+  fit one line" setting (10.11) is now available on text elements too, so a
+  long line of free-typed copy can be guaranteed to stay on one line the
+  same way a team name already can.
+
+**Fonts and the crest.** Barlow Condensed joins Graduate as a second bundled,
+SIL-Open-Font-License face — three weights (500/600/700), shipped inside the
+package the same way Graduate already is, with no font fetched at run time.
+Headlines and labels on the new screens use Barlow Condensed; numerals
+(the countdown, scores, "VS," the ghost "50") use Graduate at its bold
+weight. **Jersey M54 is not used anywhere on these screens** — unlike the
+Varsity block stack elsewhere in this document (10.4a), the new screens
+never fall back to an operator-installed personal-use font, so their look
+is the same on every machine. The Tigers crest ships as a bundled image
+(`views/shared/img/tigers-crest.png`) an operator can place with the
+existing bundled-image picker in the Image section of the inspector; it is
+the owner-supplied reference logo (`brand-baseline/README.md`), and rights
+to it are still to be confirmed with the school before any public,
+non-rehearsal use.
+
+**The opponent slot.** Every Pre-game screen that shows a matchup includes a
+dashed, hatched placeholder box captioned "OPPONENT / LOGO" where the
+visiting team's mark would go. Nothing is invented here: the operator adds
+their own art over the placeholder with the existing **Add image** flow
+(10.4a) the same way they would add any other picture to a layout.
+
+**Safe-area caveats.** A ticker's glyphs necessarily pass through the 4%
+horizontal safe-area inset while it scrolls — that is inherent to a
+marquee and is accepted, not treated as a defect; every ticker still holds
+still and shows a complete, legible line whenever Motion is off. **Fifty
+Yard Line deliberately bleeds to all four edges** of the canvas — its bands
+and its scrolling field texture are meant to run off the board — so it is
+the first preset to re-check once the HDMI test (`docs/PACKAGING.md`,
+`PROJECT_ROADMAP.md` "Next Action") is run against the real wall; every
+piece of lettering on it still has to sit inside the safe area like any
+other text.
+
+**Open items:** the owner has not yet signed off on the Broadcast Welcome
+default pair, and legibility of the new screens at real stadium viewing
+distance and resolution is unverified, the same as every other preset in
+this section.
+
 ## 11. Field Assistant window (added September 5, 2026)
 
 Implements the owner-requested end-of-play helper documented in
@@ -820,11 +1139,53 @@ five events, their durations, and their sublines:
 
 | Event (`event`) | Headline | Subline | Duration | Intro | Whose |
 |---|---|---|---|---|---|
-| `first_down` | FIRST DOWN | TIGERS | 7 s | claw strike | home |
+| `first_down` | FIRST DOWN | TIGERS | 5 s | claw strike | home |
 | `touchdown` | TOUCHDOWN | TIGERS | 10 s | claw strike | home |
 | `turnover` | TURNOVER | TIGERS BALL | 7 s | claw strike | home |
 | `penalty` | FLAG ON THE PLAY | PENALTY | 7 s | none | nobody |
 | `make_some_noise` | MAKE SOME NOISE | TIGERS FANS | 5 s | none | home |
+
+**First down — stadium materials (September 8, 2026).** The built-in now
+lasts five seconds including its 1.6-second intro and 0.6-second exit. Four
+separated curved claw cuts rake a transparent overlay with a red torn edge;
+their shared
+trajectory and staggered outer/middle contact replace the earlier overlapping
+gouges and paw silhouette for this event. The upper stage reveals textured
+turf and chalk under stadium lights, a steel chain pulling taut, and an
+orange sideline marker planting with a small dirt burst. Dimensional metal
+FIRST DOWN lettering settles above the chain, with the Tigers crest and name.
+The main impact finishes in about one second, leaving a readable hold.
+The live board stays fully visible under the cuts. Textures are drawn locally
+once and cached in memory; no media download,
+new dependency, or animation loop is needed. A failed texture draw retains a
+CSS field and readable copy. A late display join shows the settled scene;
+reduced-motion mode omits the entrances and dirt burst. Other events retain
+their existing scenes and claw opening. Explicit custom-pack durations remain
+honoured; choose **Built-in first down** in Packs to see this redesign.
+
+**Touchdown — the tiger takes the wall (September 8, 2026).** The owner
+found the flat-panel touchdown generic next to the new first down, so the
+built-in is now the animal itself. Its opening is the first down's material
+claw at full size: five separated torn tracks instead of four, each a third
+longer and wider, one white contact flash, a red bleed pouring out of the
+cuts as the board morphs beneath them, and a board shake about twice as
+heavy as the ordinary strike (the shared shake keyframes read a
+`--cs-shake` multiplier the intro sets). The live board stays visible under
+the cuts. The main scene, still ten seconds in all, opens on a striped
+tiger hide in the school navy and ink, then four wide claw tears rip
+down the right of the wall in one staggered swipe (the intro's own torn
+track shape, now with gold-white light inside and a red torn edge), with
+a quake, a shockwave ring and a glow that breathes through the hold.
+TOUCHDOWN lands as one piece of gold-and-white metal on an ink extrude,
+thumping the world a second time; the crest punches in at the lower left
+with three roar rings, TIGERS slams in on a red tag, and gold embers rise
+through the long readable hold. No score appears anywhere in the scene:
+it stays on the Broadcast bar underneath. The hide and the embers are
+generated from seeded sequences, so every replay is identical;
+nothing is downloaded and no new dependency or animation loop is involved.
+A late display join shows the settled hold; reduced-motion mode omits the
+entrances and the one-shot bursts. Turnover keeps its slabs and the
+original claw.
 
 The two v3 additions: **TURNOVER** (the Tigers take the ball away — the
 defensive counterpart of the touchdown, and it earns the claw) and **MAKE
@@ -969,7 +1330,7 @@ straight there) containing a `manifest.json`:
 The folder name becomes the pack's id. `event` is `first_down`, `touchdown`,
 `turnover`, `penalty`, or `make_some_noise`; `duration_seconds` is optional
 (2–30 seconds, clamped rather than rejected if out of range, defaulting per
-event if left out: 7, 10, 7, 7, and 5); `intro` is optional (`claw_scratch`
+event if left out: 5, 10, 7, 7, and 5); `intro` is optional (`claw_scratch`
 or `none`) and, left out, defaults **per event** — the claw strike for a
 first down, touchdown, or turnover, none for a penalty or make some noise;
 `scene` is required and is either a built-in animation

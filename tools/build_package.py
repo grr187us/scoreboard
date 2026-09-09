@@ -68,9 +68,17 @@ REQUIRED_FILES: tuple[str, ...] = (
     "_internal/scoreboard/views/shared/board.css",
     "_internal/scoreboard/views/shared/board.js",
     "_internal/scoreboard/views/shared/render.js",
-    # The one bundled font (SIL OFL) and its licence text, loaded by board.css.
+    # The bundled fonts (both SIL OFL) and their licence texts, loaded by
+    # board.css: Graduate for numerals, Barlow Condensed (500/600/700) for
+    # the Broadcast Welcome event screens' lettering.
     "_internal/scoreboard/views/shared/fonts/Graduate-Regular.ttf",
     "_internal/scoreboard/views/shared/fonts/Graduate-OFL.txt",
+    "_internal/scoreboard/views/shared/fonts/BarlowCondensed-Medium.ttf",
+    "_internal/scoreboard/views/shared/fonts/BarlowCondensed-SemiBold.ttf",
+    "_internal/scoreboard/views/shared/fonts/BarlowCondensed-Bold.ttf",
+    "_internal/scoreboard/views/shared/fonts/Barlow-OFL.txt",
+    # The bundled crest an image element may reference as asset:tigers-crest.
+    "_internal/scoreboard/views/shared/img/tigers-crest.png",
 )
 
 

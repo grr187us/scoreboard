@@ -49,7 +49,7 @@ class DisplayDrawerContractTests(unittest.TestCase):
 
     def test_the_display_drawer_holds_only_host_actions(self) -> None:
         drawer = self.html.split('<div class="drawer" id="display-drawer"', 1)[1]
-        drawer = drawer.split('<div class="drawer" id="event-drawer"', 1)[0]
+        drawer = drawer.split('<div class="drawer" id="setup-drawer"', 1)[0]
 
         self.assertNotIn("data-command", drawer)
         self.assertNotIn("danger", drawer)

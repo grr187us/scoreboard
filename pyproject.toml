@@ -46,6 +46,9 @@ where = ["src"]
 # image pattern is for the TMSA crest a cutscene shows (added September 6,
 # 2026): a page-relative <img> the packaged build must actually contain. The
 # font patterns (September 7, 2026) carry the bundled Graduate face board.css
-# declares, with its SIL OFL licence text beside it.
+# declares, with its SIL OFL licence text beside it; Barlow Condensed joined it
+# on September 8, 2026 under the same patterns. The img pattern (same day) is
+# for the bundled images a layout's image element may name as asset:<key>.
 scoreboard = ["views/**/*.html", "views/**/*.css", "views/**/*.js", "views/**/*.png",
+              "views/**/img/*.png",
               "views/**/fonts/*.ttf", "views/**/fonts/*.txt"]

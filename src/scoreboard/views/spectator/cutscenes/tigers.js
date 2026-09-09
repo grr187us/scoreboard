@@ -1,12 +1,11 @@
 /* The Tigers' own scenes: `first_down`, `touchdown` and `turnover`.
  *
- * These three are the branded ones -- TMSA navy/red/blue, the TMSA crest, and
- * the language of a modern broadcast package: hard diagonal slabs, kinetic
- * type revealed under a moving mask, one light sweep, one burst that opens
- * and settles, then a long calm hold that a spectator in the back row can
- * actually read. `.scratch/cutscenes-v2/spec.md` sections 1, 6.1 and 6.2 are
- * the brief for the first two and `.scratch/cutscenes-v3/spec.md` section 3
- * for the turnover; this file is the build.
+ * First down uses stadium materials: seeded turf/chalk, a steel chain and
+ * an orange padded marker. Touchdown is the tiger itself: a striped hide
+ * torn open by four glowing claw tears with a quake, then gold metal type,
+ * roar rings and embers. Turnover retains the TMSA
+ * broadcast package (diagonal slabs, kinetic type, a burst and a readable
+ * hold). All three show the existing TMSA crest and Python's event copy.
  *
  * It loads after `cutscenes/builtin.js` (which owns the registry, the intro,
  * and the penalty scene) and before `cutscene.js`, and it keeps every house
@@ -14,19 +13,20 @@
  *
  * - Words come only from `program.texts` (`headline`, `subline`,
  *   `team_name`), always through `textContent`. This file formats nothing.
- * - Colours come only from the `--cs-*` custom properties the player copies
- *   off `program.theme`. No brand hex is written here or in `tigers.css`.
+ * - Brand colours come from `--cs-*` properties copied off `program.theme`.
+ *   The first-down scene also uses neutral/natural material colours.
  * - Lengths come from `--stage-w` / `--stage-h`, the stage's own pixel size,
  *   so the same scene reads on a 1920x1080 wall and in the 640-wide
  *   practice window.
  * - Nothing is fetched. The one subresource is the crest image, set as the
  *   page-relative literal `cutscenes/tmsa-logo.png` on an `<img>` -- exactly
  *   the kind of load WebView2 allows from the `file:///` spectator page.
- * - Every node is created with `createElement`, so operator words cannot
- *   reach a parser. The one markup string in this file is the turnover's
- *   football, a static SVG constant named `FOOTBALL_MARKUP` that carries no
- *   text at all; the contract test lets only `*_MARKUP` identifiers be
- *   parsed as markup.
+ * - Every node is created with `createElement` (or `createElementNS` for
+ *   the touchdown's generated SVG), so operator words cannot reach a
+ *   parser. The markup strings in this file are the touchdown's claw tear
+ *   and hide container, and the turnover's football: static SVG constants
+ *   named `*_MARKUP` that carry no text at all; the contract test lets only
+ *   `*_MARKUP` identifiers be parsed as markup.
  *
  * The `register('first_down', ...)`, `register('touchdown', ...)` and
  * `register('turnover', ...)` calls use literal ids on purpose: the Python
@@ -200,149 +200,298 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* first_down -- 7 s, "moving the chains"                              */
+  /* first_down -- 5 s including intro/outro, "moving the chains"        */
   /* ------------------------------------------------------------------ */
 
-  /* The hero image is the broadcast yellow line sweeping across the field.
-   *
-   *   0-500    a navy field in perspective rushes toward the camera and
-   *            eases into a slow drift
-   *   200-700  a red slab slams in from the left over an ink shadow slab; a
-   *            thinner blue slab slides in under it from the right
-   *   500-1000 the gold first-down marker sweeps left to right and stops at
-   *            78 % with a small overshoot, white leading edge first
-   *   600-1200 FIRST DOWN wipes out from behind the red slab under a moving
-   *            clip-path; a light sweep crosses it once at 1300
-   *   1000-1500 the crest drops in at the left; TIGERS rises into the blue slab
-   *   1500-6400 hold: the field drifts, the marker's glow breathes
-   *
-   * Everything above is CSS (tigers.css); this builder only names the parts
-   * and puts the two words on the stage. */
-
-  /** The field's hash-mark columns: two rows of short ticks inside the
-   * perspective plane, at a third and two thirds of its width. */
-  var FIELD_HASHES = 2;
+  /* The field is a bounded, seeded raster painted ONCE and cached in memory.
+   * CSS moves the camera, chain and marker; no render loop, timers, file or
+   * graphics dependency is involved. Material colours are natural turf and
+   * chalk, independent of the team's brand palette. If 2D canvas is absent,
+   * the CSS grass/yard-line ground still leaves the scene and copy readable. */
+  var fieldTexture = null;
+  function paintField(canvas) {
+    var ctx = canvas.getContext('2d');
+    if (!ctx) { return; }
+    if (!fieldTexture) {
+      var texture = doc.createElement('canvas');
+      texture.width = 1600;
+      texture.height = 700;
+      var ink = texture.getContext('2d');
+      if (!ink) { return; }
+      var next = sequence(0xF17D2026);
+      var pixels = ink.createImageData(1600, 700);
+      for (var y = 0; y < 700; y += 1) {
+        var depth = y / 700;
+        var mowing = Math.sin(Math.log(1 + depth * 8) * 12) > 0 ? 1 : 0.84;
+        for (var x = 0; x < 1600; x += 1) {
+          var grain = (next() - 0.5) * (14 + depth * 45);
+          var light = (0.48 + depth * 0.52) * mowing;
+          var i = (y * 1600 + x) * 4;
+          pixels.data[i] = 29 * light + grain * 0.65;
+          pixels.data[i + 1] = 65 * light + grain;
+          pixels.data[i + 2] = 34 * light + grain * 0.55;
+          pixels.data[i + 3] = 255;
+        }
+      }
+      ink.putImageData(pixels, 0, 0);
+      // Individual blades grow toward the lens; the density stays bounded.
+      for (var blade = 0; blade < 15000; blade += 1) {
+        var bx = next() * 1600;
+        var by = next() * 700;
+        var size = 1 + Math.pow(by / 700, 2) * 10;
+        ink.strokeStyle = blade % 2 ? 'rgba(134,153,88,.28)' : 'rgba(4,20,11,.48)';
+        ink.lineWidth = 0.5 + by / 700;
+        ink.beginPath();
+        ink.moveTo(bx, by);
+        ink.lineTo(bx + (next() - 0.5) * size, by - size);
+        ink.stroke();
+      }
+      // Chalk breaks up against the grass instead of looking like neon.
+      var rows = [24, 62, 122, 219, 380, 642];
+      for (var row = 0; row < rows.length; row += 1) {
+        ink.fillStyle = 'rgba(229,230,210,.57)';
+        ink.fillRect(0, rows[row], 1600, 1 + rows[row] * 0.012);
+      }
+      for (var tick = 0; tick < 22; tick += 1) {
+        var ty = 700 * Math.pow(tick / 22, 2.5);
+        var half = 6 + ty * 0.018;
+        ink.fillStyle = 'rgba(229,230,210,.62)';
+        ink.fillRect(770 - ty * 0.85, ty, half, 1 + ty * 0.005);
+        ink.fillRect(850 + ty * 0.48, ty, half, 1 + ty * 0.005);
+      }
+      fieldTexture = texture;
+    }
+    canvas.width = fieldTexture.width;
+    canvas.height = fieldTexture.height;
+    ctx.drawImage(fieldTexture, 0, 0);
+  }
 
   register('first_down', h.simpleScene('first_down', 'cs-firstdown', function (root, program) {
-    var field = addBox(root, 'cs-fd-field');
-    var plane = addBox(field, 'cs-fd-plane');
-    for (var hash = 0; hash < FIELD_HASHES; hash += 1) {
-      var ticks = addBox(plane, 'cs-fd-hash');
-      // Geometry, not a value: the two hash columns straddle the middle of
-      // the plane, so they converge on the vanishing point instead of
-      // raking across the stage as two stray diagonals.
-      ticks.style.left = (46.5 + hash * 6) + '%';
+    // A display joining late must immediately show the readable hold, not
+    // spend its remaining second replaying a hidden headline's entrance.
+    if (program.elapsed_ms > 0) { root.classList.add('cs-fd-resumed'); }
+    var world = addBox(root, 'cs-fd-world');
+    addBox(world, 'cs-fd-sky');
+    addBox(world, 'cs-fd-stands');
+    addBox(world, 'cs-fd-lights cs-fd-lights-left');
+    addBox(world, 'cs-fd-lights cs-fd-lights-right');
+    var field = addBox(world, 'cs-fd-turf');
+    var canvas = doc.createElement('canvas');
+    canvas.className = 'cs-fd-grass';
+    canvas.setAttribute('aria-hidden', 'true');
+    field.appendChild(canvas);
+    try { paintField(canvas); } catch (_error) { /* CSS turf remains usable. */ }
+    addBox(world, 'cs-fd-field-shade');
+    addBox(root, 'cs-fd-title-shade');
+
+    var rig = addBox(root, 'cs-fd-rig');
+    addBox(rig, 'cs-fd-contact-shadow');
+    var chain = addBox(rig, 'cs-fd-chain');
+    for (var link = 0; link < 36; link += 1) {
+      var ring = addBox(chain, 'cs-fd-link' + (link % 2 ? ' cs-fd-link-edge' : ''));
+      ring.style.left = (link * 2.45 - 3) + '%';
+      ring.style.setProperty('--cs-link-sag', (Math.sin(link / 35 * Math.PI) * 0.17).toFixed(5));
     }
-    addBox(field, 'cs-fd-horizon');
-    addBox(root, 'cs-fd-vignette');
-
-    addBox(root, 'cs-fd-pool');
-    addBox(root, 'cs-fd-marker');
-
-    addBox(root, 'cs-fd-slab-shadow');
-    addBox(root, 'cs-fd-slab-blue');
-    addBox(root, 'cs-fd-slab-red');
-    addBox(root, 'cs-fd-accent');
-    addBox(root, 'cs-fd-rule');
-    addBox(root, 'cs-fd-hatch');
-
+    var marker = addBox(rig, 'cs-fd-marker');
+    addBox(marker, 'cs-fd-marker-shaft');
+    addBox(marker, 'cs-fd-marker-collar');
+    var target = addBox(marker, 'cs-fd-marker-target');
+    addBox(target, 'cs-fd-marker-bolt');
+    var dirt = addBox(root, 'cs-fd-dirt');
+    var next = sequence(0xD17F);
+    for (var clod = 0; clod < 24; clod += 1) {
+      var particle = addBox(dirt, 'cs-fd-clod');
+      particle.style.setProperty('--cs-dirt-x', ((next() - 0.5) * 0.22).toFixed(5));
+      particle.style.setProperty('--cs-dirt-y', (-0.05 - next() * 0.15).toFixed(5));
+      particle.style.setProperty('--cs-dirt-spin', (next() * 360).toFixed(2) + 'deg');
+    }
     h.addText(root, 'cs-fd-headline', h.textOf(program, 'headline'));
     h.addText(root, 'cs-fd-subline', h.textOf(program, 'subline'));
-    addCrest(root, 'cs-fd-crest', 0.27);
+    addCrest(root, 'cs-fd-crest', 0.13);
   }));
 
   /* ------------------------------------------------------------------ */
-  /* touchdown -- 10 s, the biggest moment of the game                   */
+  /* touchdown -- 10 s, the tiger takes the wall                         */
   /* ------------------------------------------------------------------ */
 
-  /* Three beats and then a long hold. No score anywhere: the score never
-   * left the Broadcast bar under the stage.
+  /* The intro's five-track claw has already torn the board open. This scene
+   * is the animal behind it: 8400 ms on the stage, the last 600 of them the
+   * player's fade. No score anywhere -- the score never left the Broadcast
+   * bar under the stage.
    *
-   *   0-350     beat 1, the hit: a blue slab from the left and a red slab
-   *             from the right slam together on a skewed centre seam, an
-   *             ink gap between them and a white flash along it; the whole
-   *             scene takes a 3 % camera push
-   *   300-1300  beat 2, the word: TOUCHDOWN wipes in under a moving
-   *             clip-path -- white, ink extrude, gold stroke -- then one
-   *             light sweep crosses it
-   *   900-2200  beat 3, the burst: rays open once behind the slabs and
-   *             settle, and confetti fans up and out from behind the word
-   *   1300-2000 the crest lands at the lower left with weight; TIGERS
-   *             slides in on an ink tag beside it
-   *   2000-9400 hold: the slabs drift apart 1-2 %, the rays breathe, the
-   *             confetti finishes falling. The word never moves again. */
+   *   0-520     the strike: four wide claw tears rip down the right of the
+   *             wall in one staggered swipe, gold-white light pouring out
+   *             of each cut with a red torn edge; the whole world takes one
+   *             heavy quake and a shockwave ring leaves the strike
+   *   600-1250  the word: TOUCHDOWN falls in from the lens as one piece of
+   *             gold-and-white metal on an ink extrude, overshoots once and
+   *             thumps the world a second time as it lands; one light sweep
+   *             crosses it at 1400
+   *   1250-1900 the roar: the crest punches in at the lower left, three
+   *             rings expand out of it, TIGERS slams in on a red tag
+   *   1400-     embers rise through the rest of the scene
+   *   1900-7800 hold: the stripes drift, the light in the tears breathes,
+   *             embers keep rising. The word never moves again.
+   *
+   * Everything above is CSS (tigers.css). This builder names the parts, puts
+   * the two words on the stage, and deals the geometry: the stripes of the
+   * hide and the embers are each one keyframe set reading per-piece custom
+   * properties. The hide starts as a static `*_MARKUP` container whose
+   * stripes are then built with the DOM API in the namespace the parsed
+   * container already carries, so no markup string ever holds a computed
+   * value and no namespace URL is written here. The tear is static markup:
+   * the same torn-track shape as the intro, stamped four times. */
 
-  /** Rays in the burst. Few and wide reads as light; many and thin reads as
-   * a 2010 clip-art starburst, which is the note this scene exists to fix. */
-  var TOUCHDOWN_RAYS = 12;
-  /** Confetti pieces. Enough to fill the fan, few enough that each one's own
-   * arc is visible rather than a wall of noise. */
-  var TOUCHDOWN_CONFETTI = 84;
-  /** The confetti palette, in the order pieces are dealt from it. Gold is an
-   * accent -- one piece in nine, never a run of them. */
-  var CONFETTI_COLOURS = [
-    'cs-td-c-red', 'cs-td-c-white', 'cs-td-c-blue', 'cs-td-c-red',
-    'cs-td-c-blue', 'cs-td-c-white', 'cs-td-c-gold', 'cs-td-c-blue',
-    'cs-td-c-red'
+  /** A child element in `parent`'s own namespace, with a class. Structure
+   * only: every attribute set on one of these is geometry. */
+  function addSvg(parent, tag, className) {
+    var node = doc.createElementNS(parent.namespaceURI, tag);
+    if (className) { node.setAttribute('class', className); }
+    parent.appendChild(node);
+    return node;
+  }
+
+  /** The hide's container: the fur filter and the empty group the stripes
+   * go into. Static, no text. */
+  var TOUCHDOWN_HIDE_MARKUP = [
+    '<svg class="cs-td-hide" viewBox="0 0 1000 1000" preserveAspectRatio="none"',
+    ' aria-hidden="true" focusable="false">',
+    '<defs><filter id="cs-td-fur" x="-5%" y="-5%" width="110%" height="110%">',
+    '<feTurbulence type="fractalNoise" baseFrequency="0.004 0.014" numOctaves="3" seed="9" result="fur"/>',
+    '<feDisplacementMap in="SourceGraphic" in2="fur" scale="14" xChannelSelector="R" yChannelSelector="G"/>',
+    '</filter></defs>',
+    '<g class="cs-td-fur" filter="url(#cs-td-fur)"></g>',
+    '</svg>'
+  ].join('');
+
+  /** One claw tear, in the same 160x90 space and the same tapered shape as
+   * the intro's tracks, so the strike on the wall is recognisably the same
+   * claw that opened the board. Stamped four times through a torn-edge
+   * filter; each stamp has an ink lip behind it, the light inside it, and a
+   * red rim. Static markup, no text. */
+  var TOUCHDOWN_RIP_PATH = 'M 0 0 C 1 22 13 52 31 89 C 24 56 8 24 0 0 Z';
+  var TOUCHDOWN_RIP_PLACES = [
+    'translate(30 10) scale(1.35 .9)',
+    'translate(58 -4) scale(1.5 1.06)',
+    'translate(88 -8) scale(1.55 1.1)',
+    'translate(118 2) scale(1.4 .96)'
   ];
+  var TOUCHDOWN_RIP_MARKUP = [
+    '<svg class="cs-td-rip-svg" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid meet"',
+    ' aria-hidden="true" focusable="false">',
+    '<defs>',
+    '<filter id="cs-td-rip-torn" x="-30%" y="-10%" width="160%" height="120%">',
+    '<feTurbulence type="fractalNoise" baseFrequency=".5" numOctaves="2" seed="71" result="grain"/>',
+    '<feDisplacementMap in="SourceGraphic" in2="grain" scale="1.1" xChannelSelector="R" yChannelSelector="G"/>',
+    '</filter>',
+    '<linearGradient id="cs-td-rip-fill" x1="0" y1="0" x2="1" y2="0">',
+    '<stop class="cs-td-rip-stop-edge" offset="0"/>',
+    '<stop class="cs-td-rip-stop-warm" offset=".3"/>',
+    '<stop class="cs-td-rip-stop-hot" offset=".5"/>',
+    '<stop class="cs-td-rip-stop-warm" offset=".7"/>',
+    '<stop class="cs-td-rip-stop-edge" offset="1"/>',
+    '</linearGradient>',
+    '</defs>',
+    TOUCHDOWN_RIP_PLACES.map(function (place) {
+      return '<g class="cs-td-rip-track" transform="' + place + '">'
+        + '<g class="cs-td-rip-reveal">'
+        + '<path class="cs-td-rip-lip" d="' + TOUCHDOWN_RIP_PATH + '"/>'
+        + '<path class="cs-td-rip-light" d="' + TOUCHDOWN_RIP_PATH + '"/>'
+        + '<path class="cs-td-rip-edge" d="' + TOUCHDOWN_RIP_PATH + '"/>'
+        + '</g></g>';
+    }).join(''),
+    '</svg>'
+  ].join('');
 
-  /** The fan: launch every piece from behind the word, up and out, then let
-   * it fall with drift. Each piece gets its own apex, landing point, spin,
-   * size and delay as custom properties; one keyframe set in tigers.css
-   * reads them, so eighty-four pieces cost eighty-four elements and one
-   * animation definition. */
-  function addConfetti(parent) {
-    var fan = addBox(parent, 'cs-td-confetti');
-    var next = sequence(0x7A9B31);
-    for (var index = 0; index < TOUCHDOWN_CONFETTI; index += 1) {
-      var piece = addBox(fan, 'cs-td-piece ' + CONFETTI_COLOURS[index % CONFETTI_COLOURS.length]);
-      // Fan the pieces out symmetrically: even indices go left, odd right,
-      // with the reach growing as the burst opens.
-      var side = index % 2 === 0 ? -1 : 1;
-      var reach = spread(next, 0.06, 0.62) * side;
-      setStageLength(piece, '--cs-cx', 'w', reach);
-      setStageLength(piece, '--cs-apex', 'h', -spread(next, 0.26, 0.72));
-      setStageLength(piece, '--cs-fall', 'h', spread(next, 0.34, 0.66));
-      setStageLength(piece, '--cs-cw', 'w', spread(next, 0.0050, 0.0120));
-      setStageLength(piece, '--cs-ch', 'h', spread(next, 0.016, 0.034));
-      piece.style.setProperty('--cs-spin', Math.round(spread(next, 240, 1080)) * side + 'deg');
-      // Staggered starts and a range of flight times: the burst opens once
-      // over the first second and the last piece is down before 4.5 s, which
-      // is where the spec puts the end of the burst.
-      piece.style.animationDelay = Math.round(spread(next, 60, 1000)) + 'ms';
-      piece.style.animationDuration = Math.round(spread(next, 3300, 4300)) + 'ms';
+  /** The strike's centre, as fractions of the stage: the shockwave leaves
+   * from here and the glow behind the tears sits on it. */
+  var TOUCHDOWN_IMPACT_X = 0.72;
+  var TOUCHDOWN_IMPACT_Y = 0.5;
+  /** Stripes across the hide. A dozen reads as a tiger's flank from the back
+   * row; two dozen reads as a barcode. */
+  var TOUCHDOWN_STRIPES = 13;
+  /** Embers through the hold. */
+  var TOUCHDOWN_EMBERS = 34;
+  /** Roar rings out of the crest. */
+  var TOUCHDOWN_ROAR_RINGS = 3;
+
+  /** The hide: tapered ink stripes over the navy ground, each a closed path
+   * bulging to its own width at mid-height and leaning its own way, in a
+   * 1000x1000 space stretched over the stage. Roughened once by a
+   * turbulence filter so the edges read as fur rather than as vinyl. */
+  function addHide(parent) {
+    var box = addBox(parent, 'cs-td-hide-box');
+    box.innerHTML = TOUCHDOWN_HIDE_MARKUP;
+    var group = box.firstChild.lastChild;
+    var next = sequence(0x7D5E01);
+    var pitch = 1000 / TOUCHDOWN_STRIPES;
+    for (var index = 0; index < TOUCHDOWN_STRIPES; index += 1) {
+      var x0 = pitch * (index + 0.5) + spread(next, -18, 18);
+      var lean = spread(next, -150, 150);
+      var width = spread(next, 30, 78);
+      var bulge = spread(next, -70, 70);
+      var top = x0 - lean;
+      var bottom = x0 + lean;
+      var d = 'M ' + top.toFixed(1) + ' -60'
+        + ' C ' + (x0 + bulge - width * 0.2).toFixed(1) + ' 300, ' + (x0 + bulge - width * 0.2).toFixed(1) + ' 700, '
+        + bottom.toFixed(1) + ' 1060'
+        + ' L ' + (bottom + width * 0.35).toFixed(1) + ' 1060'
+        + ' C ' + (x0 + bulge + width).toFixed(1) + ' 700, ' + (x0 + bulge + width).toFixed(1) + ' 300, '
+        + (top + width * 0.35).toFixed(1) + ' -60 Z';
+      var stripe = addSvg(group, 'path', 'cs-td-stripe');
+      stripe.setAttribute('d', d);
     }
-    return fan;
+    return box;
+  }
+
+  /** The embers: gold motes rising from the bottom edge through the hold,
+   * each on its own lane, drift, size and cycle. They loop -- the hold is six
+   * seconds and an ember's flight is four -- and start staggered so the first
+   * cycle does not read as one wave. */
+  function addEmbers(parent) {
+    var field = addBox(parent, 'cs-td-embers');
+    var next = sequence(0xE3B3);
+    for (var index = 0; index < TOUCHDOWN_EMBERS; index += 1) {
+      var ember = addBox(field, 'cs-td-ember');
+      ember.style.left = spread(next, index % 3 === 0 ? 2 : 40, 98).toFixed(2) + '%';
+      setStageLength(ember, '--cs-ed', 'w', spread(next, -0.06, 0.06));
+      setStageLength(ember, '--cs-eh', 'h', -spread(next, 0.45, 0.95));
+      setStageLength(ember, '--cs-es', 'h', spread(next, 0.007, 0.016));
+      ember.style.animationDuration = Math.round(spread(next, 3200, 5200)) + 'ms';
+      ember.style.animationDelay = Math.round(spread(next, 1400, 4600)) + 'ms';
+    }
+    return field;
   }
 
   register('touchdown', h.simpleScene('touchdown', 'cs-touchdown', function (root, program) {
-    addBox(root, 'cs-td-ground');
+    // A display joining late shows the settled hold at once, not the slam.
+    if (program.elapsed_ms > 0) { root.classList.add('cs-td-resumed'); }
 
-    var rays = addBox(root, 'cs-td-rays');
-    for (var index = 0; index < TOUCHDOWN_RAYS; index += 1) {
-      var ray = addBox(rays, index % 3 === 0 ? 'cs-td-ray cs-td-ray-white' : 'cs-td-ray cs-td-ray-gold');
-      // Geometry, not a displayed value: fan the rays evenly and stagger
-      // their opening. The angle is a custom property rather than an inline
-      // `transform` because the opening animation owns `transform`.
-      ray.style.setProperty('--cs-ray-angle', (index * (360 / TOUCHDOWN_RAYS)).toFixed(2) + 'deg');
-      ray.style.animationDelay = (900 + index * 34) + 'ms';
-    }
+    var camera = addBox(root, 'cs-td-camera');
+    var world = addBox(camera, 'cs-td-world');
+    addBox(world, 'cs-td-ground');
+    addHide(world);
+    addBox(world, 'cs-td-shade');
+    var glow = addBox(world, 'cs-td-rip-glow');
+    setStageLength(glow, '--cs-ix', 'w', TOUCHDOWN_IMPACT_X);
+    setStageLength(glow, '--cs-iy', 'h', TOUCHDOWN_IMPACT_Y);
+    var rip = addBox(world, 'cs-td-rip');
+    rip.innerHTML = TOUCHDOWN_RIP_MARKUP;
+    var shock = addBox(world, 'cs-td-shock');
+    setStageLength(shock, '--cs-ix', 'w', TOUCHDOWN_IMPACT_X);
+    setStageLength(shock, '--cs-iy', 'h', TOUCHDOWN_IMPACT_Y);
 
-    addBox(root, 'cs-td-slab-blue-shadow');
-    addBox(root, 'cs-td-slab-blue');
-    addBox(root, 'cs-td-slab-red-shadow');
-    addBox(root, 'cs-td-slab-red');
-    addBox(root, 'cs-td-seam');
-    addBox(root, 'cs-td-flash');
-    addBox(root, 'cs-td-hatch');
+    addEmbers(root);
     addBox(root, 'cs-td-vignette');
-    addBox(root, 'cs-td-glow');
 
-    addConfetti(root);
-
-    addBox(root, 'cs-td-rule');
     h.addText(root, 'cs-td-headline', h.textOf(program, 'headline'));
-    addCrest(root, 'cs-td-crest', 0.28);
+
+    var roar = addBox(root, 'cs-td-roar');
+    for (var ring = 0; ring < TOUCHDOWN_ROAR_RINGS; ring += 1) {
+      var wave = addBox(roar, 'cs-td-roar-ring');
+      wave.style.animationDelay = (1300 + ring * 150) + 'ms';
+    }
+    addCrest(root, 'cs-td-crest', 0.30);
     h.addText(root, 'cs-td-subline', h.textOf(program, 'subline'));
   }));
 

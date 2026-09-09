@@ -47,6 +47,7 @@ takes its default -- with one warning so the operator knows to re-save.
 from __future__ import annotations
 
 import base64
+import copy
 import re
 from dataclasses import dataclass, replace
 from typing import Any, Collection, Final, Mapping
@@ -138,20 +139,26 @@ MAX_TOTAL_IMAGE_BYTES: Final[int] = 6_000_000
 TEXT_TRANSFORMS: Final[tuple[str, ...]] = ("none", "uppercase")
 TEXT_EFFECTS: Final[tuple[str, ...]] = ("none", "shadow", "outline")
 IMAGE_FITS: Final[tuple[str, ...]] = ("contain", "cover", "fill")
-ELEMENT_TYPES: Final[tuple[str, ...]] = ("text", "image", "box")
+#: ``ticker`` (event-screens spec section 2.5) is a scrolling or rotating
+#: line of announcements: a box with a text style and a list of lines.
+ELEMENT_TYPES: Final[tuple[str, ...]] = ("text", "image", "box", "ticker")
 
-#: Windows system fonts (spec section 1.5) plus one bundled face: Graduate,
-#: an SIL Open Font License collegiate block font shipped in
-#: ``views/shared/fonts`` and declared by ``board.css``. Nothing is ever
-#: downloaded at run time. The "varsity" stack prefers Jersey M54 when the
-#: operator has installed it (its licence is personal-use only, so it is not
-#: bundled) and falls back to Graduate.
+#: Windows system fonts (spec section 1.5) plus two bundled faces, both SIL
+#: Open Font License and both shipped in ``views/shared/fonts`` and declared
+#: by ``board.css``: Graduate, a collegiate block font, and Barlow Condensed
+#: (weights 500/600/700), the lettering face of the Broadcast Welcome event
+#: screens. Nothing is ever downloaded at run time. The "varsity" stack
+#: prefers Jersey M54 when the operator has installed it (its licence is
+#: personal-use only, so it is not bundled) and falls back to Graduate; the
+#: "graduate" stack asks for the bundled face directly so the look is the
+#: same on every laptop.
 FONT_FAMILIES: Final[dict[str, str]] = {
     "arial": "Arial, Helvetica, sans-serif",
     "arial_black": "'Arial Black', Arial, sans-serif",
     "impact": "Impact, 'Arial Black', sans-serif",
     "bahnschrift": "Bahnschrift, 'Segoe UI', Arial, sans-serif",
     "bahnschrift_condensed": "'Bahnschrift Condensed', Bahnschrift, 'Segoe UI', Arial, sans-serif",
+    "barlow_condensed": "'Barlow Condensed', 'Bahnschrift Condensed', Bahnschrift, Impact, sans-serif",
     "segoe": "'Segoe UI', Segoe, Arial, sans-serif",
     "segoe_black": "'Segoe UI Black', 'Segoe UI', Arial, sans-serif",
     "consolas": "Consolas, 'Courier New', monospace",
@@ -159,14 +166,65 @@ FONT_FAMILIES: Final[dict[str, str]] = {
     "verdana": "Verdana, Geneva, sans-serif",
     "trebuchet": "'Trebuchet MS', Arial, sans-serif",
     "varsity": "'Jersey M54', Graduate, Impact, 'Arial Black', sans-serif",
+    "graduate": "Graduate, Impact, 'Arial Black', sans-serif",
 }
 FONT_FAMILY_LABELS: Final[dict[str, str]] = {
     "arial": "Arial", "arial_black": "Arial Black", "impact": "Impact",
     "bahnschrift": "Bahnschrift", "bahnschrift_condensed": "Bahnschrift Condensed",
+    "barlow_condensed": "Barlow Condensed (bundled)",
     "segoe": "Segoe UI", "segoe_black": "Segoe UI Black",
     "consolas": "Consolas", "georgia": "Georgia", "verdana": "Verdana",
     "trebuchet": "Trebuchet MS", "varsity": "Varsity block (Jersey M54 / Graduate)",
+    "graduate": "Graduate (bundled)",
 }
+
+# --- Event-screens additions (event-screens spec section 2.1) --------------
+#: Named, bounded motion. Every preset has a minimum duration so nothing on
+#: the LED wall can flicker or alternate colours quickly (brand-baseline LED
+#: rule); ``"none"`` is only ever an input spelling for "no animation" and
+#: normalizes to ``None``.
+ANIMATION_PRESETS: Final[tuple[str, ...]] = ("none", "sweep", "drift", "scroll_x", "marquee", "blink_soft")
+ANIMATION_MIN_SECONDS: Final[dict[str, float]] = {
+    "sweep": 8.0, "drift": 6.0, "scroll_x": 10.0, "marquee": 20.0, "blink_soft": 1.0,
+}
+MAX_ANIMATION_SECONDS: Final[float] = 120.0
+
+#: A box's optional gradient/hatch fill (spec section 2.4). Only numbers and
+#: hex colours are ever stored; the renderer builds the CSS string itself.
+FILL_KINDS: Final[tuple[str, ...]] = ("linear", "radial", "stripes")
+MIN_FILL_STOPS: Final[int] = 2
+MAX_FILL_STOPS: Final[int] = 4
+BORDER_STYLES: Final[tuple[str, ...]] = ("solid", "dashed")
+#: Writing direction of a widget's or text element's text.
+ORIENTATIONS: Final[tuple[str, ...]] = ("horizontal", "vertical", "vertical_flipped")
+#: ``rotate_degrees`` is accepted in ``[-MAX_ROTATE_DEGREES, MAX_ROTATE_DEGREES]``.
+MAX_ROTATE_DEGREES: Final[float] = 180.0
+#: A ``bleed: true`` box (spec section 2.7) may overhang the canvas: its
+#: x/y in ``[BLEED_MIN, BLEED_MAX]``, its width/height up to
+#: ``BLEED_MAX_SIZE``, as long as some of it still lies on the canvas.
+BLEED_MIN: Final[float] = -0.5
+BLEED_MAX: Final[float] = 1.5
+BLEED_MAX_SIZE: Final[float] = 2.0
+
+#: Ticker element limits (spec section 2.5). ``TICKER_SPEED_RANGE`` is
+#: seconds per loop for ``"scroll"`` and seconds per line for ``"rotate"``.
+TICKER_MODES: Final[tuple[str, ...]] = ("scroll", "rotate")
+MAX_TICKER_LINES: Final[int] = 8
+MAX_TICKER_LINE_LENGTH: Final[int] = 80
+TICKER_SPEED_RANGE: Final[dict[str, tuple[float, float]]] = {
+    "scroll": (20.0, 120.0), "rotate": (3.0, 60.0),
+}
+#: What a scrolling (or motion-off, static) ticker puts between its lines.
+TICKER_SEPARATOR: Final[str] = "  •  "
+_DEFAULT_TICKER_SPEED_SECONDS: Final[dict[str, float]] = {"scroll": 30.0, "rotate": 5.0}
+
+#: Images that ship inside ``views/`` and may be referenced by an image
+#: element as ``src: "asset:<key>"`` (spec section 2.6). Paths are relative
+#: to ``views/``; a bundled image counts as zero bytes toward the image
+#: budget because it is never stored in the layout document.
+BUNDLED_IMAGES: Final[dict[str, str]] = {"tigers-crest": "shared/img/tigers-crest.png"}
+BUNDLED_IMAGE_LABELS: Final[dict[str, str]] = {"tigers-crest": "TMSA Tigers crest"}
+_BUNDLED_IMAGE_KEY_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9-]{1,40}$")
 
 #: Not part of the public schema constants above, but the same "1-40, no
 #: control characters" limit :data:`scoreboard.infrastructure.layouts.
@@ -184,6 +242,8 @@ _KNOWN_WIDGET_PROPERTIES: Final[frozenset[str]] = frozenset({
     "background", "background_opacity", "border_color", "border_width",
     "corner_radius", "padding", "display_format", "fit_text",
     "corner_cut", "cut_corners",
+    # Event-screens spec section 2.2.
+    "border_style", "animation", "orientation",
 })
 
 _COLOR_PATTERN: Final[re.Pattern[str]] = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
@@ -362,19 +422,34 @@ def registry_for(kind: str) -> WidgetRegistry:
 _BASE_ELEMENT_PROPERTIES: Final[frozenset[str]] = frozenset({
     "id", "type", "visible", "x", "y", "width", "height", "z_index", "opacity",
     "background", "background_opacity", "border_color", "border_width", "corner_radius",
-    "corner_cut", "cut_corners",
+    "corner_cut", "cut_corners", "border_style",
 })
-#: A text element additionally carries the full text style set.
-_TEXT_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES | frozenset({
-    "text", "color", "font_scale", "font_family", "font_weight", "letter_spacing",
+#: The text style set a text element and a ticker share (event-screens spec
+#: section 2.5: "same defaults and validators as a text element").
+_TEXT_STYLE_PROPERTIES: Final[frozenset[str]] = frozenset({
+    "color", "font_scale", "font_family", "font_weight", "letter_spacing",
     "text_transform", "text_effect", "text_align", "vertical_align", "padding",
+})
+#: A text element additionally carries the full text style set, plus
+#: animation, orientation, rotation, and shrink-to-fit.
+_TEXT_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES | _TEXT_STYLE_PROPERTIES | frozenset({
+    "text", "animation", "orientation", "rotate_degrees", "fit_text",
 })
 #: An image element additionally carries its source and fit mode.
 _IMAGE_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES | frozenset({
-    "src", "fit",
+    "src", "fit", "animation", "rotate_degrees",
 })
-#: A box element is nothing but its background/border/radius.
-_BOX_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES
+#: A box element is its background/border/radius, plus (event-screens spec
+#: section 2.2) a gradient fill, animation, rotation, and the bleed flag.
+_BOX_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES | frozenset({
+    "animation", "rotate_degrees", "fill", "bleed",
+})
+#: A ticker: the base set, the text style set, and its own three properties.
+#: Deliberately *not* eligible for animation/orientation/rotation/fill/bleed
+#: (spec section 2.5) -- the ticker's motion is its ``mode``.
+_TICKER_ELEMENT_PROPERTIES: Final[frozenset[str]] = _BASE_ELEMENT_PROPERTIES | _TEXT_STYLE_PROPERTIES | frozenset({
+    "lines", "mode", "speed_seconds",
+})
 
 #: Fallback geometry used only when an element's own x/y/width/height cannot
 #: be read at all -- a modest, centred box that is always safe-area legal.
@@ -401,6 +476,12 @@ _STYLE_DEFAULTS: Final[dict[str, Any]] = {
     "corner_cut": 0.0,
     "cut_corners": "all",
     "padding": 0.0,
+    # Event-screens spec section 2.2: every widget and element may name a
+    # border style; widgets and most elements may carry a bounded animation
+    # (``None`` = still) and, where text is drawn, a writing direction.
+    "border_style": "solid",
+    "animation": None,
+    "orientation": "horizontal",
 }
 
 # --- Default layout geometry (spec section 4.4, styled by v2 section 1.3) --
@@ -557,12 +638,14 @@ for _widget in _DEFAULT_WIDGETS.values():
     _widget["fit_text"] = False
 del _widget
 
-# --- Default event-screen widgets (spec v3 section 1.2) ---------------------
-#: Shared geometry for both event screens -- only ``visible`` differs between
-#: the pre-game and halftime screen (spec table, section 1.2). Reproduces
-#: today's centred event board: title, big countdown, score line; the phase
-#: label and warmup line only ever show at halftime.
-_EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, Any]]] = {
+# --- Default event-screen widgets (spec v3 section 1.2, replaced by the ----
+# event-screens spec section 2.8) --------------------------------------------
+#: The **Classic** geometry: the original centred event board (title, big
+#: countdown, score line; phase label and warmup line only at halftime).
+#: Shared by both event screens -- only ``visible`` differs -- and kept,
+#: numbers unchanged, as the "Classic" screen preset and the base every
+#: pre-existing preset builds on. It is no longer the built-in default.
+_CLASSIC_EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, Any]]] = {
     "event_phase": {"x": 0.30, "y": 0.05, "width": 0.40, "height": 0.09,
                      "font_scale": 0.045, "font_weight": 700, "text_align": "center",
                      "pregame_visible": False, "halftime_visible": True},
@@ -590,8 +673,8 @@ _EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, Any]]] = {
 }
 
 
-def _build_default_event_widget(widget_id: str, screen_id: str) -> dict[str, Any]:
-    geometry = _EVENT_WIDGET_GEOMETRY[widget_id]
+def _build_classic_event_widget(widget_id: str, screen_id: str) -> dict[str, Any]:
+    geometry = _CLASSIC_EVENT_WIDGET_GEOMETRY[widget_id]
     visible = geometry["pregame_visible"] if screen_id == "pregame" else geometry["halftime_visible"]
     widget: dict[str, Any] = {
         "id": widget_id, "visible": visible,
@@ -607,7 +690,125 @@ def _build_default_event_widget(widget_id: str, screen_id: str) -> dict[str, Any
     return widget
 
 
-#: Every event widget's default, per event screen (spec v3 section 1.2).
+#: Every event widget's Classic default, per event screen.
+_CLASSIC_EVENT_WIDGETS: Final[dict[str, dict[str, dict[str, Any]]]] = {
+    screen_id: {
+        widget_id: _build_classic_event_widget(widget_id, screen_id)
+        for widget_id in EVENT_WIDGET_IDS
+    }
+    for screen_id in EVENT_SCREEN_IDS
+}
+
+# --- The Broadcast Welcome palette and type (event-screens spec section 9.1)
+_EVENT_NAVY: Final[str] = "#071B3A"          # board background
+_EVENT_PANEL: Final[str] = "#0D2B5A"         # panel / ticker band
+_EVENT_DEEP_PANEL: Final[str] = "#0A1B33"    # kickoff team bars
+_EVENT_NEAR_BLACK: Final[str] = "#030A12"    # kickoff background, clock plate
+_EVENT_BLUE: Final[str] = "#17468C"          # identity blue
+_EVENT_BLUE_EDGE: Final[str] = "#2869BC"
+_EVENT_BLUE_RULE: Final[str] = "#2C62AB"
+_EVENT_RED: Final[str] = "#C8242B"
+_EVENT_RED_EDGE: Final[str] = "#D0002C"
+_EVENT_DEEP_RED: Final[str] = "#A50021"
+_EVENT_WHITE: Final[str] = "#FFFFFF"
+_EVENT_MIST: Final[str] = "#DDE7F4"
+_EVENT_STEEL: Final[str] = "#93A9C9"
+_EVENT_AMBER: Final[str] = "#F5AE08"
+#: Pinned type (spec section 2.8): the bundled condensed face for lettering,
+#: the bundled collegiate face -- at 700, synthetic bold as the Grid preset
+#: does -- for every numeral. Jersey M54 is deliberately not used.
+_EVENT_LETTER_FONT: Final[str] = "barlow_condensed"
+_EVENT_NUMERAL_FONT: Final[str] = "graduate"
+#: Pixel sizes from the 1280x720 handoff as fractions of canvas width
+#: (3/4/5 px) and, for a hairline box's *height*, of canvas height.
+_PX3: Final[float] = 0.0023
+_PX4: Final[float] = 0.0031
+_PX5: Final[float] = 0.0039
+_PX3_H: Final[float] = 0.0042
+_PX4_H: Final[float] = 0.0056
+_PX5_H: Final[float] = 0.0069
+#: The colon blink every event clock carries (1 s, the LED-safe minimum).
+_CLOCK_BLINK: Final[dict[str, Any]] = {"preset": "blink_soft", "duration_seconds": 1.0}
+
+#: The **Broadcast Welcome** widget geometry, per screen (spec section 9.2 /
+#: 9.3) -- pre-game and halftime differ now, not just in visibility. Each
+#: entry is the full set of overrides applied on top of the event-widget
+#: base style. Hidden widgets still get a legal rectangle so turning one on
+#: in the editor never starts from an error.
+_EVENT_WIDGET_GEOMETRY: Final[dict[str, dict[str, dict[str, Any]]]] = {
+    "pregame": {
+        "event_phase": {"visible": False, "x": 0.10, "y": 0.04, "width": 0.80, "height": 0.05,
+                        "font_scale": 0.0266, "letter_spacing": 0.10},
+        "event_title": {"visible": True, "x": 0.10, "y": 0.365, "width": 0.80, "height": 0.05,
+                        "font_scale": 0.0266, "color": _EVENT_AMBER, "font_weight": 600,
+                        "letter_spacing": 0.30},
+        "event_clock": {"visible": True, "x": 0.10, "y": 0.415, "width": 0.80, "height": 0.20,
+                        "font_scale": 0.148, "color": _EVENT_AMBER, "font_family": _EVENT_NUMERAL_FONT,
+                        "animation": _CLOCK_BLINK},
+        "warmup": {"visible": False, "x": 0.30, "y": 0.84, "width": 0.40, "height": 0.05,
+                   "font_scale": 0.025, "color": _EVENT_MIST, "font_weight": 500,
+                   "letter_spacing": 0.10, "text_transform": "uppercase"},
+        "home_name": {"visible": True, "x": 0.191, "y": 0.63, "width": 0.235, "height": 0.208,
+                      "font_scale": 0.081, "text_transform": "uppercase"},
+        "home_score": {"visible": False, "x": 0.191, "y": 0.84, "width": 0.235, "height": 0.05,
+                       "font_scale": 0.04, "font_family": _EVENT_NUMERAL_FONT},
+        "away_score": {"visible": False, "x": 0.574, "y": 0.84, "width": 0.235, "height": 0.05,
+                       "font_scale": 0.04, "font_family": _EVENT_NUMERAL_FONT},
+        "away_name": {"visible": True, "x": 0.574, "y": 0.63, "width": 0.235, "height": 0.208,
+                      "font_scale": 0.081, "color": _EVENT_MIST, "text_transform": "uppercase"},
+    },
+    "halftime": {
+        "event_phase": {"visible": True, "x": 0.05, "y": 0.095, "width": 0.90, "height": 0.13,
+                        "font_scale": 0.092, "letter_spacing": 0.04, "fit_text": True},
+        "event_title": {"visible": True, "x": 0.33, "y": 0.29, "width": 0.34, "height": 0.06,
+                        "font_scale": 0.0234, "color": _EVENT_AMBER, "font_weight": 600,
+                        "letter_spacing": 0.26},
+        "event_clock": {"visible": True, "x": 0.33, "y": 0.36, "width": 0.34, "height": 0.16,
+                        "font_scale": 0.092, "color": _EVENT_AMBER, "font_family": _EVENT_NUMERAL_FONT,
+                        "animation": _CLOCK_BLINK},
+        "warmup": {"visible": True, "x": 0.42, "y": 0.655, "width": 0.34, "height": 0.086,
+                   "font_scale": 0.025, "color": _EVENT_MIST, "font_weight": 500,
+                   "letter_spacing": 0.10, "text_transform": "uppercase"},
+        "home_name": {"visible": True, "x": 0.04, "y": 0.27, "width": 0.27, "height": 0.09,
+                      "font_scale": 0.045, "text_transform": "uppercase"},
+        "home_score": {"visible": True, "x": 0.04, "y": 0.37, "width": 0.27, "height": 0.23,
+                       "font_scale": 0.141, "font_family": _EVENT_NUMERAL_FONT},
+        "away_score": {"visible": True, "x": 0.69, "y": 0.37, "width": 0.27, "height": 0.23,
+                       "font_scale": 0.141, "font_family": _EVENT_NUMERAL_FONT},
+        "away_name": {"visible": True, "x": 0.69, "y": 0.27, "width": 0.27, "height": 0.09,
+                      "font_scale": 0.045, "text_transform": "uppercase"},
+    },
+}
+
+
+def _event_widget(widget_id: str, overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """One event widget in the Broadcast Welcome house style: white,
+    centred, condensed bold, shrink-to-fit, above every element (z 3), with
+    ``overrides`` (geometry, colour, font, animation...) applied on top.
+    """
+
+    widget: dict[str, Any] = {
+        "id": widget_id, "visible": True,
+        "x": 0.10, "y": 0.10, "width": 0.80, "height": 0.10,
+        "font_scale": 0.03, "color": _EVENT_WHITE,
+        "text_align": "center", "vertical_align": "middle",
+        "font_weight": 700, "z_index": 3,
+    }
+    widget.update(_STYLE_DEFAULTS)
+    widget["font_family"] = _EVENT_LETTER_FONT
+    widget["display_format"] = "default"
+    widget["fit_text"] = True
+    for key, value in overrides.items():
+        widget[key] = dict(value) if isinstance(value, dict) else value
+    return widget
+
+
+def _build_default_event_widget(widget_id: str, screen_id: str) -> dict[str, Any]:
+    return _event_widget(widget_id, _EVENT_WIDGET_GEOMETRY[screen_id][widget_id])
+
+
+#: Every event widget's built-in default (the Broadcast Welcome screens),
+#: per event screen (spec v3 section 1.2 as amended by event-screens 2.8).
 _DEFAULT_EVENT_WIDGETS: Final[dict[str, dict[str, dict[str, Any]]]] = {
     screen_id: {
         widget_id: _build_default_event_widget(widget_id, screen_id)
@@ -1008,7 +1209,245 @@ def _validate_fill_and_border(
     else:
         result["cut_corners"] = value
 
+    # Event-screens spec section 2.2: every widget and every element type
+    # may draw its border dashed (the opponent-logo slot).
+    value = raw.get("border_style", defaults.get("border_style", "solid"))
+    if not isinstance(value, str) or value not in BORDER_STYLES:
+        errors.append(
+            LayoutIssue(
+                "BORDER_STYLE",
+                f"{label}: border_style must be one of {list(BORDER_STYLES)}; got {value!r}.",
+                subject_id,
+            )
+        )
+        result["border_style"] = defaults.get("border_style", "solid")
+    else:
+        result["border_style"] = value
+
     return result
+
+
+# --- Event-screens style validation (event-screens spec sections 2.3-2.5) --
+
+
+def _validate_animation(
+    raw: Mapping[str, Any], label: str, subject_id: str | None, errors: list[LayoutIssue],
+) -> dict[str, Any] | None:
+    """``animation`` (spec section 2.3): ``None``, or exactly
+    ``{"preset", "duration_seconds"}`` with the duration inside the preset's
+    LED-safe minimum and :data:`MAX_ANIMATION_SECONDS`. Any other shape is
+    an error and the whole property falls back to ``None``.
+    """
+
+    value = raw.get("animation")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        errors.append(
+            LayoutIssue(
+                "ANIMATION",
+                f"{label}: animation must be null or an object with preset and duration_seconds; got {value!r}.",
+                subject_id,
+            )
+        )
+        return None
+    preset = value.get("preset")
+    if not isinstance(preset, str) or preset not in ANIMATION_PRESETS:
+        errors.append(
+            LayoutIssue(
+                "ANIMATION",
+                f"{label}: animation preset must be one of {list(ANIMATION_PRESETS)}; got {preset!r}.",
+                subject_id,
+            )
+        )
+        return None
+    if preset == "none":
+        return None
+    minimum = ANIMATION_MIN_SECONDS[preset]
+    duration = value.get("duration_seconds")
+    ok, seconds = _is_finite_number(duration)
+    if not ok or not minimum <= seconds <= MAX_ANIMATION_SECONDS:
+        errors.append(
+            LayoutIssue(
+                "ANIMATION",
+                f"{label}: a {preset} animation must last between {minimum:g} and "
+                f"{MAX_ANIMATION_SECONDS:g} seconds; got {duration!r}.",
+                subject_id,
+            )
+        )
+        return None
+    return {"preset": preset, "duration_seconds": _round_coordinate(seconds)}
+
+
+def _validate_orientation(
+    raw: Mapping[str, Any], label: str, subject_id: str | None,
+    defaults: Mapping[str, Any], errors: list[LayoutIssue],
+) -> str:
+    fallback = defaults.get("orientation", "horizontal")
+    value = raw.get("orientation", fallback)
+    if not isinstance(value, str) or value not in ORIENTATIONS:
+        errors.append(
+            LayoutIssue(
+                "ORIENTATION",
+                f"{label}: orientation must be one of {list(ORIENTATIONS)}; got {value!r}.",
+                subject_id,
+            )
+        )
+        return fallback
+    return value
+
+
+def _validate_rotate_degrees(
+    raw: Mapping[str, Any], label: str, subject_id: str | None, errors: list[LayoutIssue],
+) -> float:
+    value = raw.get("rotate_degrees", 0.0)
+    ok, degrees = _is_finite_number(value)
+    if not ok or not -MAX_ROTATE_DEGREES <= degrees <= MAX_ROTATE_DEGREES:
+        errors.append(
+            LayoutIssue(
+                "ROTATE",
+                f"{label}: rotate_degrees must be between {-MAX_ROTATE_DEGREES:g} and "
+                f"{MAX_ROTATE_DEGREES:g}; got {value!r}.",
+                subject_id,
+            )
+        )
+        return 0.0
+    return _round_coordinate(degrees)
+
+
+def _validate_fill_stops(value: Any) -> list[dict[str, Any]] | str:
+    """The ``stops`` list of a linear/radial fill: 2-4 stops, each a hex
+    colour, an opacity, and a non-decreasing ``at``. Returns the normalized
+    list, or a reason string when it cannot be used.
+    """
+
+    if not isinstance(value, list) or not MIN_FILL_STOPS <= len(value) <= MAX_FILL_STOPS:
+        return f"stops must be a list of {MIN_FILL_STOPS}-{MAX_FILL_STOPS} colour stops"
+    stops: list[dict[str, Any]] = []
+    previous_at = 0.0
+    for index, stop in enumerate(value):
+        if not isinstance(stop, dict):
+            return f"stop #{index + 1} must be an object"
+        color = _normalize_color(stop.get("color"))
+        if color is None:
+            return f"stop #{index + 1} needs a hex colour like #RRGGBB"
+        ok, opacity = _is_finite_number(stop.get("opacity", 1.0))
+        if not ok or not 0.0 <= opacity <= 1.0:
+            return f"stop #{index + 1}'s opacity must be between 0 and 1"
+        ok, at = _is_finite_number(stop.get("at"))
+        if not ok or not 0.0 <= at <= 1.0:
+            return f"stop #{index + 1}'s position (at) must be between 0 and 1"
+        if at < previous_at - _BOUNDARY_TOLERANCE:
+            return "stop positions must not decrease"
+        previous_at = at
+        stops.append({
+            "color": color, "opacity": _round_coordinate(opacity), "at": _round_coordinate(at),
+        })
+    return stops
+
+
+def _validate_fill(
+    raw: Mapping[str, Any], label: str, subject_id: str | None, errors: list[LayoutIssue],
+) -> dict[str, Any] | None:
+    """A box's ``fill`` (spec section 2.4): ``None`` or one of the three
+    descriptors, every number range-checked and rounded, every colour a hex
+    colour. One error names the first problem and the fill falls back to
+    ``None`` (the flat ``background`` still draws).
+    """
+
+    value = raw.get("fill")
+    if value is None:
+        return None
+
+    def refuse(reason: str) -> None:
+        errors.append(LayoutIssue("FILL", f"{label}: fill {reason}.", subject_id))
+
+    if not isinstance(value, dict):
+        refuse("must be null or an object")
+        return None
+    kind = value.get("kind")
+    if not isinstance(kind, str) or kind not in FILL_KINDS:
+        refuse(f"kind must be one of {list(FILL_KINDS)}; got {kind!r}")
+        return None
+
+    def number(key: str, minimum: float, maximum: float, default: Any = None) -> float | None:
+        present = value.get(key, default)
+        ok, result = _is_finite_number(present)
+        if not ok or not minimum <= result <= maximum:
+            refuse(f"{key} must be a number between {minimum:g} and {maximum:g}; got {present!r}")
+            return None
+        return _round_coordinate(result)
+
+    if kind == "linear":
+        angle = number("angle", 0.0, 360.0, 0.0)
+        if angle is None:
+            return None
+        stops = _validate_fill_stops(value.get("stops"))
+        if isinstance(stops, str):
+            refuse(stops)
+            return None
+        return {"kind": "linear", "angle": angle, "stops": stops}
+
+    if kind == "radial":
+        center_x = number("center_x", 0.0, 1.0)
+        center_y = number("center_y", 0.0, 1.0)
+        radius_x = number("radius_x", 0.05, 2.0)
+        radius_y = number("radius_y", 0.05, 2.0)
+        if None in (center_x, center_y, radius_x, radius_y):
+            return None
+        stops = _validate_fill_stops(value.get("stops"))
+        if isinstance(stops, str):
+            refuse(stops)
+            return None
+        return {
+            "kind": "radial", "center_x": center_x, "center_y": center_y,
+            "radius_x": radius_x, "radius_y": radius_y, "stops": stops,
+        }
+
+    angle = number("angle", 0.0, 360.0, 0.0)
+    if angle is None:
+        return None
+    color = _normalize_color(value.get("color"))
+    if color is None:
+        refuse(f"color must be a hex colour like #RRGGBB; got {value.get('color')!r}")
+        return None
+    opacity = number("opacity", 0.0, 1.0, 1.0)
+    on = number("on", 0.001, 0.5)
+    off = number("off", 0.0, 1.0)
+    if None in (opacity, on, off):
+        return None
+    return {"kind": "stripes", "angle": angle, "color": color, "opacity": opacity, "on": on, "off": off}
+
+
+def _validate_ticker_lines(value: Any, label: str, subject_id: str | None, errors: list[LayoutIssue]) -> list[str]:
+    """A ticker's ``lines`` (spec section 2.5): 1-8 single-line strings of
+    1-80 characters after trimming, no control characters. On any problem
+    one ``TICKER_LINES`` error is raised and an empty list comes back (the
+    document is being rejected anyway).
+    """
+
+    def refuse(reason: str) -> list[str]:
+        errors.append(LayoutIssue("TICKER_LINES", f"{label}: {reason}.", subject_id))
+        return []
+
+    if not isinstance(value, list) or not value:
+        return refuse("lines must be a list of at least one announcement")
+    if len(value) > MAX_TICKER_LINES:
+        return refuse(f"lines may hold at most {MAX_TICKER_LINES} announcements; got {len(value)}")
+    lines: list[str] = []
+    for index, line in enumerate(value):
+        if not isinstance(line, str):
+            return refuse(f"line #{index + 1} must be text; got {line!r}")
+        stripped = line.strip()
+        if not 1 <= len(stripped) <= MAX_TICKER_LINE_LENGTH:
+            return refuse(
+                f"line #{index + 1} must be 1-{MAX_TICKER_LINE_LENGTH} characters after trimming; "
+                f"got {len(stripped)}"
+            )
+        if any(ord(character) < 0x20 or ord(character) == 0x7F for character in stripped):
+            return refuse(f"line #{index + 1} may not contain line breaks or control characters")
+        lines.append(stripped)
+    return lines
 
 
 def _validate_text_extra_style(
@@ -1141,10 +1580,13 @@ def _validate_widget(
         errors.append(LayoutIssue("DISPLAY_FORMAT", f"{label}: unsupported display format.", widget_id))
         display_format = "default"
     normalized["display_format"] = display_format
-    fit_text = raw.get("fit_text", False)
+    # Like every other widget property, absent means "this screen's default"
+    # -- the Broadcast Welcome widgets shrink to fit by design, the Classic
+    # ones do not.
+    fit_text = raw.get("fit_text", default.get("fit_text", False))
     if not isinstance(fit_text, bool):
         errors.append(LayoutIssue("FIT_TEXT", f"{label}: shrink to fit must be true or false.", widget_id))
-        fit_text = False
+        fit_text = default.get("fit_text", False)
     normalized["fit_text"] = fit_text
 
     visible = raw.get("visible", default["visible"])
@@ -1278,6 +1720,10 @@ def _validate_widget(
     # uses, so a widget and a text element are validated identically.
     normalized.update(_validate_fill_and_border(raw, label, widget_id, default, errors))
     normalized.update(_validate_text_extra_style(raw, label, widget_id, default, errors))
+    # Event-screens spec section 2.2: a widget may animate (the clock's
+    # colon blink) and may run vertically (the Fifty Yard Line end zones).
+    normalized["animation"] = _validate_animation(raw, label, widget_id, errors)
+    normalized["orientation"] = _validate_orientation(raw, label, widget_id, default, errors)
 
     tolerance = 1e-6
     left, top = safe_area["left"], safe_area["top"]
@@ -1363,6 +1809,15 @@ def element_label(element: Mapping[str, Any]) -> str:
         return f"Image {element_id}"
     if element_type == "box":
         return f"Box {element_id}"
+    if element_type == "ticker":
+        # Named by its first announcement, like a text element by its text;
+        # the lines may be raw and unvalidated here, so read defensively.
+        lines = element.get("lines")
+        first = lines[0] if isinstance(lines, list) and lines and isinstance(lines[0], str) else ""
+        limit = 24
+        if len(first) > limit:
+            first = first[: limit - 1] + "…"
+        return f'Ticker "{first}"'
     return f"Element {element_id}"
 
 
@@ -1402,15 +1857,28 @@ def _validate_element_text(value: Any, label: str) -> tuple[str, list[LayoutIssu
 def _validate_image_src(value: Any, label: str) -> tuple[str, int | None, list[LayoutIssue]]:
     errors: list[LayoutIssue] = []
     if not isinstance(value, str):
-        errors.append(LayoutIssue("IMAGE_SRC", f"{label}: src must be a data URI; got {value!r}."))
+        errors.append(LayoutIssue("IMAGE_SRC", f"{label}: src must be a data URI or a bundled asset; got {value!r}."))
         return "", None, errors
+
+    # Event-screens spec section 2.6: ``asset:<key>`` names an image that
+    # ships inside views/ (the crest). Nothing is stored, so it costs no
+    # bytes; an unknown key is refused rather than left to 404 on the wall.
+    if value.startswith("asset:"):
+        key = value[len("asset:"):]
+        if not _BUNDLED_IMAGE_KEY_PATTERN.match(key) or key not in BUNDLED_IMAGES:
+            errors.append(
+                LayoutIssue("IMAGE_SRC", f"{label}: {value!r} is not a bundled image.")
+            )
+            return "", None, errors
+        return value, 0, errors
 
     match = _IMAGE_SRC_PATTERN.match(value)
     if not match:
         errors.append(
             LayoutIssue(
                 "IMAGE_SRC",
-                f"{label}: src must be a data:image/(png|jpeg|gif|webp);base64,... URI.",
+                f"{label}: src must be a data:image/(png|jpeg|gif|webp);base64,... URI "
+                f"or asset:<bundled image>.",
             )
         )
         return "", None, errors
@@ -1508,12 +1976,15 @@ def _validate_element(
             )
         )
 
-    label = element_label({"type": normalized_type, "id": id_value, "text": raw.get("text")})
+    label = element_label({
+        "type": normalized_type, "id": id_value, "text": raw.get("text"), "lines": raw.get("lines"),
+    })
 
     known_properties = {
         "text": _TEXT_ELEMENT_PROPERTIES,
         "image": _IMAGE_ELEMENT_PROPERTIES,
         "box": _BOX_ELEMENT_PROPERTIES,
+        "ticker": _TICKER_ELEMENT_PROPERTIES,
     }[normalized_type]
     for key in raw:
         if key not in known_properties:
@@ -1540,14 +2011,24 @@ def _validate_element(
     else:
         normalized["visible"] = visible
 
+    # Event-screens spec section 2.7: a box that says ``bleed: true`` may
+    # overhang the canvas (rotated bars, the light sweep, the yard-line
+    # loop), so its coordinate and size ranges widen. Read the flag before
+    # the geometry; it is validated properly (and reported) further down.
+    is_bleed_box = normalized_type == "box" and raw.get("bleed") is True
+    coordinate_min, coordinate_max = (BLEED_MIN, BLEED_MAX) if is_bleed_box else (0.0, 1.0)
+    size_max = BLEED_MAX_SIZE if is_bleed_box else 1.0
+    coordinate_words = f"{coordinate_min:g} and {coordinate_max:g}" if is_bleed_box else "0 and 1"
+    size_words = f"0 and {size_max:g}" if is_bleed_box else "0 and 1"
+
     for coordinate in ("x", "y"):
         value = raw.get(coordinate, _DEFAULT_ELEMENT_GEOMETRY[coordinate])
         ok, number = _is_finite_number(value)
-        if not ok or not 0.0 <= number <= 1.0:
+        if not ok or not coordinate_min <= number <= coordinate_max:
             errors.append(
                 LayoutIssue(
                     "COORDINATE",
-                    f"{label}: {coordinate} must be between 0 and 1; got {value!r}.",
+                    f"{label}: {coordinate} must be between {coordinate_words}; got {value!r}.",
                     element_id_for_issues,
                 )
             )
@@ -1559,11 +2040,11 @@ def _validate_element(
     for dimension, minimum in (("width", minimum_width), ("height", minimum_height)):
         value = raw.get(dimension, _DEFAULT_ELEMENT_GEOMETRY[dimension])
         ok, number = _is_finite_number(value)
-        if not ok or not 0.0 <= number <= 1.0:
+        if not ok or not 0.0 <= number <= size_max:
             errors.append(
                 LayoutIssue(
                     "DIMENSION",
-                    f"{label}: {dimension} must be between 0 and 1; got {value!r}.",
+                    f"{label}: {dimension} must be between {size_words}; got {value!r}.",
                     element_id_for_issues,
                 )
             )
@@ -1612,7 +2093,9 @@ def _validate_element(
     )
 
     image_bytes: int | None = None
-    if normalized_type == "text":
+    if normalized_type in ("text", "ticker"):
+        # A ticker is styled exactly like a text element (spec section 2.5):
+        # same text style set, same defaults, same validators.
         normalized.update(
             _validate_text_extra_style(raw, label, element_id_for_issues, _STYLE_DEFAULTS, errors)
         )
@@ -1682,9 +2165,53 @@ def _validate_element(
         else:
             normalized["vertical_align"] = value
 
-        text_value, text_errors = _validate_element_text(raw.get("text"), label)
-        errors.extend(text_errors)
-        normalized["text"] = text_value
+        if normalized_type == "text":
+            text_value, text_errors = _validate_element_text(raw.get("text"), label)
+            errors.extend(text_errors)
+            normalized["text"] = text_value
+
+            fit_text = raw.get("fit_text", False)
+            if not isinstance(fit_text, bool):
+                errors.append(
+                    LayoutIssue("FIT_TEXT", f"{label}: shrink to fit must be true or false.", element_id_for_issues)
+                )
+                fit_text = False
+            normalized["fit_text"] = fit_text
+            normalized["animation"] = _validate_animation(raw, label, element_id_for_issues, errors)
+            normalized["orientation"] = _validate_orientation(
+                raw, label, element_id_for_issues, _STYLE_DEFAULTS, errors
+            )
+            normalized["rotate_degrees"] = _validate_rotate_degrees(raw, label, element_id_for_issues, errors)
+        else:
+            normalized["lines"] = _validate_ticker_lines(raw.get("lines"), label, element_id_for_issues, errors)
+
+            mode = raw.get("mode", "scroll")
+            if not isinstance(mode, str) or mode not in TICKER_MODES:
+                errors.append(
+                    LayoutIssue(
+                        "TICKER_MODE",
+                        f"{label}: mode must be one of {list(TICKER_MODES)}; got {mode!r}.",
+                        element_id_for_issues,
+                    )
+                )
+                mode = "scroll"
+            normalized["mode"] = mode
+
+            low, high = TICKER_SPEED_RANGE[mode]
+            value = raw.get("speed_seconds", _DEFAULT_TICKER_SPEED_SECONDS[mode])
+            ok, seconds = _is_finite_number(value)
+            if not ok or not low <= seconds <= high:
+                errors.append(
+                    LayoutIssue(
+                        "TICKER_SPEED",
+                        f"{label}: speed_seconds for a {mode} ticker must be between {low:g} and "
+                        f"{high:g}; got {value!r}.",
+                        element_id_for_issues,
+                    )
+                )
+                normalized["speed_seconds"] = _DEFAULT_TICKER_SPEED_SECONDS[mode]
+            else:
+                normalized["speed_seconds"] = _round_coordinate(seconds)
 
     elif normalized_type == "image":
         src_value, decoded_bytes, src_errors = _validate_image_src(raw.get("src"), label)
@@ -1704,8 +2231,22 @@ def _validate_element(
             normalized["fit"] = "contain"
         else:
             normalized["fit"] = fit
+        normalized["animation"] = _validate_animation(raw, label, element_id_for_issues, errors)
+        normalized["rotate_degrees"] = _validate_rotate_degrees(raw, label, element_id_for_issues, errors)
 
-    # box: nothing beyond the base properties already handled above.
+    else:
+        # box: the base properties above plus (event-screens spec section
+        # 2.2) fill, animation, rotation, and the bleed flag.
+        normalized["fill"] = _validate_fill(raw, label, element_id_for_issues, errors)
+        normalized["animation"] = _validate_animation(raw, label, element_id_for_issues, errors)
+        normalized["rotate_degrees"] = _validate_rotate_degrees(raw, label, element_id_for_issues, errors)
+        bleed = raw.get("bleed", False)
+        if not isinstance(bleed, bool):
+            errors.append(
+                LayoutIssue("BLEED", f"{label}: bleed must be true or false; got {bleed!r}.", element_id_for_issues)
+            )
+            bleed = False
+        normalized["bleed"] = bleed
 
     x, y = normalized["x"], normalized["y"]
     width, height = normalized["width"], normalized["height"]
@@ -1721,6 +2262,12 @@ def _validate_element(
         ):
             errors.append(
                 LayoutIssue("OUTSIDE_SAFE_AREA", f"{label}: it extends past the safe area.", element_id_for_issues)
+            )
+    elif is_bleed_box:
+        # It may overhang, but some of it must still be on the canvas.
+        if x >= 1.0 - tolerance or x + width <= tolerance or y >= 1.0 - tolerance or y + height <= tolerance:
+            errors.append(
+                LayoutIssue("OUTSIDE_CANVAS", f"{label}: it lies entirely off the canvas.", element_id_for_issues)
             )
     else:
         if x < -tolerance or y < -tolerance or x + width > 1.0 + tolerance or y + height > 1.0 + tolerance:
@@ -1759,11 +2306,16 @@ def _clamp_element(raw: Any, safe_area: Mapping[str, float]) -> dict[str, Any] |
     clamped["type"] = element_type
 
     is_text = element_type == "text"
-    min_x = safe_area["left"] if is_text else 0.0
-    min_y = safe_area["top"] if is_text else 0.0
+    # A bleed box (event-screens spec section 2.7) keeps its widened bounds
+    # under repair too: it is clamped into [BLEED_MIN, BLEED_MAX] and kept
+    # touching the canvas, never dragged fully inside it.
+    is_bleed = element_type == "box" and raw.get("bleed") is True
+    min_x = safe_area["left"] if is_text else (BLEED_MIN if is_bleed else 0.0)
+    min_y = safe_area["top"] if is_text else (BLEED_MIN if is_bleed else 0.0)
     minimum_width, minimum_height = _element_minimum_size(element_type)
-    max_width = max(minimum_width, (1.0 - safe_area["left"] - safe_area["right"]) if is_text else 1.0)
-    max_height = max(minimum_height, (1.0 - safe_area["top"] - safe_area["bottom"]) if is_text else 1.0)
+    span_limit = BLEED_MAX_SIZE if is_bleed else 1.0
+    max_width = max(minimum_width, (1.0 - safe_area["left"] - safe_area["right"]) if is_text else span_limit)
+    max_height = max(minimum_height, (1.0 - safe_area["top"] - safe_area["bottom"]) if is_text else span_limit)
 
     width, _ = _clamp_number(
         raw.get("width", _DEFAULT_ELEMENT_GEOMETRY["width"]), minimum_width, max_width,
@@ -1773,10 +2325,17 @@ def _clamp_element(raw: Any, safe_area: Mapping[str, float]) -> dict[str, Any] |
         raw.get("height", _DEFAULT_ELEMENT_GEOMETRY["height"]), minimum_height, max_height,
         _DEFAULT_ELEMENT_GEOMETRY["height"],
     )
-    max_edge_x = (1.0 - safe_area["right"]) if is_text else 1.0
-    max_edge_y = (1.0 - safe_area["bottom"]) if is_text else 1.0
-    max_x = max(min_x, max_edge_x - width)
-    max_y = max(min_y, max_edge_y - height)
+    if is_bleed:
+        # x in [-0.5, 1.5 - width], and still intersecting the canvas.
+        min_x = max(BLEED_MIN, minimum_width - width)
+        min_y = max(BLEED_MIN, minimum_height - height)
+        max_x = max(min_x, min(BLEED_MAX - width, 1.0 - minimum_width))
+        max_y = max(min_y, min(BLEED_MAX - height, 1.0 - minimum_height))
+    else:
+        max_edge_x = (1.0 - safe_area["right"]) if is_text else 1.0
+        max_edge_y = (1.0 - safe_area["bottom"]) if is_text else 1.0
+        max_x = max(min_x, max_edge_x - width)
+        max_y = max(min_y, max_edge_y - height)
     x, _ = _clamp_number(raw.get("x", _DEFAULT_ELEMENT_GEOMETRY["x"]), min_x, max_x, _DEFAULT_ELEMENT_GEOMETRY["x"])
     y, _ = _clamp_number(raw.get("y", _DEFAULT_ELEMENT_GEOMETRY["y"]), min_y, max_y, _DEFAULT_ELEMENT_GEOMETRY["y"])
 
@@ -1803,7 +2362,9 @@ def _validate_screen(
 
     kind = SCREEN_KINDS[screen_id]
     registry = WIDGET_REGISTRIES[kind]
-    defaults = default_screen(screen_id)["widgets"]
+    # The widget defaults only -- not default_screen(), whose event screens
+    # are themselves normalized through this very function.
+    defaults = _default_screen_widgets(screen_id)
     prefix = "" if screen_id == "game" else f"{SCREEN_LABELS[screen_id]}: "
 
     def tag(issue: LayoutIssue) -> LayoutIssue:
@@ -1940,23 +2501,49 @@ def default_screen_widget(screen_id: str, widget_id: str) -> dict[str, Any]:
 
     if screen_id == "game":
         return default_widget(widget_id)
-    return dict(_DEFAULT_EVENT_WIDGETS[screen_id][widget_id])
+    # Deep: an event widget may carry a nested ``animation`` object.
+    return copy.deepcopy(_DEFAULT_EVENT_WIDGETS[screen_id][widget_id])
+
+
+def _default_screen_widgets(screen_id: str) -> dict[str, dict[str, Any]]:
+    """Fresh copies of every default widget of ``screen_id``."""
+
+    registry = WIDGET_REGISTRIES[SCREEN_KINDS[screen_id]]
+    return {widget_id: default_screen_widget(screen_id, widget_id) for widget_id in registry.ids}
+
+
+#: The Broadcast Welcome screens exactly as :func:`validate_layout` hands
+#: them back (every element complete), built on first use. Cached so that
+#: ``default_layout()`` equals its own validation -- the property every
+#: "reset returns the built-in default" test relies on.
+_NORMALIZED_DEFAULT_EVENT_SCREENS: dict[str, dict[str, Any]] = {}
 
 
 def default_screen(screen_id: str) -> dict[str, Any]:
     """The built-in default mini-document for one screen (spec v3 section
-    1.2): the standard safe area, black background, no free elements, and
-    every widget of that screen's registry at its default geometry/style.
+    1.2). For ``"game"``: the standard safe area, black background, no free
+    elements, every game widget at its default. For an event screen: the
+    **Broadcast Welcome** screen (event-screens spec section 2.8) --
+    :func:`_welcome_event_screen`, normalized -- so "Reset this widget", a
+    missing widget, and a document with no ``screens`` all land on the new
+    default.
     """
 
-    kind = SCREEN_KINDS[screen_id]
-    registry = WIDGET_REGISTRIES[kind]
-    return {
-        "safe_area": dict(_DEFAULT_SAFE_AREA),
-        "background": dict(_DEFAULT_BACKGROUND),
-        "widgets": {widget_id: default_screen_widget(screen_id, widget_id) for widget_id in registry.ids},
-        "elements": [],
-    }
+    if screen_id == "game":
+        return {
+            "safe_area": dict(_DEFAULT_SAFE_AREA),
+            "background": dict(_DEFAULT_BACKGROUND),
+            "widgets": _default_screen_widgets("game"),
+            "elements": [],
+        }
+    cached = _NORMALIZED_DEFAULT_EVENT_SCREENS.get(screen_id)
+    if cached is None:
+        raw = _welcome_event_screen(screen_id)
+        normalized, _errors, _warnings = _validate_screen(raw, screen_id)
+        # Unreachable for a default the unit tests have checked; never None.
+        cached = normalized if normalized is not None else raw
+        _NORMALIZED_DEFAULT_EVENT_SCREENS[screen_id] = cached
+    return copy.deepcopy(cached)
 
 
 def default_layout(name: str = DEFAULT_LAYOUT_NAME) -> dict[str, Any]:
@@ -2183,6 +2770,12 @@ _CLAMP_PASSTHROUGH_PROPERTIES: Final[tuple[str, ...]] = (
     "font_family", "letter_spacing", "text_transform", "text_effect",
     "background", "background_opacity", "border_color", "border_width",
     "corner_radius", "corner_cut", "cut_corners", "padding",
+    # Never geometry, so never clamped: the display format and shrink-to-fit
+    # flag (missing until the event-screens work), and every event-screens
+    # property (spec section 2.2).
+    "display_format", "fit_text",
+    "border_style", "animation", "orientation", "rotate_degrees", "fill", "bleed",
+    "lines", "mode", "speed_seconds",
 )
 
 
@@ -2441,7 +3034,7 @@ def _pregame_matchup_screen() -> dict[str, Any]:
     row at the very bottom. Phase and warmup stay hidden (pre-game default).
     """
 
-    screen = default_screen("pregame")
+    screen = _classic_event_screen("pregame")
     overrides: dict[str, dict[str, Any]] = {
         "home_name": {"x": 0.04, "y": 0.06, "width": 0.40, "height": 0.14, "font_scale": 0.075,
                       "font_weight": 900, "text_transform": "uppercase", "text_align": "right"},
@@ -2471,7 +3064,7 @@ def _halftime_score_first_screen() -> dict[str, Any]:
     bottom. Title hidden.
     """
 
-    screen = default_screen("halftime")
+    screen = _classic_event_screen("halftime")
     overrides: dict[str, dict[str, Any]] = {
         "event_title": {"visible": False},
         # font_scale is a fraction of the canvas WIDTH, so a 0.14 score glyph
@@ -2501,7 +3094,7 @@ def _broadcast_bar_screen(screen_id: str) -> dict[str, Any]:
     empty black, free for future media.
     """
 
-    screen = default_screen(screen_id)
+    screen = _classic_event_screen(screen_id)
     overrides: dict[str, dict[str, Any]] = {
         "home_name": {"x": 0.04, "y": 0.80, "width": 0.18, "height": 0.12, "font_scale": 0.035,
                       "text_align": "right"},
@@ -2545,7 +3138,7 @@ def _tigers_event_screen(screen_id: str) -> dict[str, Any]:
     uppercase team names, and the tinted secondary text.
     """
 
-    screen = default_screen(screen_id)
+    screen = _classic_event_screen(screen_id)
     screen["widgets"]["home_name"].update({"font_family": "bahnschrift", "text_transform": "uppercase"})
     screen["widgets"]["away_name"].update({"font_family": "bahnschrift", "text_transform": "uppercase"})
     screen["widgets"]["event_title"].update({"color": "#DDE7F4"})
@@ -2625,7 +3218,7 @@ def _stadium_style(screen: dict[str, Any]) -> None:
 
 
 def _stadium_event_screen(screen_id: str) -> dict[str, Any]:
-    screen = default_screen(screen_id)
+    screen = _classic_event_screen(screen_id)
     _stadium_style(screen)
     geometry = {
         "event_phase": (0.30, 0.13, 0.40, 0.065, 0.024),
@@ -2769,7 +3362,7 @@ def _grid_header_elements() -> list[dict[str, Any]]:
 
 
 def _grid_event_screen(screen_id: str) -> dict[str, Any]:
-    screen = default_screen(screen_id)
+    screen = _classic_event_screen(screen_id)
     geometry = {
         "event_phase": (0.30, 0.105, 0.40, 0.06, 0.028),
         "event_title": (0.10, 0.17, 0.80, 0.07, 0.034),
@@ -2919,13 +3512,462 @@ def _grid_preset_layout() -> dict[str, Any]:
     return layout
 
 
+# --- Broadcast Welcome, Kickoff Clock, Fifty Yard Line (event-screens spec -
+# sections 2.8 and 9). Every builder returns fresh dicts on each call.
+
+#: Editable announcement defaults (spec section 2.8); each under 60 chars.
+_PREGAME_ANNOUNCEMENTS: Final[tuple[str, ...]] = (
+    "WELCOME TO TIGER STADIUM",
+    "SENIOR NIGHT — HONORING THE CLASS OF 2027",
+    "CONCESSIONS OPEN BEHIND THE HOME STANDS",
+    "NATIONAL ANTHEM AT 6:55",
+    "SCIENCE · WISDOM · PEACE",
+)
+_HALFTIME_ANNOUNCEMENTS: Final[tuple[str, ...]] = (
+    "SENIOR NIGHT — HONORING THE CLASS OF 2027",
+    "TIGER BAND TAKES THE FIELD",
+    "50/50 RAFFLE DRAWING AT THE START OF THE 3RD",
+    "SCIENCE · WISDOM · PEACE",
+)
+#: The opponent-logo slot's hatch (spec section 2.8). The operator lays
+#: their own art over the slot with *Add image*; nothing is ever invented.
+_OPPONENT_HATCH: Final[dict[str, Any]] = {
+    "kind": "stripes", "angle": 45.0, "color": _EVENT_MIST, "opacity": 0.14, "on": 0.002, "off": 0.008,
+}
+
+
+def _announcements(screen_id: str) -> list[str]:
+    return list(_PREGAME_ANNOUNCEMENTS if screen_id == "pregame" else _HALFTIME_ANNOUNCEMENTS)
+
+
+def _event_box(id: str, x: float, y: float, width: float, height: float,
+               color: str | None = None, **extra: Any) -> dict[str, Any]:
+    element: dict[str, Any] = {"id": id, "type": "box", "x": x, "y": y, "width": width,
+                               "height": height, "background": color, "z_index": 0}
+    element.update(extra)
+    return element
+
+
+def _event_text(id: str, text: str, x: float, y: float, width: float, height: float,
+                size: float, color: str = _EVENT_WHITE, **extra: Any) -> dict[str, Any]:
+    """A single-line lettering element: condensed, shrink-to-fit, above the
+    boxes (z 2). Multi-line callers pass ``fit_text=False``."""
+
+    element: dict[str, Any] = {"id": id, "type": "text", "text": text, "x": x, "y": y,
+                               "width": width, "height": height, "font_scale": size,
+                               "font_family": _EVENT_LETTER_FONT, "font_weight": 700,
+                               "text_align": "center", "vertical_align": "middle",
+                               "color": color, "fit_text": True, "z_index": 2}
+    element.update(extra)
+    return element
+
+
+def _event_ticker(lines: list[str], x: float = 0.0, y: float = 0.89, width: float = 1.0,
+                  height: float = 0.10, **extra: Any) -> dict[str, Any]:
+    """The announcement ticker (spec section 2.5/2.8): mist condensed
+    lettering at 0.025, middle-aligned so the glyph ink stays above the
+    0.96 safe line, scrolling once every 30 s. Always ``id`` ``ticker``."""
+
+    element: dict[str, Any] = {"id": "ticker", "type": "ticker", "lines": list(lines),
+                               "mode": "scroll", "speed_seconds": 30.0,
+                               "x": x, "y": y, "width": width, "height": height,
+                               "color": _EVENT_MIST, "font_scale": 0.025,
+                               "font_family": _EVENT_LETTER_FONT, "font_weight": 500,
+                               "letter_spacing": 0.16, "text_align": "center",
+                               "vertical_align": "middle", "z_index": 10}
+    element.update(extra)
+    return element
+
+
+def _crest_elements(x: float, y: float, width: float, height: float,
+                    cut: float = 0.0125) -> list[dict[str, Any]]:
+    """The white crest plate with the bundled crest inset ~10 % each side."""
+
+    return [
+        _event_box("crest_plate", x, y, width, height, _EVENT_WHITE, corner_cut=cut, z_index=1),
+        {"id": "crest", "type": "image", "src": "asset:tigers-crest", "fit": "contain",
+         "x": round(x + width * 0.1, 4), "y": round(y + height * 0.1, 4),
+         "width": round(width * 0.8, 4), "height": round(height * 0.8, 4), "z_index": 2},
+    ]
+
+
+def _opponent_slot_elements(x: float, y: float, width: float, height: float,
+                            caption_x: float | None = None,
+                            caption_width: float | None = None) -> list[dict[str, Any]]:
+    """The dashed, hatched opponent-logo placeholder and its monospace
+    caption. The caption may be given its own horizontal extent when the
+    slot itself sits partly outside the safe area (a box may; text may not)."""
+
+    return [
+        _event_box("opponent_slot", x, y, width, height, None,
+                   border_style="dashed", border_width=_PX3, border_color=_EVENT_MIST,
+                   fill=dict(_OPPONENT_HATCH), z_index=1),
+        _event_text("opponent_caption", "OPPONENT\nLOGO",
+                    x if caption_x is None else caption_x, y,
+                    width if caption_width is None else caption_width, height,
+                    0.0188, _EVENT_MIST, font_family="consolas", font_weight=400, fit_text=False),
+    ]
+
+
+def _welcome_shell_elements(screen_id: str) -> list[dict[str, Any]]:
+    """Rows 1-5 of the handoff (spec 9.2/9.3), shared by both Welcome
+    screens: the top glow, the light sweep, the two team rules and the
+    eyebrow. The eyebrow the handoff put at y 0.026 sits at y 0.04 (the
+    safe-area edge) and the rules are re-centred on it."""
+
+    return [
+        _event_box("top_glow", 0.0, 0.0, 1.0, 0.52, None, fill={
+            "kind": "radial", "center_x": 0.5, "center_y": 0.0, "radius_x": 0.6, "radius_y": 1.0,
+            "stops": [{"color": _EVENT_BLUE_RULE, "opacity": 0.5, "at": 0.0},
+                      {"color": _EVENT_BLUE_RULE, "opacity": 0.0, "at": 0.72}],
+        }),
+        _event_box("light_sweep", 0.33, -0.20, 0.34, 1.40, None, bleed=True, z_index=1, fill={
+            "kind": "linear", "angle": 90.0,
+            "stops": [{"color": _EVENT_WHITE, "opacity": 0.0, "at": 0.0},
+                      {"color": _EVENT_WHITE, "opacity": 0.06, "at": 0.5},
+                      {"color": _EVENT_WHITE, "opacity": 0.0, "at": 1.0}],
+        }, animation={"preset": "sweep", "duration_seconds": 11.0 if screen_id == "pregame" else 13.0}),
+        _event_box("home_rule", 0.03, 0.060, 0.28, _PX4_H, _EVENT_RED),
+        _event_box("away_rule", 0.69, 0.060, 0.28, _PX4_H, _EVENT_BLUE_RULE),
+        _event_text("eyebrow", "TMSA TIGERS FOOTBALL", 0.33, 0.04, 0.34, 0.046, 0.0203, _EVENT_STEEL,
+                    font_weight=600, letter_spacing=0.22),
+    ]
+
+
+def _ticker_band_elements(screen_id: str) -> list[dict[str, Any]]:
+    """Rows 16-17: the navy band with its blue top rule, and the ticker."""
+
+    return [
+        _event_box("ticker_band", 0.0, 0.89, 1.0, 0.11, _EVENT_PANEL),
+        _event_box("ticker_rule", 0.0, 0.89, 1.0, _PX3_H, _EVENT_BLUE_RULE, z_index=1),
+        _event_ticker(_announcements(screen_id)),
+    ]
+
+
+def _welcome_event_screen(screen_id: str) -> dict[str, Any]:
+    """**Broadcast Welcome** (spec 9.2 pre-game / 9.3 halftime): the built-in
+    default event screens. Navy board, a radial top glow with a slow light
+    sweep, the TMSA eyebrow between two team-coloured rules, then either the
+    welcome headline over a gold rule, the amber countdown and a centred
+    matchup row (crest, home name, VS, away name, opponent slot) or, at
+    halftime, HALFTIME over two chamfered team panels flanking the countdown
+    and a warm-up chip; an announcement ticker runs along the bottom."""
+
+    screen = {
+        "safe_area": dict(_DEFAULT_SAFE_AREA),
+        "background": {"color": _EVENT_NAVY},
+        "widgets": {widget_id: default_screen_widget(screen_id, widget_id) for widget_id in EVENT_WIDGET_IDS},
+    }
+    elements = _welcome_shell_elements(screen_id)
+    if screen_id == "pregame":
+        elements += [
+            _event_text("welcome_to", "WELCOME TO", 0.10, 0.09, 0.80, 0.055, 0.0266, _EVENT_MIST,
+                        font_weight=500, letter_spacing=0.30),
+            _event_text("stadium_title", "TIGER STADIUM", 0.05, 0.145, 0.90, 0.17, 0.122),
+            _event_box("gold_rule", 0.41, 0.325, 0.18, _PX5_H, _EVENT_AMBER),
+            # Row 11-15, centred with even 0.034 gaps: crest, home name, VS,
+            # away name, opponent slot (the names are the widgets).
+            *_crest_elements(0.04, 0.63, 0.117, 0.208),
+            _event_text("versus", "VS", 0.46, 0.63, 0.08, 0.208, 0.041, _EVENT_AMBER,
+                        font_family=_EVENT_NUMERAL_FONT),
+            *_opponent_slot_elements(0.843, 0.63, 0.117, 0.208),
+        ]
+    else:
+        elements += [
+            _event_box("amber_rule", 0.44, 0.225, 0.12, _PX5_H, _EVENT_AMBER),
+            _event_box("home_panel", 0.04, 0.27, 0.27, 0.34, _EVENT_PANEL,
+                       border_color=_EVENT_BLUE_RULE, border_width=_PX3, corner_cut=0.0141),
+            _event_box("home_banner", 0.04, 0.27, 0.27, 0.09, _EVENT_BLUE,
+                       corner_cut=0.0141, cut_corners="top", z_index=1),
+            _event_box("away_panel", 0.69, 0.27, 0.27, 0.34, _EVENT_PANEL,
+                       border_color=_EVENT_RED, border_width=_PX3, corner_cut=0.0141),
+            _event_box("away_banner", 0.69, 0.27, 0.27, 0.09, _EVENT_DEEP_RED,
+                       corner_cut=0.0141, cut_corners="top", z_index=1),
+            # The warm-up chip and the warmup widget: a centred pair, 0.02 apart.
+            _event_box("chip_box", 0.24, 0.655, 0.16, 0.086, _EVENT_PANEL,
+                       border_color=_EVENT_BLUE_RULE, border_width=_PX3, corner_cut=0.006),
+            _event_text("chip_text", "SECOND HALF", 0.24, 0.655, 0.16, 0.086, 0.0219, _EVENT_MIST,
+                        font_weight=600, letter_spacing=0.12),
+        ]
+    elements += _ticker_band_elements(screen_id)
+    screen["elements"] = elements
+    return screen
+
+
+def _kickoff_clock_event_screen(screen_id: str) -> dict[str, Any]:
+    """**Kickoff Clock** (spec 9.4): numeral-first. Four rotated, drifting
+    team bars overhang a near-black board; the countdown at 0.234 is the
+    largest thing on it, framed by amber hairlines; a rotating one-line
+    announcement sits under it; two chamfered team bars along the bottom
+    carry the crest / opponent slot, a HOME / VISITOR eyebrow (the
+    not-by-colour-alone rule) and the name -- at halftime the name and
+    score instead."""
+
+    is_pregame = screen_id == "pregame"
+    widgets = {
+        "event_phase": _event_widget("event_phase", {
+            "visible": not is_pregame, "x": 0.10, "y": 0.06, "width": 0.43, "height": 0.11,
+            "font_scale": 0.0656, "letter_spacing": 0.06, "text_align": "right"}),
+        "event_title": _event_widget("event_title", {
+            "x": 0.20, "y": 0.20, "width": 0.60, "height": 0.05, "font_scale": 0.0266,
+            "color": _EVENT_AMBER, "font_weight": 600, "letter_spacing": 0.30}),
+        "event_clock": _event_widget("event_clock", {
+            "x": 0.10, "y": 0.25, "width": 0.80, "height": 0.31, "font_scale": 0.234,
+            "color": _EVENT_AMBER, "font_family": _EVENT_NUMERAL_FONT, "animation": _CLOCK_BLINK}),
+        "warmup": _event_widget("warmup", {
+            "visible": not is_pregame, "x": 0.12, "y": 0.637, "width": 0.76, "height": 0.05,
+            "font_scale": 0.025, "color": _EVENT_MIST, "font_weight": 500, "letter_spacing": 0.10,
+            "text_transform": "uppercase"}),
+    }
+    if is_pregame:
+        widgets.update({
+            "home_name": _event_widget("home_name", {
+                "x": 0.18, "y": 0.79, "width": 0.27, "height": 0.12, "font_scale": 0.072,
+                "text_transform": "uppercase", "text_align": "left"}),
+            "home_score": _event_widget("home_score", {
+                "visible": False, "x": 0.18, "y": 0.74, "width": 0.27, "height": 0.05,
+                "font_scale": 0.04, "font_family": _EVENT_NUMERAL_FONT, "text_align": "right"}),
+            "away_score": _event_widget("away_score", {
+                "visible": False, "x": 0.67, "y": 0.74, "width": 0.27, "height": 0.05,
+                "font_scale": 0.04, "font_family": _EVENT_NUMERAL_FONT, "text_align": "right"}),
+            "away_name": _event_widget("away_name", {
+                "x": 0.67, "y": 0.79, "width": 0.27, "height": 0.12, "font_scale": 0.072,
+                "text_transform": "uppercase", "text_align": "left"}),
+        })
+    else:
+        widgets.update({
+            "home_name": _event_widget("home_name", {
+                "x": 0.17, "y": 0.745, "width": 0.13, "height": 0.14, "font_scale": 0.053,
+                "text_transform": "uppercase", "text_align": "left"}),
+            "home_score": _event_widget("home_score", {
+                "x": 0.31, "y": 0.715, "width": 0.14, "height": 0.20, "font_scale": 0.081,
+                "font_family": _EVENT_NUMERAL_FONT, "text_align": "right"}),
+            "away_score": _event_widget("away_score", {
+                "x": 0.80, "y": 0.715, "width": 0.14, "height": 0.20, "font_scale": 0.081,
+                "font_family": _EVENT_NUMERAL_FONT, "text_align": "right"}),
+            "away_name": _event_widget("away_name", {
+                "x": 0.66, "y": 0.745, "width": 0.13, "height": 0.14, "font_scale": 0.053,
+                "text_transform": "uppercase", "text_align": "left"}),
+        })
+
+    def bar(id: str, x: float, width: float, color: str, angle: float, seconds: float) -> dict[str, Any]:
+        return _event_box(id, x, -0.30, width, 1.60, color, bleed=True, rotate_degrees=angle,
+                          animation={"preset": "drift", "duration_seconds": seconds})
+
+    elements = [
+        bar("left_bar", -0.01, 0.07, _EVENT_BLUE, 13.0, 9.0),
+        bar("left_inner", 0.07, 0.024, _EVENT_RED, 13.0, 11.0),
+        bar("right_bar", 0.94, 0.07, _EVENT_RED, -13.0, 9.0),
+        bar("right_inner", 0.906, 0.024, _EVENT_BLUE, -13.0, 11.0),
+        _event_box("hairline_top", 0.20, 0.185, 0.60, _PX3_H, _EVENT_AMBER, opacity=0.55),
+        _event_box("hairline_bottom", 0.20, 0.575, 0.60, _PX3_H, _EVENT_AMBER, opacity=0.55),
+        _event_box("home_bar", 0.04, 0.69, 0.43, 0.25, _EVENT_DEEP_PANEL,
+                   border_color=_EVENT_BLUE_EDGE, border_width=_PX3, corner_cut=0.0156),
+        _event_box("away_bar", 0.53, 0.69, 0.43, 0.25, _EVENT_DEEP_PANEL,
+                   border_color=_EVENT_RED_EDGE, border_width=_PX3, corner_cut=0.0156),
+    ]
+    if is_pregame:
+        elements += [
+            _event_text("headline", "WELCOME TO TIGER STADIUM", 0.12, 0.06, 0.76, 0.11, 0.0625,
+                        letter_spacing=0.06),
+            _event_ticker(_announcements(screen_id), 0.12, 0.59, 0.76, 0.08,
+                          mode="rotate", speed_seconds=5.0, font_scale=0.0266, letter_spacing=0.10),
+            # Bar content: a 0.10-wide plate (the handoff's 0.092 widened so
+            # the OPPONENT caption fits at the 0.0188 minimum), then the
+            # eyebrow over the name.
+            *_crest_elements(0.06, 0.726, 0.10, 0.178),
+            _event_text("home_eyebrow", "HOME", 0.18, 0.74, 0.27, 0.05, 0.0188, _EVENT_STEEL,
+                        font_weight=600, letter_spacing=0.24, text_align="left"),
+            *_opponent_slot_elements(0.55, 0.726, 0.10, 0.178),
+            _event_text("away_eyebrow", "VISITOR", 0.67, 0.74, 0.27, 0.05, 0.0188, _EVENT_STEEL,
+                        font_weight=600, letter_spacing=0.24, text_align="left"),
+        ]
+    else:
+        elements += [
+            _event_box("chip_box", 0.55, 0.085, 0.20, 0.06, _EVENT_AMBER, corner_cut=0.006),
+            _event_text("chip_text", "TIGER STADIUM", 0.55, 0.085, 0.20, 0.06, 0.0234, _EVENT_NEAR_BLACK,
+                        letter_spacing=0.12),
+            # The handoff's note line leads the rotating announcements.
+            _event_ticker(["WARM-UP ENDS AT ZERO · SENIOR NIGHT ON THE 50", *_announcements(screen_id)],
+                          0.12, 0.583, 0.76, 0.052,
+                          mode="rotate", speed_seconds=5.0, font_scale=0.0266, letter_spacing=0.10),
+            *_crest_elements(0.06, 0.7306, 0.095, 0.1689),
+            *_opponent_slot_elements(0.55, 0.7306, 0.095, 0.1689),
+        ]
+    return {
+        "safe_area": dict(_DEFAULT_SAFE_AREA),
+        "background": {"color": _EVENT_NEAR_BLACK},
+        "widgets": widgets,
+        "elements": elements,
+    }
+
+
+def _fifty_event_screen(screen_id: str) -> dict[str, Any]:
+    """**Fifty Yard Line** (spec 9.5): a scrolling field. Full-bleed yard
+    lines and a hash rule loop under everything; end-zone bands with a
+    white inner edge carry the team names vertically (pre-game) or a
+    horizontal name over the score (halftime); the centre stack holds the
+    crest, the welcome lines and a chamfered, amber-framed clock plate whose
+    numerals are white -- the one direction where they are; the ticker is
+    white with navy text and inset to the field between the bands. The
+    bands and stripes bleed to every edge; no lettering does."""
+
+    is_pregame = screen_id == "pregame"
+    band = 0.13 if is_pregame else 0.16
+    seconds = 14.0 if is_pregame else 18.0
+    widgets = {
+        "event_phase": _event_widget("event_phase", {
+            "visible": not is_pregame, "x": 0.20, "y": 0.07, "width": 0.60, "height": 0.11,
+            "font_scale": 0.081, "text_effect": "shadow"}),
+        "warmup": _event_widget("warmup", {
+            "visible": not is_pregame, "x": 0.43, "y": 0.625 if not is_pregame else 0.80,
+            "width": 0.30, "height": 0.06, "font_scale": 0.0234, "color": _EVENT_MIST,
+            "font_weight": 500, "letter_spacing": 0.10, "text_transform": "uppercase"}),
+    }
+    if is_pregame:
+        widgets.update({
+            "event_title": _event_widget("event_title", {
+                "x": 0.22, "y": 0.54, "width": 0.56, "height": 0.05, "font_scale": 0.025,
+                "color": _EVENT_AMBER, "font_weight": 600, "letter_spacing": 0.30}),
+            "event_clock": _event_widget("event_clock", {
+                "x": 0.22, "y": 0.595, "width": 0.56, "height": 0.185, "font_scale": 0.123,
+                "font_family": _EVENT_NUMERAL_FONT, "animation": _CLOCK_BLINK}),
+            "home_name": _event_widget("home_name", {
+                "x": 0.043, "y": 0.27, "width": 0.08, "height": 0.65, "font_scale": 0.072,
+                "letter_spacing": 0.22, "text_transform": "uppercase", "orientation": "vertical_flipped"}),
+            "away_name": _event_widget("away_name", {
+                "x": 0.877, "y": 0.27, "width": 0.08, "height": 0.65, "font_scale": 0.072,
+                "letter_spacing": 0.22, "text_transform": "uppercase", "orientation": "vertical"}),
+            "home_score": _event_widget("home_score", {
+                "visible": False, "x": 0.04, "y": 0.06, "width": 0.08, "height": 0.16,
+                "font_scale": 0.06, "font_family": _EVENT_NUMERAL_FONT}),
+            "away_score": _event_widget("away_score", {
+                "visible": False, "x": 0.877, "y": 0.06, "width": 0.08, "height": 0.16,
+                "font_scale": 0.06, "font_family": _EVENT_NUMERAL_FONT}),
+        })
+    else:
+        widgets.update({
+            "event_title": _event_widget("event_title", {
+                "x": 0.24, "y": 0.305, "width": 0.52, "height": 0.05, "font_scale": 0.025,
+                "color": _EVENT_AMBER, "font_weight": 600, "letter_spacing": 0.30}),
+            "event_clock": _event_widget("event_clock", {
+                "x": 0.24, "y": 0.355, "width": 0.52, "height": 0.22, "font_scale": 0.133,
+                "font_family": _EVENT_NUMERAL_FONT, "animation": _CLOCK_BLINK}),
+            "home_name": _event_widget("home_name", {
+                "x": 0.04, "y": 0.30, "width": 0.11, "height": 0.08, "font_scale": 0.039,
+                "text_transform": "uppercase"}),
+            "home_score": _event_widget("home_score", {
+                "x": 0.04, "y": 0.39, "width": 0.11, "height": 0.20, "font_scale": 0.103,
+                "font_family": _EVENT_NUMERAL_FONT}),
+            "away_score": _event_widget("away_score", {
+                "x": 0.85, "y": 0.39, "width": 0.11, "height": 0.20, "font_scale": 0.103,
+                "font_family": _EVENT_NUMERAL_FONT}),
+            "away_name": _event_widget("away_name", {
+                "x": 0.85, "y": 0.30, "width": 0.11, "height": 0.08, "font_scale": 0.039,
+                "text_transform": "uppercase"}),
+        })
+
+    def scrolling_stripes(on: float, off: float, opacity: float) -> dict[str, Any]:
+        return {"kind": "stripes", "angle": 90.0, "color": _EVENT_WHITE, "opacity": opacity, "on": on, "off": off}
+
+    scroll = {"preset": "scroll_x", "duration_seconds": seconds}
+    elements = [
+        # One stripe period wider than the canvas, so the loop is seamless.
+        _event_box("yard_lines", 0.0, 0.0, 1.125, 1.0, None, bleed=True,
+                   fill=scrolling_stripes(0.0023, 0.1227, 0.12), animation=dict(scroll)),
+        _event_box("hash_rule", 0.0, 0.47, 1.0406, _PX4_H, None, bleed=True,
+                   fill=scrolling_stripes(0.0203, 0.0203, 0.30), animation=dict(scroll)),
+        _event_box("home_band", 0.0, 0.0, band, 1.0, _EVENT_BLUE),
+        _event_box("home_band_edge", round(band - _PX5, 4), 0.0, _PX5, 1.0, _EVENT_WHITE, z_index=1),
+        _event_box("away_band", round(1.0 - band, 4), 0.0, band, 1.0, _EVENT_RED),
+        _event_box("away_band_edge", round(1.0 - band, 4), 0.0, _PX5, 1.0, _EVENT_WHITE, z_index=1),
+    ]
+    if is_pregame:
+        elements += [
+            _event_text("ghost_home", "50", 0.145, 0.05, 0.19, 0.25, 0.117, opacity=0.05,
+                        font_family=_EVENT_NUMERAL_FONT),
+            _event_text("ghost_away", "50", 0.665, 0.05, 0.19, 0.25, 0.117, opacity=0.05,
+                        font_family=_EVENT_NUMERAL_FONT),
+            *_crest_elements(0.4385, 0.06, 0.123, 0.2187, cut=0.0141),
+            _event_text("welcome_to", "WELCOME TO", 0.30, 0.30, 0.40, 0.045, 0.0234, _EVENT_MIST,
+                        font_weight=500, letter_spacing=0.30),
+            _event_text("stadium_title", "TIGER STADIUM", 0.20, 0.35, 0.60, 0.12, 0.086,
+                        text_effect="shadow"),
+            _event_box("clock_plate", 0.20, 0.53, 0.60, 0.26, _EVENT_NEAR_BLACK, background_opacity=0.82,
+                       border_color=_EVENT_AMBER, border_width=_PX4, corner_cut=0.0172, z_index=1),
+            # The slot sits at the top of the away band, straddling the
+            # band's white edge so its caption can end at the 0.96 line.
+            *_opponent_slot_elements(0.866, 0.06, 0.094, 0.167),
+            _event_ticker(_announcements(screen_id), 0.13, 0.89, 0.74, 0.10,
+                          background=_EVENT_WHITE, color=_EVENT_NAVY, font_scale=0.0234),
+        ]
+    else:
+        elements += [
+            _event_box("home_rule", 0.07, 0.61, 0.05, _PX4_H, _EVENT_WHITE, opacity=0.5, z_index=1),
+            _event_box("away_rule", 0.88, 0.61, 0.05, _PX4_H, _EVENT_WHITE, opacity=0.5, z_index=1),
+            _event_text("subline", "TIGER STADIUM · HOMECOMING", 0.20, 0.20, 0.60, 0.05, 0.0234, _EVENT_MIST,
+                        font_weight=500, letter_spacing=0.30),
+            _event_box("clock_plate", 0.22, 0.29, 0.56, 0.30, _EVENT_NEAR_BLACK, background_opacity=0.82,
+                       border_color=_EVENT_AMBER, border_width=_PX4, corner_cut=0.0172, z_index=1),
+            _event_box("chip_box", 0.27, 0.625, 0.14, 0.06, _EVENT_AMBER, corner_cut=0.006, z_index=1),
+            _event_text("chip_text", "SECOND HALF", 0.27, 0.625, 0.14, 0.06, 0.021, _EVENT_NAVY,
+                        letter_spacing=0.12),
+            _event_ticker(_announcements(screen_id), 0.15, 0.89, 0.70, 0.10,
+                          background=_EVENT_WHITE, color=_EVENT_NAVY, font_scale=0.0234),
+        ]
+    return {
+        "safe_area": dict(_DEFAULT_SAFE_AREA),
+        "background": {"color": _EVENT_NAVY},
+        "widgets": widgets,
+        "elements": elements,
+    }
+
+
+def _classic_event_screen(screen_id: str) -> dict[str, Any]:
+    """**Classic**: the original centred countdown arrangement -- black, no
+    elements, the :data:`_CLASSIC_EVENT_WIDGET_GEOMETRY` table -- exactly
+    what ``default_screen`` returned before the Broadcast Welcome screens.
+    Every pre-existing event preset still builds on this."""
+
+    return {
+        "safe_area": dict(_DEFAULT_SAFE_AREA),
+        "background": dict(_DEFAULT_BACKGROUND),
+        "widgets": {widget_id: dict(_CLASSIC_EVENT_WIDGETS[screen_id][widget_id]) for widget_id in EVENT_WIDGET_IDS},
+        "elements": [],
+    }
+
+
+_WELCOME_DESCRIPTION: Final[str] = (
+    "The built-in default: a broadcast-style welcome with the countdown, matchup "
+    "and an announcement ticker."
+)
+_KICKOFF_DESCRIPTION: Final[str] = "Numeral-first: the countdown fills the board over rotated team bars."
+_FIFTY_DESCRIPTION: Final[str] = "A scrolling field with end-zone bands and a framed countdown."
+_CLASSIC_DESCRIPTION: Final[str] = "The original centred countdown arrangement."
+
+
 def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
     return [
         {
+            "id": "pregame_welcome", "name": "Broadcast Welcome",
+            "description": _WELCOME_DESCRIPTION,
+            "screen": _welcome_event_screen("pregame"),
+        },
+        {
+            "id": "pregame_kickoff_clock", "name": "Kickoff Clock",
+            "description": _KICKOFF_DESCRIPTION,
+            "screen": _kickoff_clock_event_screen("pregame"),
+        },
+        {
+            "id": "pregame_fifty", "name": "Fifty Yard Line",
+            "description": _FIFTY_DESCRIPTION,
+            "screen": _fifty_event_screen("pregame"),
+        },
+        {
             "id": "pregame_classic",
             "name": "Classic",
-            "description": "The built-in default pre-game arrangement.",
-            "screen": default_screen("pregame"),
+            "description": _CLASSIC_DESCRIPTION,
+            "screen": _classic_event_screen("pregame"),
         },
         {
             "id": "pregame_matchup",
@@ -2965,10 +4007,25 @@ def _raw_pregame_screen_presets() -> list[dict[str, Any]]:
 def _raw_halftime_screen_presets() -> list[dict[str, Any]]:
     return [
         {
+            "id": "halftime_welcome", "name": "Broadcast Welcome",
+            "description": _WELCOME_DESCRIPTION,
+            "screen": _welcome_event_screen("halftime"),
+        },
+        {
+            "id": "halftime_kickoff_clock", "name": "Kickoff Clock",
+            "description": _KICKOFF_DESCRIPTION,
+            "screen": _kickoff_clock_event_screen("halftime"),
+        },
+        {
+            "id": "halftime_fifty", "name": "Fifty Yard Line",
+            "description": _FIFTY_DESCRIPTION,
+            "screen": _fifty_event_screen("halftime"),
+        },
+        {
             "id": "halftime_classic",
             "name": "Classic",
-            "description": "The built-in default halftime arrangement.",
-            "screen": default_screen("halftime"),
+            "description": _CLASSIC_DESCRIPTION,
+            "screen": _classic_event_screen("halftime"),
         },
         {
             "id": "halftime_score_first",
@@ -3278,6 +4335,26 @@ def limits() -> dict[str, Any]:
             for screen_id in SCREEN_IDS
         ],
         "event_widget_groups": list(EVENT_WIDGET_GROUP_ORDER),
+        # Event-screens spec section 2.1.
+        "animation_presets": list(ANIMATION_PRESETS),
+        "animation_min_seconds": dict(ANIMATION_MIN_SECONDS),
+        "max_animation_seconds": MAX_ANIMATION_SECONDS,
+        "fill_kinds": list(FILL_KINDS),
+        "max_fill_stops": MAX_FILL_STOPS,
+        "border_styles": list(BORDER_STYLES),
+        "orientations": list(ORIENTATIONS),
+        "max_rotate_degrees": MAX_ROTATE_DEGREES,
+        "bleed_min": BLEED_MIN,
+        "bleed_max": BLEED_MAX,
+        "bleed_max_size": BLEED_MAX_SIZE,
+        "ticker_modes": list(TICKER_MODES),
+        "max_ticker_lines": MAX_TICKER_LINES,
+        "max_ticker_line_length": MAX_TICKER_LINE_LENGTH,
+        "ticker_speed_range": {mode: list(bounds) for mode, bounds in TICKER_SPEED_RANGE.items()},
+        "bundled_images": [
+            {"id": key, "label": BUNDLED_IMAGE_LABELS[key], "path": path}
+            for key, path in BUNDLED_IMAGES.items()
+        ],
     }
 
 
@@ -3316,8 +4393,27 @@ def supported_widget_ids(view_model: Mapping[str, Any], kind: str = "game") -> t
 
 
 __all__ = [
+    "ANIMATION_MIN_SECONDS",
+    "ANIMATION_PRESETS",
+    "BLEED_MAX",
+    "BLEED_MAX_SIZE",
+    "BLEED_MIN",
+    "BORDER_STYLES",
+    "BUNDLED_IMAGES",
+    "BUNDLED_IMAGE_LABELS",
     "COORDINATE_PRECISION",
     "CUT_CORNER_SIDES",
+    "FILL_KINDS",
+    "MAX_ANIMATION_SECONDS",
+    "MAX_FILL_STOPS",
+    "MAX_ROTATE_DEGREES",
+    "MAX_TICKER_LINES",
+    "MAX_TICKER_LINE_LENGTH",
+    "MIN_FILL_STOPS",
+    "ORIENTATIONS",
+    "TICKER_MODES",
+    "TICKER_SEPARATOR",
+    "TICKER_SPEED_RANGE",
     "DEFAULT_LAYOUT_NAME",
     "DEFAULT_SAFE_INSET",
     "ELEMENT_TYPES",

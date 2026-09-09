@@ -20,12 +20,23 @@ async function measureWidgets(page) {
     };
     const errors = [];
     const rects = [];
+    const ctx = document.createElement('canvas').getContext('2d');
     for (const element of document.querySelectorAll('[data-widget]')) {
       if (!element.getClientRects().length) continue; // hidden widget or hidden ancestor
       const textEl = element.querySelector('.widget-text');
       if (!textEl || !textEl.textContent.trim()) continue; // nothing drawn
+      // Glyph ink, not the CSS line box (as grid.cjs measures): a fitted
+      // Graduate countdown fills its box while its line box overhangs it.
       const range = document.createRange(); range.selectNodeContents(textEl);
-      const text = range.getBoundingClientRect();
+      const line = range.getBoundingClientRect();
+      const style = getComputedStyle(textEl);
+      ctx.font = [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ');
+      ctx.letterSpacing = style.letterSpacing;
+      const m = ctx.measureText(style.textTransform === 'uppercase' ? textEl.textContent.toUpperCase() : textEl.textContent);
+      const baseline = line.top + m.fontBoundingBoxAscent;
+      const text = { left: line.left, right: line.right,
+                     top: baseline - m.actualBoundingBoxAscent, bottom: baseline + m.actualBoundingBoxDescent,
+                     toJSON() { return { left: this.left, right: this.right, top: this.top, bottom: this.bottom }; } };
       const box = element.getBoundingClientRect();
       const name = element.getAttribute('data-widget');
       if (text.left < safe.left - .5 || text.right > safe.right + .5 ||
@@ -91,12 +102,20 @@ async function main(data) {
     await page.goto(pathToFileURL(path.resolve('src/scoreboard/views/spectator/index.html')).href);
     await page.waitForFunction(() => document.querySelector('#canvas').dataset.revision === '71');
     assert.equal(await widgetText(page, 'home_score'), '199');
-    assert.equal(await page.locator('button,input,dialog,[data-command],[data-action]').count(), 0);
+    // The one exception (control-refresh, spec section 3): #close-display,
+    // the self-closing button. It carries no data-command/data-action and
+    // is excluded here rather than dropping the check, so any other button
+    // slipping onto the page still fails this assertion.
+    assert.equal(await page.locator('button:not(#close-display),input,dialog,[data-command],[data-action]').count(), 0);
 
     for (const [width, height] of [[1280, 720], [1366, 768], [1920, 1080], [390, 844]]) {
       await page.setViewportSize({ width, height });
       for (const [index, model] of [...data.games, data.pregame, ...data.events].entries()) {
         await page.evaluate(model => window.applyView(model), model);
+        // The event board's bundled faces (Barlow Condensed, Graduate) are only
+        // requested once that board first shows, so wait for them before
+        // measuring glyph ink, as the renderer itself re-fits on load.
+        await page.evaluate(() => document.fonts.ready.then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))));
         const metrics = await measureWidgets(page);
         assert.deepEqual(metrics.errors, [], `${width}x${height} case ${index}: ${JSON.stringify(metrics)}`);
         assert.deepEqual(metrics.scroll, metrics.viewport);

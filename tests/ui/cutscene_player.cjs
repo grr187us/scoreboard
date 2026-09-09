@@ -126,14 +126,14 @@ async function main(data) {
         scenes: Array.from(stage.querySelectorAll('[data-scene]')).map(n => n.getAttribute('data-scene')),
         canvasHeight: document.querySelector('#canvas').getBoundingClientRect().height,
         stageHeight: stage.getBoundingClientRect().height,
-        // The strike's three parts: the paw that swipes through (a lead copy
-        // and two motion-trail ghosts), the four gouges it tears open, and
-        // the debris it throws off the board.
-        paws: count('.cs-paw-swipe'),
-        gouges: count('.cs-gouge'),
-        bits: count('.cs-claw-bit'),
-        flashes: count('.cs-claw-flash'),
+        // A touchdown opens with the whole paw: five torn tracks, one
+        // flash, the red bleed, and a heavier shake on the board.
+        tracks: count('.cs-td-claw-track'),
+        legacyPaws: count('.cs-paw-swipe'),
+        flashes: count('.cs-td-claw-flash'),
+        bleeds: count('.cs-td-claw-bleed'),
         shaking: document.querySelector('#canvas').classList.contains('shake'),
+        shake: document.querySelector('#canvas').style.getPropertyValue('--cs-shake'),
         flag: stage.style.getPropertyValue('--cs-flag'),
       };
     });
@@ -146,13 +146,14 @@ async function main(data) {
     // The intro covers the whole canvas before the board morphs under it.
     assert.ok(Math.abs(atStart.stageHeight - atStart.canvasHeight) <= 1,
       `the intro stage must cover the canvas: ${JSON.stringify(atStart)}`);
-    assert.equal(atStart.paws, 3, 'the paw swipes through with two motion-trail ghosts');
-    assert.equal(atStart.gouges, 4, 'four claws, four gouges');
-    assert.ok(atStart.bits >= 14 && atStart.bits <= 20, `debris count: ${atStart.bits}`);
+    assert.equal(atStart.tracks, 5, 'five claws, five tracks');
+    assert.equal(atStart.legacyPaws, 0, 'the touchdown does not use the old paw silhouette');
     // Exactly one flash: the brand rule against strobing lives in the DOM as
     // well as in the keyframes.
     assert.equal(atStart.flashes, 1, 'the strike flashes once, never twice');
+    assert.equal(atStart.bleeds, 1);
     assert.equal(atStart.shaking, true, 'the board takes the hit');
+    assert.ok(Number(atStart.shake) > 1, `a touchdown shakes harder than the ordinary strike: ${atStart.shake}`);
     // The whole theme reaches the stage, including v2's penalty yellow.
     assert.equal(atStart.flag, '#FFD500');
     checks.push('intro mounts full canvas');
@@ -424,7 +425,11 @@ async function main(data) {
     // ---------------------------------------------------------------
     // 9. The page has gained no operator control and no game command.
     // ---------------------------------------------------------------
-    assert.equal(await page.locator('button,input,dialog,[data-command],[data-action]').count(), 0);
+    // The one exception (control-refresh, spec section 3): #close-display,
+    // the self-closing button. It carries no data-command/data-action and
+    // is excluded here rather than dropping the check, so any other button
+    // slipping onto the page still fails this assertion.
+    assert.equal(await page.locator('button:not(#close-display),input,dialog,[data-command],[data-action]').count(), 0);
     checks.push('no controls');
 
     return { checks };

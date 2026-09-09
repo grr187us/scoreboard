@@ -69,7 +69,7 @@ EVENT_SUBLINE = {
     "penalty": "PENALTY", "make_some_noise": "{team} FANS",
 }
 DEFAULT_DURATION_SECONDS = {
-    "first_down": 7.0, "touchdown": 10.0, "turnover": 7.0,
+    "first_down": 5.0, "touchdown": 10.0, "turnover": 7.0,
     "penalty": 7.0, "make_some_noise": 5.0,
 }
 MIN_DURATION_SECONDS: Final[float] = 2.0

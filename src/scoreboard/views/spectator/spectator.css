@@ -17,3 +17,19 @@ p { margin: 0; }
  * ever visible at a time, toggled by spectator.js from the model's lifecycle. */
 #game-board { position: absolute; inset: 0; }
 #event-board { position: absolute; inset: 0; }
+/* A `bleed: true` box (rotated bars, the light sweep, the yard-line loop)
+ * may cross the canvas edge; each board section clips it at the edge. */
+#game-board, #event-board { overflow: hidden; }
+
+/* The one interactive element this page has ever had (spec section 3).
+ * Absolute so it never affects layout or U-001-style measurements; hidden by
+ * default and revealed by spectator.js on pointer movement. High-contrast so
+ * it reads over any cutscene or board colour, and above the cutscene stage's
+ * z-index: 50 (cutscene.css) so a playing cutscene never covers it. */
+.close-display {
+  position: absolute; top: 12px; right: 12px; z-index: 60;
+  min-height: 44px; padding: 0 16px;
+  background: rgba(0, 0, 0, .75); color: #fff; border: 2px solid #fff;
+  font-family: Arial, sans-serif; font-size: 14px; font-weight: bold;
+  cursor: pointer;
+}

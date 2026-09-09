@@ -15,9 +15,14 @@ SCHEMA_VERSION: Final[int] = 1
 APP_VERSION: Final[str] = "0.1.0"
 MAX_TEAM_NAME_LENGTH: Final[int] = 24
 MAX_SCORE: Final[int] = 199
+#: The shipped regulation quarter. Since September 9, 2026 this is a
+#: *default*: the operator's ``GameRules`` (``domain.rules``) decide what a
+#: quarter, overtime, the kickoff countdown, and halftime actually load, and
+#: a game clock's own ``maximum_seconds`` carries the length of the period
+#: it is running. The one hard limit is MAX_GAME_CLOCK_MAXIMUM_SECONDS.
 MAX_GAME_CLOCK_SECONDS: Final[float] = 12 * 60
+MAX_GAME_CLOCK_MAXIMUM_SECONDS: Final[float] = 60 * 60
 MAX_PLAY_CLOCK_SECONDS: Final[float] = 40
-MAX_EVENT_COUNTDOWN_SECONDS: Final[float] = 30 * 60
 #: F3: the crowd-facing status word and its optional countdown. The wall shows
 #: the label only -- see docs/UX_AND_LAYOUT.md / .scratch/f3-i4/DESIGN.md for
 #: why a team name never joins it -- and the countdown is a plain 5-minute-max
@@ -25,8 +30,14 @@ MAX_EVENT_COUNTDOWN_SECONDS: Final[float] = 30 * 60
 GAME_STATUS_LABELS: Final[tuple[str, ...]] = ("FLAG", "TIMEOUT", "INJURY", "DELAY")
 MAX_STATUS_CLOCK_SECONDS: Final[float] = 300.0
 #: In ``PRE`` the single authoritative game-clock engine is a kickoff
-#: countdown.  The interval engine remains separate for halftime.
+#: countdown, and in ``HALF`` it is the halftime countdown (September 9,
+#: 2026: the separate interval engine and its own drawer were removed --
+#: one clock, one set of controls, for every quarter label). This is the
+#: shipped kickoff length; ``GameRules.pregame_seconds`` is what a game loads.
 MAX_PREGAME_CLOCK_SECONDS: Final[float] = 30 * 60
+#: The quarter labels whose game clock is an interval countdown rather than
+#: football game time: no play-clock coupling, and natural expiry stays put.
+INTERVAL_QUARTER_LABELS: Final[frozenset[str]] = frozenset({"PRE", "HALF"})
 
 #: Which side of the ball a football-state field belongs to. Defined once here
 #: rather than only in ``domain.commands`` because :class:`BallSpot` and its
@@ -49,8 +60,11 @@ MAX_YARD_LINE: Final[int] = 50
 #: NFHS-style high-school football grants three timeouts per team per half.
 #: This is a provisional default like the other football rules in this
 #: module; see docs/MVP_REQUIREMENTS.md for the confirmation this still needs
-#: from local officials, including whether it should reset at halftime.
+#: from local officials. Since September 9, 2026 it is the shipped default
+#: for ``GameRules.timeouts_per_half``; the state accepts up to
+#: MAX_TIMEOUTS_CAP so a league that grants more can be configured.
 MAX_TIMEOUTS: Final[int] = 3
+MAX_TIMEOUTS_CAP: Final[int] = 5
 
 # Field Assistant's deliberately small persisted memory.  The calculator owns
 # all derived football rules; authoritative state retains only the two facts it
@@ -59,6 +73,34 @@ MAX_TIMEOUTS: Final[int] = 3
 FIRST_QUARTER_DIRECTIONS: Final[tuple[int, ...]] = (-1, 1)
 MIN_ABSOLUTE_YARD: Final[int] = 0
 MAX_ABSOLUTE_YARD: Final[int] = 100
+
+#: The placeholder team names a fresh game starts with. They are the
+#: ``GameState`` field defaults below, named here so nothing has to re-type the
+#: literals to ask "has the operator chosen the teams yet?" -- the operator
+#: view model's setup prompt and the kickoff confirmation both compare against
+#: these (spec section 1.1).
+DEFAULT_HOME_NAME: Final[str] = "HOME"
+DEFAULT_AWAY_NAME: Final[str] = "AWAY"
+
+
+def setup_prompt_detail(home_name: str, away_name: str) -> str:
+    """The "the teams are still placeholders" sentence, or ``""``.
+
+    One function rather than two so the operator's Teams-drawer prompt
+    (``setup.detail``) and the kickoff confirmation that repeats it can never
+    word it differently. Callers decide *when* it applies -- both only ask
+    while the game is still pregame.
+    """
+
+    home_pending = home_name == DEFAULT_HOME_NAME
+    away_pending = away_name == DEFAULT_AWAY_NAME
+    if home_pending and away_pending:
+        return "Choose the HOME and AWAY teams before kickoff."
+    if home_pending:
+        return "Choose the HOME team before kickoff."
+    if away_pending:
+        return "Choose the AWAY team before kickoff."
+    return ""
 
 QUARTER_LABELS: Final[tuple[str, ...]] = (
     "PRE",
@@ -246,18 +288,14 @@ class GameState:
     schema_version: int = SCHEMA_VERSION
     app_version: str = APP_VERSION
     revision: int = 0
-    home_name: str = "HOME"
-    away_name: str = "AWAY"
+    home_name: str = DEFAULT_HOME_NAME
+    away_name: str = DEFAULT_AWAY_NAME
     home_score: int = 0
     away_score: int = 0
     quarter: str = "PRE"
     lifecycle: str = "PRE_GAME"
     game_clock: ClockValue = ClockValue(MAX_PREGAME_CLOCK_SECONDS, False, MAX_PREGAME_CLOCK_SECONDS)
     play_clock: ClockValue = ClockValue(0.0, False, MAX_PLAY_CLOCK_SECONDS)
-    event_countdown: ClockValue = ClockValue(
-        MAX_EVENT_COUNTDOWN_SECONDS, False, MAX_EVENT_COUNTDOWN_SECONDS
-    )
-    event_phase: str = "PREGAME"
 
     play_clock_cleared: bool = True
 
@@ -297,27 +335,19 @@ class GameState:
             raise StateValidationError(f"invalid quarter label: {self.quarter!r}")
         if self.lifecycle not in LIFECYCLE_LABELS:
             raise StateValidationError(f"invalid lifecycle label: {self.lifecycle!r}")
-        if self.event_phase not in EVENT_PHASE_LABELS:
-            raise StateValidationError(f"invalid event phase: {self.event_phase!r}")
         if not isinstance(self.game_clock, ClockValue):
             raise StateValidationError("game_clock must be a ClockValue")
-        # Older persisted games and deliberately constructed test/recovery
-        # states may retain the previous 12:00 maximum while labelled PRE.
-        # New games always use 30:00 there; accepting both known maxima keeps a
-        # version upgrade from making an otherwise recoverable game unreadable.
-        if self.game_clock.maximum_seconds not in (
-            MAX_GAME_CLOCK_SECONDS,
-            MAX_PREGAME_CLOCK_SECONDS,
-        ):
+        # The game clock's maximum is the length of the period it is running
+        # (a configured quarter, overtime, kickoff, or halftime length), so it
+        # is bounded rather than enumerated: anything up to an hour is a
+        # period some league plays, and a saved game from an older build with
+        # the old 12:00/30:00 maxima still reads.
+        if not 0 < self.game_clock.maximum_seconds <= MAX_GAME_CLOCK_MAXIMUM_SECONDS:
             raise StateValidationError("game_clock has an invalid maximum")
         if not isinstance(self.play_clock, ClockValue):
             raise StateValidationError("play_clock must be a ClockValue")
         if self.play_clock.maximum_seconds != MAX_PLAY_CLOCK_SECONDS:
             raise StateValidationError("play_clock has an invalid maximum")
-        if not isinstance(self.event_countdown, ClockValue):
-            raise StateValidationError("event_countdown must be a ClockValue")
-        if self.event_countdown.maximum_seconds != MAX_EVENT_COUNTDOWN_SECONDS:
-            raise StateValidationError("event_countdown has an invalid maximum")
         object.__setattr__(
             self, "down", _require_optional_int_range(self.down, "down", MIN_DOWN, MAX_DOWN)
         )
@@ -334,12 +364,12 @@ class GameState:
         object.__setattr__(
             self,
             "home_timeouts",
-            _require_int_range(self.home_timeouts, "home_timeouts", 0, MAX_TIMEOUTS),
+            _require_int_range(self.home_timeouts, "home_timeouts", 0, MAX_TIMEOUTS_CAP),
         )
         object.__setattr__(
             self,
             "away_timeouts",
-            _require_int_range(self.away_timeouts, "away_timeouts", 0, MAX_TIMEOUTS),
+            _require_int_range(self.away_timeouts, "away_timeouts", 0, MAX_TIMEOUTS_CAP),
         )
         object.__setattr__(
             self,

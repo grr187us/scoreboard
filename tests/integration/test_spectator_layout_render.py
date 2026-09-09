@@ -130,14 +130,35 @@ class BoardJsDataContractTests(unittest.TestCase):
         extracted = _extract_js_literal(self.source, "DEFAULT_SCREENS")
         self.assertEqual(extracted, layout.default_layout()["screens"])
 
+    def test_bundled_images_match_python_exactly(self):
+        # Event-screens spec section 3.2: `var BUNDLED_IMAGES = {...};` is a
+        # pure JSON literal so an `asset:<key>` src resolves to the same file
+        # on both sides. _extract_js_literal raises a clear AssertionError
+        # naming the missing declaration if board.js has not gained it yet.
+        extracted = _extract_js_literal(self.source, "BUNDLED_IMAGES")
+        self.assertEqual(extracted, dict(layout.BUNDLED_IMAGES))
+        for key in extracted:
+            self.assertTrue((VIEWS_ROOT / extracted[key]).is_file(), f"{key} does not exist under views/")
+
 
 class SpectatorHouseRulesTests(unittest.TestCase):
     """The renderer stays presentation-only: no controls, no derived values."""
 
     def test_spectator_page_has_no_operator_controls(self):
+        # "Control-free" means no *game* control: the September 8, 2026
+        # control-refresh (spec section 3) adds exactly one <button>, the
+        # self-closing #close-display, which never gains data-command or
+        # data-action and never calls api.command (checked below and in
+        # test_spectator_close_ui.py). Widened here to admit that one id
+        # rather than drop the "<button" check entirely, so a second button
+        # slipping in unnoticed still fails this test.
         html = SPECTATOR_HTML.read_text(encoding="utf-8")
+        without_close_button = re.sub(
+            r'<button type="button" id="close-display"[^>]*>[^<]*</button>', "", html
+        )
+        self.assertIn('id="close-display"', html)
         for forbidden in ("<button", "<input", "<dialog", "data-command", "data-action"):
-            self.assertNotIn(forbidden, html)
+            self.assertNotIn(forbidden, without_close_button)
 
     def test_board_js_and_spectator_js_contain_no_forbidden_tokens(self):
         for path in (BOARD_JS, SPECTATOR_JS):
@@ -153,7 +174,11 @@ class BoardJsRendersFreeElementsTests(unittest.TestCase):
 
     def test_board_js_contains_the_v2_element_markers(self):
         source = BOARD_JS.read_text(encoding="utf-8")
-        for marker in ("data-item", "data-board-root", "data-element", "element-image"):
+        # September 8, 2026 (event-screens spec section 3.5): the animation
+        # attribute, the ticker track, bundled-image srcs and the motion
+        # kill switch entry point.
+        for marker in ("data-item", "data-board-root", "data-element", "element-image",
+                       "data-anim", "ticker-track", "asset:", "setMotion"):
             self.assertIn(marker, source, f"{marker!r} not found in board.js")
 
     def test_board_js_and_board_css_contain_no_editing_affordance(self):

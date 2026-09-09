@@ -147,13 +147,11 @@ class IsolationAndRecoveryTests(FieldAssistantRehearsalCase):
         self.send("play_clock_preset_start", {"seconds": 40})
         before_game = self.service.state.game_clock
         before_play = self.service.state.play_clock
-        before_event = self.service.state.event_countdown
 
         result = self.finalize("normal_play", {"final_absolute": 29})
 
         self.assertEqual(self.service.state.game_clock, before_game)
         self.assertEqual(self.service.state.play_clock, before_play)
-        self.assertEqual(self.service.state.event_countdown, before_event)
         self.assertTrue(result["view"]["clocks"]["game"]["running"])
         self.assertTrue(result["view"]["clocks"]["play"]["running"])
 

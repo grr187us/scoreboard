@@ -24,8 +24,8 @@ class SpectatorBrowserTests(unittest.TestCase):
                          play_clock_cleared=False, revision=71)
         games = [spectator_view_model(replace(play, home_score=s, away_score=s))
                  for s in (0, 99, 100, 199)]
-        events = [spectator_view_model(replace(play, lifecycle='HALFTIME', event_phase='HALFTIME',
-                    event_countdown=ClockValue(s, False, 1800))) for s in (900, 181, 180, 0)]
+        events = [spectator_view_model(replace(play, quarter='HALF', lifecycle='HALFTIME',
+                    game_clock=ClockValue(s, False, 900))) for s in (900, 181, 180, 0)]
         zero = spectator_view_model(replace(play, play_clock=ClockValue(0, False, 40)))
         blank = spectator_view_model(replace(play, play_clock=ClockValue(0, False, 40), play_clock_cleared=True))
         running_game = spectator_view_model(replace(play, game_clock=ClockValue(700, True, 720)))
@@ -50,5 +50,15 @@ class SpectatorBrowserTests(unittest.TestCase):
                               '.seconds', 'revision++', 'api.command'):
                 self.assertNotIn(forbidden, script, f'{name} must not derive a displayed value')
         html = (root / 'spectator/index.html').read_text(encoding='utf-8')
+        # Widened for the September 8, 2026 control-refresh (spec section 3):
+        # the page now carries exactly one <button>, the self-closing
+        # #close-display, which never gains data-command/data-action and
+        # never calls api.command (test_spectator_close_ui.py pins that in
+        # full). The "<button" check still runs against everything else.
+        import re
+        without_close_button = re.sub(
+            r'<button type="button" id="close-display"[^>]*>[^<]*</button>', '', html
+        )
+        self.assertIn('id="close-display"', html)
         for forbidden in ('<button', '<input', '<dialog', 'data-command', 'data-action'):
-            self.assertNotIn(forbidden, html)
+            self.assertNotIn(forbidden, without_close_button)

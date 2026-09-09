@@ -7,12 +7,12 @@
  *   cutscene.js and re-published on resize. Every length below is a fraction
  *   of one of them, so the wall (1920x1080, a 756px-high stage) and the
  *   practice window (640x360, a 252px-high stage) get the same picture.
- *   Nothing here is sized from the viewport, and nothing is a bare px.
+ *   Nothing here is sized from the viewport.
  * - `--cs-navy`, `--cs-navy-elevated`, `--cs-blue`, `--cs-red`,
  *   `--cs-blue-light`, `--cs-white`, `--cs-mist`, `--cs-ink`, `--cs-gold`
  *   are the program's theme, copied onto the stage by the player. No brand
- *   hex is written in this file; tints are `color-mix()` of those same
- *   properties.
+ *   hex is written in this file; first down's turf, rubber, chalk and steel
+ *   additionally use natural material colours.
  *
  * Type is system-only: Bahnschrift is the Windows 10/11 variable grotesque
  * and honours `font-stretch`, which is what gives these headlines their
@@ -86,211 +86,179 @@
 /* first_down                                                             */
 /* ---------------------------------------------------------------------- */
 
-/* The field: one plane tipped away from the camera inside a perspective box,
- * with the yard lines painted as a repeating gradient and two hash columns
- * riding along with it. It rushes forward for the first ~1.9 s (an ease-out
- * across five yard-line periods) and then hands off to a slow linear drift
- * of exactly one period, so the loop is seamless. */
-
-.cs-fd-field {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  perspective: calc(var(--stage-h) * 1.05);
-  perspective-origin: 50% 40%;
-  background:
-    radial-gradient(ellipse at 50% 40%,
-      var(--cs-blue) 0%,
-      var(--cs-navy-elevated) 40%,
-      var(--cs-navy) 76%);
+/* Material study: field-level turf, galvanized chain and a padded orange
+ * sideline target. The five-second program leaves 2.8 seconds for the main
+ * scene before its fade: impact at .68 s, readable headline by 1.0 s.
+ * Texture is painted once in tigers.js; only transform/opacity animate. */
+.cs-firstdown { background: rgb(7, 16, 12); }
+.cs-fd-world { position: absolute; inset: -3%; animation: cs-fd-camera 1100ms cubic-bezier(.12,.7,.18,1) both; }
+.cs-fd-sky {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 77% 8%, rgba(186,204,208,.18), transparent 36%),
+              linear-gradient(rgb(7,12,18), rgb(24,35,37) 30%, rgb(12,28,19) 55%);
+}
+.cs-fd-stands {
+  position: absolute; left: -2%; right: -2%; top: 13%; height: 22%;
+  background: repeating-linear-gradient(0deg, rgba(113,126,128,.15) 0 2%, transparent 2% 10%),
+              linear-gradient(transparent, rgba(7,10,14,.9));
+  clip-path: polygon(0 0, 35% 60%, 67% 65%, 100% 6%, 100% 100%, 0 100%);
+}
+.cs-fd-lights {
+  position: absolute; top: 8%; width: 13%; height: 1.4%;
+  background: repeating-linear-gradient(90deg, rgb(231,239,226) 0 6%, transparent 6% 10%);
+  filter: drop-shadow(0 0 calc(var(--stage-h) * .015) rgb(187,211,213));
+  opacity: .85;
+}
+.cs-fd-lights-left { left: 4%; transform: rotate(9deg); }
+.cs-fd-lights-right { right: 3%; transform: rotate(-9deg); }
+.cs-fd-turf {
+  position: absolute; left: 0; right: 0; top: 29%; bottom: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 19%, rgba(225,229,215,.4) 19% 20%), rgb(28,61,34);
+}
+.cs-fd-grass { display: block; width: 100%; height: 100%; }
+.cs-fd-field-shade {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 18%, rgba(4,14,12,.72) 29%, transparent 58%),
+    radial-gradient(ellipse at 85% 55%, transparent 10%, rgba(0,0,0,.42) 95%);
+}
+.cs-fd-title-shade {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 29% 40%, rgba(3,9,12,.68), transparent 66%);
+}
+@keyframes cs-fd-camera {
+  from { transform: scale(1.24) translate3d(-3%, 3%, 0); }
+  62% { transform: scale(1.015) translate3d(-.2%, .3%, 0); }
+  70% { transform: scale(1.03) translate3d(.2%, -.4%, 0); }
+  to { transform: scale(1) translate3d(0,0,0); }
+}
+.cs-fd-rig { position: absolute; inset: 0; animation: cs-fd-rig-in 740ms cubic-bezier(.12,.64,.22,1) both; }
+@keyframes cs-fd-rig-in {
+  from { transform: translate3d(-28%, -6%, 0); opacity: 0; }
+  15% { opacity: 1; }
+  88% { transform: translate3d(1%, 0, 0); }
+  to { transform: translate3d(0,0,0); opacity: 1; }
+}
+.cs-fd-contact-shadow {
+  position: absolute; left: 72%; top: 82%; width: 24%; height: 7%;
+  border-radius: 50%; background: rgba(0,0,0,.7);
+  filter: blur(calc(var(--stage-h) * .012));
+}
+.cs-fd-chain { position: absolute; inset: 0; filter: drop-shadow(0 calc(var(--stage-h) * .012) calc(var(--stage-h) * .005) rgba(0,0,0,.9)); }
+.cs-fd-link {
+  position: absolute; top: 79%; width: 3.3%; height: 4.4%; border-radius: 45%;
+  border: calc(var(--stage-h) * .007) solid rgb(128,139,139);
+  border-top-color: rgb(225,229,216); border-bottom-color: rgb(45,53,55);
+  box-shadow: inset 0 calc(var(--stage-h) * .002) calc(var(--stage-h) * .003) rgb(13,22,24),
+    0 calc(var(--stage-h) * -.002) 0 rgba(255,255,255,.55);
+  background: transparent;
+  animation: cs-fd-chain-tight 790ms cubic-bezier(.2,.5,.2,1) both;
+}
+.cs-fd-link-edge {
+  top: 80.5%; height: 1.5%; z-index: 1;
+  background: linear-gradient(rgb(222,228,222),rgb(61,71,72));
+  border-width: calc(var(--stage-h) * .004);
+}
+@keyframes cs-fd-chain-tight {
+  0%, 18% { transform: translateY(calc(var(--stage-h) * var(--cs-link-sag))) rotate(-8deg); }
+  76% { transform: translateY(calc(var(--stage-h) * var(--cs-link-sag) * -.13)) rotate(2deg); }
+  89% { transform: translateY(calc(var(--stage-h) * var(--cs-link-sag) * .06)); }
+  to { transform: translateY(0) rotate(0); }
+}
+.cs-fd-marker {
+  position: absolute; left: 80%; top: 14%; width: 9%; height: 70%;
+  transform-origin: 50% 100%; animation: cs-fd-plant 820ms cubic-bezier(.16,.58,.24,1) both;
+}
+@keyframes cs-fd-plant {
+  from { transform: translateY(-45%) rotate(-18deg); }
+  72% { transform: translateY(0) rotate(3deg); }
+  85% { transform: translateY(-1.8%) rotate(-1.5deg); }
+  to { transform: translateY(0) rotate(0); }
+}
+.cs-fd-marker-shaft {
+  position: absolute; left: 42%; top: 12%; width: 16%; height: 88%;
+  border-radius: calc(var(--stage-w) * .003);
+  background: repeating-linear-gradient(0deg, transparent 0 16%, rgba(18,21,18,.8) 16% 19%),
+    linear-gradient(90deg, rgb(124,48,13), rgb(255,125,27) 32%, rgb(230,76,12) 68%, rgb(100,37,13));
+  box-shadow: calc(var(--stage-w) * .003) 0 calc(var(--stage-w) * .005) rgba(0,0,0,.55);
+}
+.cs-fd-marker-collar {
+  position: absolute; left: 34%; top: 94%; width: 32%; height: 4%;
+  border-radius: 20%; background: linear-gradient(rgb(193,201,190), rgb(50,59,57));
+}
+.cs-fd-marker-target {
+  position: absolute; top: 0; left: 0; width: 100%; aspect-ratio: 1;
+  border-radius: 50%; border: calc(var(--stage-w) * .004) solid rgb(32,30,26);
+  background: radial-gradient(circle at 50% 50%, rgb(25,27,23) 0 26%, transparent 27%),
+    radial-gradient(circle at 37% 22%, rgb(255,158,57), rgb(242,89,17) 58%, rgb(141,45,9) 84%);
+  box-shadow: inset calc(var(--stage-w) * -.003) calc(var(--stage-w) * -.005) calc(var(--stage-w) * .007) rgba(0,0,0,.48),
+    inset calc(var(--stage-w) * .002) calc(var(--stage-w) * .002) 0 rgba(255,227,156,.5),
+    calc(var(--stage-w) * .006) calc(var(--stage-h) * .01) calc(var(--stage-w) * .006) rgba(0,0,0,.6);
+}
+.cs-fd-marker-bolt {
+  position: absolute; left: 46%; top: 46%; width: 8%; height: 8%; border-radius: 50%;
+  background: linear-gradient(135deg,rgb(213,220,203),rgb(77,84,77));
+}
+.cs-fd-dirt { position: absolute; left: 84.5%; top: 83%; }
+.cs-fd-clod {
+  position: absolute; width: calc(var(--stage-w) * .0035); height: calc(var(--stage-h) * .009);
+  background: rgb(61,56,32); border-top: calc(var(--stage-h) * .002) solid rgb(135,130,79);
+  animation: cs-fd-dirt-flight 700ms 580ms ease-out both;
+}
+@keyframes cs-fd-dirt-flight {
+  from { opacity: 0; transform: translate(0,0) scale(.3); }
+  5% { opacity: 1; }
+  45% { transform: translate(calc(var(--stage-w) * var(--cs-dirt-x) * .65),calc(var(--stage-h) * var(--cs-dirt-y))) rotate(var(--cs-dirt-spin)); }
+  to { opacity: 0; transform: translate(calc(var(--stage-w) * var(--cs-dirt-x)),calc(var(--stage-h) * .05)) rotate(var(--cs-dirt-spin)); }
+}
+.cs-fd-headline {
+  position: absolute; left: 6%; top: 24%; width: 70%; height: 32%;
+  display: flex; align-items: center; z-index: 8;
+  animation: cs-fd-type-hit 580ms 510ms cubic-bezier(.16,.8,.2,1) both;
+}
+.cs-fd-headline span {
+  display: block; font-family: Impact, 'Bahnschrift', 'Arial Black', sans-serif;
+  font-weight: 900; font-stretch: condensed;
+  font-size: min(calc(var(--stage-h) * .255), calc(var(--stage-w) * .10));
+  line-height: 1; letter-spacing: -.025em; white-space: nowrap;
+  color: rgb(228,230,224);
+  background: linear-gradient(176deg,rgb(255,255,247) 9%,rgb(204,213,207) 42%,rgb(139,154,151) 48%,rgb(242,245,232) 53%,rgb(177,192,184) 95%);
+  background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(calc(var(--stage-w) * .001) calc(var(--stage-h) * .002) 0 rgb(73,85,79))
+    drop-shadow(calc(var(--stage-w) * .002) calc(var(--stage-h) * .004) 0 rgb(44,54,49))
+    drop-shadow(calc(var(--stage-w) * .004) calc(var(--stage-h) * .008) 0 rgb(15,23,20))
+    drop-shadow(0 calc(var(--stage-h) * .025) calc(var(--stage-h) * .02) rgba(0,0,0,.8));
+}
+@keyframes cs-fd-type-hit {
+  from { opacity: 0; transform: scale(1.4) translateY(-12%); }
+  55% { opacity: 1; transform: scale(.985) translateY(1%); }
+  78% { transform: scale(1.006) translateY(-.5%); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.cs-fd-subline {
+  position: absolute; left: 13.5%; top: 59%; height: 12%; width: 50%;
+  display: flex; align-items: center; z-index: 8;
+  animation: cs-fd-brand-in 450ms 830ms ease-out both;
+}
+.cs-fd-subline span {
+  font-family: var(--cs-head-font); font-weight: 700; font-stretch: 75%;
+  font-size: calc(var(--stage-h) * .073); line-height: 1;
+  letter-spacing: .24em; color: var(--cs-white);
+  text-shadow: 0 calc(var(--stage-h) * .004) calc(var(--stage-h) * .01) var(--cs-ink);
+}
+.cs-fd-crest { left: 6%; top: 57%; animation: cs-fd-brand-in 450ms 830ms ease-out both; }
+.cs-fd-crest .cs-crest-panel { border-radius: 8%; }
+@keyframes cs-fd-brand-in {
+  from { opacity: 0; transform: translateY(20%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cs-fd-resumed * { animation: none !important; }
+.cs-fd-resumed .cs-fd-dirt { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .cs-firstdown *, .cs-firstdown *::before, .cs-firstdown *::after { animation: none !important; }
+  .cs-firstdown .cs-fd-dirt { display: none; }
 }
 
-/* The turf plane, tipped away from the camera about its own top edge, so
- * that edge is the horizon and everything below it converges toward it. The
- * yard lines are one repeating gradient across the plane (every fifth one
- * brighter, the way a painted field reads at distance) and the sidelines
- * are the vertical set -- those are the lines that actually converge, and
- * they are what makes this a field instead of scan lines. */
-.cs-fd-plane {
-  position: absolute;
-  left: -90%;
-  width: 280%;
-  top: 40%;
-  height: 190%;
-  transform-origin: 50% 0%;
-  background:
-    /* every fifth yard line */
-    repeating-linear-gradient(to bottom,
-      color-mix(in srgb, var(--cs-white) 88%, transparent) 0 0.62%,
-      transparent 0.62% 40%),
-    /* the yard lines */
-    repeating-linear-gradient(to bottom,
-      color-mix(in srgb, var(--cs-white) 54%, transparent) 0 0.44%,
-      transparent 0.44% 8%),
-    /* sidelines: the converging set */
-    repeating-linear-gradient(to right,
-      color-mix(in srgb, var(--cs-blue-light) 62%, transparent) 0 0.20%,
-      transparent 0.20% 9%),
-    linear-gradient(to bottom,
-      var(--cs-navy) 0%,
-      var(--cs-navy-elevated) 45%,
-      var(--cs-blue) 100%);
-  animation:
-    cs-fd-rush 1900ms cubic-bezier(.06, .74, .32, 1) both,
-    cs-fd-drift 3200ms 1900ms linear infinite;
-}
-
-/* The two hash-mark columns, riding along with the plane. */
-.cs-fd-hash {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  width: 0.5%;
-  background: repeating-linear-gradient(to bottom,
-    color-mix(in srgb, var(--cs-white) 70%, transparent) 0 0.5%,
-    transparent 0.5% 2.66%);
-}
-
-@keyframes cs-fd-rush {
-  from { transform: rotateX(66deg) translateY(0); }
-  to { transform: rotateX(66deg) translateY(40%); }
-}
-
-@keyframes cs-fd-drift {
-  from { transform: rotateX(66deg) translateY(0); }
-  to { transform: rotateX(66deg) translateY(8%); }
-}
-
-/* The distance: yard lines dissolve into the navy before they reach the
- * horizon, which is what stops the plane from looking like graph paper. */
-.cs-fd-horizon {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(to bottom,
-    var(--cs-navy) 0%,
-    var(--cs-navy) 40%,
-    color-mix(in srgb, var(--cs-navy) 72%, transparent) 50%,
-    transparent 68%,
-    transparent 88%,
-    var(--cs-navy) 100%);
-}
-
-.cs-fd-vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at 50% 44%,
-    transparent 34%,
-    color-mix(in srgb, var(--cs-ink) 78%, transparent) 100%);
-}
-
-/* The slabs. The ink slab sits a little down and to the right of the red one
- * so the pair reads as a panel standing off the field rather than painted
- * on it; the blue slab is thinner and slides the other way. */
-
-.cs-fd-slab-shadow,
-.cs-fd-slab-red {
-  position: absolute;
-  left: -9%;
-  width: 82%;
-  transform: skewX(-12deg);
-}
-
-.cs-fd-slab-shadow {
-  top: 15.3%;
-  height: 31%;
-  z-index: 2;
-  background: var(--cs-ink);
-  opacity: .75;
-  animation: cs-fd-slam-left 520ms 200ms cubic-bezier(.14, .8, .28, 1.02) both;
-}
-
-.cs-fd-slab-red {
-  top: 13%;
-  height: 31%;
-  z-index: 4;
-  background: linear-gradient(105deg,
-    var(--cs-red) 0%,
-    color-mix(in srgb, var(--cs-red) 82%, var(--cs-ink)) 100%);
-  box-shadow: inset 0 calc(var(--stage-h) * -0.012) 0 0
-    color-mix(in srgb, var(--cs-ink) 45%, transparent);
-  animation: cs-fd-slam-left 520ms 240ms cubic-bezier(.14, .8, .28, 1.02) both;
-}
-
-/* The gold sliver riding off the red slab's trailing edge, and the hairline
- * rule under it: the two pieces of broadcast furniture that stop a coloured
- * rectangle from looking like a coloured rectangle. */
-.cs-fd-accent {
-  position: absolute;
-  left: 72.3%;
-  top: 13%;
-  width: 2.6%;
-  height: 31%;
-  z-index: 4;
-  transform: skewX(-12deg);
-  background: linear-gradient(to bottom,
-    var(--cs-gold) 0%,
-    color-mix(in srgb, var(--cs-gold) 70%, var(--cs-red)) 100%);
-  animation: cs-fd-slam-left 520ms 300ms cubic-bezier(.14, .8, .28, 1.02) both;
-}
-
-.cs-fd-rule {
-  position: absolute;
-  left: -9%;
-  top: 44%;
-  width: 84.6%;
-  height: calc(var(--stage-h) * 0.0065);
-  z-index: 4;
-  transform-origin: 0% 50%;
-  transform: skewX(-12deg);
-  background: linear-gradient(to right,
-    var(--cs-gold) 0%,
-    color-mix(in srgb, var(--cs-gold) 55%, transparent) 78%,
-    transparent 100%);
-  animation: cs-fd-rule-draw 620ms 520ms cubic-bezier(.16, .86, .3, 1) both;
-}
-
-@keyframes cs-fd-rule-draw {
-  from { transform: skewX(-12deg) scaleX(0); }
-  to { transform: skewX(-12deg) scaleX(1); }
-}
-
-/* A pool of light on the turf where the marker comes to rest. */
-.cs-fd-pool {
-  position: absolute;
-  left: 0;
-  top: 62%;
-  width: 100%;
-  height: 38%;
-  z-index: 1;
-  background: radial-gradient(ellipse at 40% 52%,
-    color-mix(in srgb, var(--cs-blue-light) 42%, transparent) 0%,
-    transparent 62%);
-  animation: cs-fd-pool-in 900ms 520ms ease-out both;
-}
-
-@keyframes cs-fd-pool-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.cs-fd-slab-blue {
-  position: absolute;
-  left: 20%;
-  width: 58%;
-  top: 47%;
-  height: 14%;
-  z-index: 3;
-  transform: skewX(-12deg);
-  background: linear-gradient(255deg,
-    var(--cs-blue) 0%,
-    color-mix(in srgb, var(--cs-blue) 74%, var(--cs-ink)) 100%);
-  box-shadow: 0 calc(var(--stage-h) * 0.008) 0 0
-      color-mix(in srgb, var(--cs-ink) 60%, transparent),
-    inset 0 calc(var(--stage-h) * 0.006) 0 0
-      color-mix(in srgb, var(--cs-blue-light) 80%, transparent);
-  animation: cs-fd-slam-right 560ms 340ms cubic-bezier(.14, .8, .28, 1.02) both;
-}
-
+/* Shared legacy motion used by the turnover. */
 @keyframes cs-fd-slam-left {
   from { transform: skewX(-12deg) translateX(-118%); }
   to { transform: skewX(-12deg) translateX(0); }
@@ -301,10 +269,7 @@
   to { transform: skewX(-12deg) translateX(0); }
 }
 
-/* A carbon hatch over the panels: 5-7 % is the whole budget. Any more and it
- * turns into moire on an LED wall seen from the bleachers. */
-.cs-fd-hatch,
-.cs-td-hatch,
+
 .cs-to-hatch {
   position: absolute;
   inset: 0;
@@ -315,99 +280,7 @@
     transparent calc(var(--stage-w) * 0.00085) calc(var(--stage-w) * 0.0044));
 }
 
-/* The first-down marker: the yellow line, drawn on from the left with a
- * small overshoot, a white leading edge, and a glow that breathes through
- * the hold instead of blinking. */
 
-.cs-fd-marker {
-  position: absolute;
-  left: 0;
-  top: 76.5%;
-  width: 79%;
-  height: calc(var(--stage-h) * 0.021);
-  z-index: 6;
-  transform-origin: 0% 50%;
-  background: linear-gradient(to right,
-    color-mix(in srgb, var(--cs-gold) 45%, transparent) 0%,
-    var(--cs-gold) 10%,
-    var(--cs-gold) 92%,
-    color-mix(in srgb, var(--cs-gold) 70%, var(--cs-white)) 100%);
-  box-shadow:
-    0 0 calc(var(--stage-h) * 0.052) color-mix(in srgb, var(--cs-gold) 85%, transparent),
-    0 0 calc(var(--stage-h) * 0.13) color-mix(in srgb, var(--cs-gold) 40%, transparent),
-    0 calc(var(--stage-h) * 0.008) calc(var(--stage-h) * 0.05)
-      color-mix(in srgb, var(--cs-ink) 70%, transparent);
-  animation:
-    cs-fd-marker-sweep 560ms 480ms cubic-bezier(.16, .86, .3, 1.08) both,
-    cs-fd-marker-breathe 2400ms 1500ms ease-in-out infinite;
-}
-
-/* The leading edge: a white post standing on the line where it stopped,
- * which is what a chain-crew marker looks like from the stands. */
-.cs-fd-marker::after {
-  content: '';
-  position: absolute;
-  right: calc(var(--stage-w) * -0.0028);
-  bottom: 0;
-  width: calc(var(--stage-w) * 0.0058);
-  height: calc(var(--stage-h) * 0.155);
-  background: linear-gradient(to top,
-    var(--cs-white) 0%,
-    var(--cs-white) 42%,
-    color-mix(in srgb, var(--cs-white) 30%, transparent) 100%);
-  box-shadow: 0 0 calc(var(--stage-h) * 0.06) var(--cs-white);
-}
-
-@keyframes cs-fd-marker-sweep {
-  from { transform: scaleX(0); }
-  70% { transform: scaleX(1.03); }
-  to { transform: scaleX(1); }
-}
-
-@keyframes cs-fd-marker-breathe {
-  0%, 100% { opacity: .85; }
-  50% { opacity: 1; }
-}
-
-/* The headline. One text node; the reveal is a moving `clip-path` inset, so
- * nothing here needs per-letter markup -- which is what keeps operator words
- * out of any markup string. */
-
-.cs-fd-headline {
-  position: absolute;
-  left: 5.5%;
-  top: 12.5%;
-  width: 88%;
-  height: 32%;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  transform: skewX(-8deg);
-}
-
-.cs-fd-headline span {
-  display: inline-block;
-  animation: cs-kinetic-wipe 640ms 560ms cubic-bezier(.42, .12, .3, 1) both;
-  font-family: var(--cs-head-font);
-  font-weight: 700;
-  font-stretch: 75%;
-  font-size: calc(var(--stage-h) * 0.268);
-  line-height: .92;
-  letter-spacing: calc(var(--stage-w) * 0.0016);
-  white-space: nowrap;
-  color: var(--cs-white);
-  text-shadow:
-    calc(var(--stage-w) * 0.0016) calc(var(--stage-h) * 0.004) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0032) calc(var(--stage-h) * 0.008) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0048) calc(var(--stage-h) * 0.012) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0064) calc(var(--stage-h) * 0.016) 0
-      color-mix(in srgb, var(--cs-ink) 70%, transparent);
-}
-
-/* One light sweep across the type, once. */
-.cs-fd-headline::after,
-.cs-td-headline::after,
 .cs-to-headline::after {
   content: '';
   position: absolute;
@@ -424,13 +297,7 @@
   opacity: .38;
 }
 
-.cs-fd-headline::after {
-  animation: cs-light-sweep 760ms 1300ms cubic-bezier(.4, 0, .5, 1) both;
-}
 
-/* The reveal: a moving clip-path inset over one text node. The extra room
- * on every side but the leading one keeps the ink extrude and the gold
- * stroke from being shaved off as the mask passes. */
 @keyframes cs-kinetic-wipe {
   from { clip-path: inset(-30% 100% -30% -10%); }
   to { clip-path: inset(-30% -14% -30% -10%); }
@@ -443,43 +310,12 @@
   to { transform: translateX(300%) skewX(-14deg); opacity: 0; }
 }
 
-/* TIGERS, rising into the blue slab. */
-.cs-fd-subline {
-  position: absolute;
-  left: 27%;
-  top: 47%;
-  width: 62%;
-  height: 14%;
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-
-.cs-fd-subline span {
-  font-family: var(--cs-head-font);
-  font-weight: 700;
-  font-stretch: 75%;
-  font-size: calc(var(--stage-h) * 0.082);
-  line-height: 1;
-  letter-spacing: .18em;
-  white-space: nowrap;
-  color: var(--cs-mist);
-  text-shadow: 0 calc(var(--stage-h) * 0.004) 0
-    color-mix(in srgb, var(--cs-ink) 75%, transparent);
-  animation: cs-rise-in 520ms 1080ms cubic-bezier(.2, .8, .3, 1) both;
-}
 
 @keyframes cs-rise-in {
   from { transform: translateY(115%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 
-.cs-fd-crest {
-  left: 4%;
-  top: 45.5%;
-  animation: cs-crest-rise 600ms 980ms cubic-bezier(.2, .9, .28, 1.06) both;
-}
 
 @keyframes cs-crest-rise {
   from { transform: translateY(58%) scale(.92); opacity: 0; }
@@ -492,404 +328,273 @@
 /* touchdown                                                              */
 /* ---------------------------------------------------------------------- */
 
-/* Beat 1 lands in the first 350 ms and the camera pushes 3 % behind it; the
- * push holds for the rest of the scene, so nothing ever pumps. */
-.cs-touchdown {
-  animation: cs-td-push 3400ms cubic-bezier(.16, .84, .3, 1) both;
-}
+/* The tiger takes the wall. A striped hide behind everything, torn open by
+ * four glowing claw tears with a quake, then TOUCHDOWN in
+ * gold-and-white metal, the crest, roar rings and a red TIGERS tag, and
+ * embers rising through a long readable hold. Every base style below is the
+ * *settled* state: `.cs-td-resumed` (a display joining late) and reduced
+ * motion turn the animations off and get the hold at once. Timeline in
+ * tigers.js. */
+.cs-touchdown { background: var(--cs-ink); }
 
+/* Camera push (settling from 8 % over 1.4 s) and, on the world inside it,
+ * the two hits: the quake at the paw's contact and the thump when the word
+ * lands. Two wrappers because each animates `transform`; the quake has no
+ * forwards fill and the thump no backwards fill so they never fight. */
+.cs-td-camera { position: absolute; inset: -4%; animation: cs-td-push 1400ms cubic-bezier(.12,.7,.18,1) both; }
 @keyframes cs-td-push {
-  from { transform: scale(1); }
-  12% { transform: scale(1.03); }
-  to { transform: scale(1.035); }
+  from { transform: scale(1.08); }
+  60% { transform: scale(1.006); }
+  to { transform: scale(1); }
+}
+.cs-td-world {
+  position: absolute; inset: 0;
+  animation: cs-td-thump 320ms 940ms cubic-bezier(.3,.05,.2,1) forwards,
+    cs-td-quake 520ms 120ms cubic-bezier(.3,.05,.2,1) backwards;
+}
+@keyframes cs-td-quake {
+  0% { transform: translate3d(0,0,0) rotate(0); }
+  12% { transform: translate3d(-2.4%, 1.9%, 0) rotate(.5deg); }
+  26% { transform: translate3d(2.2%, -1.7%, 0) rotate(-.45deg); }
+  42% { transform: translate3d(-1.6%, -1.3%, 0) rotate(.3deg); }
+  58% { transform: translate3d(1.1%, 1%, 0) rotate(-.15deg); }
+  76% { transform: translate3d(-.6%, .4%, 0); }
+  100% { transform: translate3d(0,0,0) rotate(0); }
+}
+@keyframes cs-td-thump {
+  0% { transform: translate3d(0,0,0); }
+  25% { transform: translate3d(0, 1.4%, 0); }
+  60% { transform: translate3d(0, -.7%, 0); }
+  100% { transform: translate3d(0,0,0); }
 }
 
+/* The hide: navy ground lit from the impact, ink stripes over it, roughened
+ * by the fur filter tigers.js builds, drifting a little through the hold. */
 .cs-td-ground {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 70% 52%,
+    var(--cs-navy-elevated) 0%, var(--cs-navy) 42%, var(--cs-ink) 100%);
+}
+.cs-td-hide-box { position: absolute; inset: 0; }
+.cs-td-hide {
+  position: absolute; left: -2%; top: 0; width: 104%; height: 100%;
+  animation: cs-td-hide-drift 9000ms linear both;
+}
+@keyframes cs-td-hide-drift {
+  from { transform: translate3d(0,0,0); }
+  to { transform: translate3d(-1.4%, 0, 0); }
+}
+.cs-td-stripe { fill: var(--cs-ink); opacity: .84; }
+.cs-td-shade {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 72% 52%, transparent 18%,
+    color-mix(in srgb, var(--cs-ink) 58%, transparent) 100%);
+}
+
+/* The strike: four claw tears down the right of the wall, the intro's own
+ * torn-track shape with light inside it. Each track is wiped open from its
+ * top on its own delay (one swipe, staggered like fingers), and the glow
+ * behind the tears breathes through the hold. */
+.cs-td-rip-glow {
   position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 50% 42%,
-      var(--cs-navy-elevated) 0%,
-      var(--cs-navy) 55%,
-      var(--cs-ink) 100%);
+  left: var(--cs-ix); top: var(--cs-iy);
+  width: calc(var(--stage-h) * 1.3); height: calc(var(--stage-h) * 1.3);
+  margin: calc(var(--stage-h) * -.65) 0 0 calc(var(--stage-h) * -.65);
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    color-mix(in srgb, var(--cs-gold) 38%, transparent) 0%,
+    color-mix(in srgb, var(--cs-red) 22%, transparent) 38%,
+    transparent 68%);
+  opacity: .8;
+  animation: cs-td-rip-glow 1200ms 120ms ease-out backwards,
+    cs-td-rip-breathe 4200ms 1900ms ease-in-out infinite;
+}
+@keyframes cs-td-rip-glow {
+  from { opacity: 0; transform: scale(.4); }
+  40% { opacity: 1; }
+  to { opacity: .8; transform: scale(1); }
+}
+@keyframes cs-td-rip-breathe {
+  0%, 100% { opacity: .8; }
+  50% { opacity: 1; }
+}
+.cs-td-rip { position: absolute; left: 38%; top: -8%; width: 66%; height: 116%; }
+.cs-td-rip-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.cs-td-rip-reveal {
+  clip-path: inset(-10% -30% -10% -30%);
+  filter: url(#cs-td-rip-torn);
+  animation: cs-td-rip-open 420ms cubic-bezier(.2,.5,.2,1) var(--cs-rip-delay, 0ms) both;
+}
+.cs-td-rip-track:nth-child(1) .cs-td-rip-reveal { --cs-rip-delay: 40ms; }
+.cs-td-rip-track:nth-child(2) .cs-td-rip-reveal { --cs-rip-delay: 0ms; }
+.cs-td-rip-track:nth-child(3) .cs-td-rip-reveal { --cs-rip-delay: 70ms; }
+.cs-td-rip-track:nth-child(4) .cs-td-rip-reveal { --cs-rip-delay: 150ms; }
+@keyframes cs-td-rip-open {
+  from { clip-path: inset(-10% -30% 110% -30%); }
+  to { clip-path: inset(-10% -30% -10% -30%); }
+}
+.cs-td-rip-lip {
+  fill: var(--cs-ink);
+  stroke: var(--cs-ink);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  transform: translate(.5px, .4px);
+}
+.cs-td-rip-light {
+  fill: url(#cs-td-rip-fill);
+  filter: drop-shadow(0 0 .9px color-mix(in srgb, var(--cs-gold) 75%, transparent));
+}
+.cs-td-rip-stop-edge { stop-color: var(--cs-red); }
+.cs-td-rip-stop-warm { stop-color: var(--cs-gold); }
+.cs-td-rip-stop-hot { stop-color: var(--cs-white); }
+.cs-td-rip-edge {
+  fill: none;
+  stroke: color-mix(in srgb, var(--cs-red) 80%, var(--cs-ink));
+  stroke-width: .28;
+  stroke-linejoin: round;
 }
 
-/* The two halves of the hit. Each slab is wider than half the stage and
- * skewed, so the seam between them is a diagonal; the ink slabs behind them
- * are the gap that makes the pair look like two plates rather than one
- * two-tone rectangle. */
-
-.cs-td-slab-blue,
-.cs-td-slab-blue-shadow,
-.cs-td-slab-red,
-.cs-td-slab-red-shadow {
+/* The shockwave out of the contact point: one ring, once. */
+.cs-td-shock {
   position: absolute;
-  top: -12%;
-  height: 124%;
-  width: 76%;
-  z-index: 2;
-  transform: skewX(-14deg);
+  left: var(--cs-ix); top: var(--cs-iy);
+  width: calc(var(--stage-h) * .5); height: calc(var(--stage-h) * .5);
+  margin: calc(var(--stage-h) * -.25) 0 0 calc(var(--stage-h) * -.25);
+  border-radius: 50%;
+  border: calc(var(--stage-h) * .012) solid var(--cs-white);
+  opacity: 0;
+  animation: cs-td-shock 640ms 160ms cubic-bezier(.1,.7,.3,1) forwards;
+}
+@keyframes cs-td-shock {
+  from { transform: scale(.1); opacity: .9; }
+  to { transform: scale(4.4); opacity: 0; }
 }
 
-.cs-td-slab-blue,
-.cs-td-slab-blue-shadow { left: -25%; }
-.cs-td-slab-red,
-.cs-td-slab-red-shadow { left: 49%; }
-
-.cs-td-slab-blue-shadow,
-.cs-td-slab-red-shadow {
-  background: var(--cs-ink);
-  z-index: 1;
+/* Embers: gold motes rising from the bottom edge, looping through the hold. */
+.cs-td-embers { position: absolute; inset: 0; z-index: 6; }
+.cs-td-ember {
+  position: absolute; top: 100%;
+  width: var(--cs-es); height: var(--cs-es);
+  border-radius: 50%;
+  background: var(--cs-gold);
+  box-shadow: 0 0 calc(var(--stage-h) * .008) var(--cs-gold);
+  opacity: 0;
+  animation-name: cs-td-ember;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 }
-
-.cs-td-slab-blue {
-  background: linear-gradient(118deg,
-    color-mix(in srgb, var(--cs-blue) 78%, var(--cs-ink)) 0%,
-    var(--cs-blue) 62%,
-    var(--cs-blue-light) 100%);
-  animation: cs-td-in-left 380ms cubic-bezier(.1, .82, .24, 1) both,
-    cs-td-part-left 8000ms 2000ms ease-in-out both;
+@keyframes cs-td-ember {
+  0% { transform: translate3d(0,0,0) scale(.6); opacity: 0; }
+  12% { opacity: .95; }
+  70% { opacity: .6; }
+  100% { transform: translate3d(var(--cs-ed), var(--cs-eh), 0) scale(1.1); opacity: 0; }
 }
-
-.cs-td-slab-blue-shadow {
-  animation: cs-td-in-left 380ms cubic-bezier(.1, .82, .24, 1) both;
-  opacity: .9;
-}
-
-.cs-td-slab-red {
-  background: linear-gradient(242deg,
-    color-mix(in srgb, var(--cs-red) 76%, var(--cs-ink)) 0%,
-    var(--cs-red) 60%,
-    color-mix(in srgb, var(--cs-red) 78%, var(--cs-white)) 100%);
-  animation: cs-td-in-right 380ms cubic-bezier(.1, .82, .24, 1) both,
-    cs-td-part-right 8000ms 2000ms ease-in-out both;
-}
-
-.cs-td-slab-red-shadow {
-  animation: cs-td-in-right 380ms cubic-bezier(.1, .82, .24, 1) both;
-  opacity: .9;
-}
-
-@keyframes cs-td-in-left {
-  from { transform: skewX(-14deg) translateX(-104%); }
-  to { transform: skewX(-14deg) translateX(0); }
-}
-
-@keyframes cs-td-in-right {
-  from { transform: skewX(-14deg) translateX(104%); }
-  to { transform: skewX(-14deg) translateX(0); }
-}
-
-@keyframes cs-td-part-left {
-  from { transform: skewX(-14deg) translateX(0); }
-  to { transform: skewX(-14deg) translateX(-1.6%); }
-}
-
-@keyframes cs-td-part-right {
-  from { transform: skewX(-14deg) translateX(0); }
-  to { transform: skewX(-14deg) translateX(1.6%); }
-}
-
-/* The seam itself, and the white flash that decays along it once. */
-.cs-td-seam {
-  position: absolute;
-  left: 49.4%;
-  top: -12%;
-  width: calc(var(--stage-w) * 0.004);
-  height: 124%;
-  z-index: 3;
-  transform: skewX(-14deg);
-  background: var(--cs-ink);
-  animation: cs-td-in-right 380ms cubic-bezier(.1, .82, .24, 1) both;
-}
-
-/* The gold hairlines that light the two plate edges either side of the gap.
- * They are what makes the seam read as a join rather than a crack. */
-.cs-td-seam::before,
-.cs-td-seam::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  height: 100%;
-  width: calc(var(--stage-w) * 0.0016);
-  background: linear-gradient(to bottom,
-    color-mix(in srgb, var(--cs-gold) 20%, transparent) 0%,
-    var(--cs-gold) 34%,
-    color-mix(in srgb, var(--cs-gold) 35%, transparent) 100%);
-}
-
-.cs-td-seam::before { right: 100%; }
-.cs-td-seam::after { left: 100%; }
-
-.cs-td-flash {
-  position: absolute;
-  left: 45.8%;
-  top: -12%;
-  width: calc(var(--stage-w) * 0.075);
-  height: 124%;
-  z-index: 4;
-  transform: skewX(-14deg);
-  background: linear-gradient(to right,
-    transparent 0%,
-    color-mix(in srgb, var(--cs-white) 55%, transparent) 34%,
-    var(--cs-white) 50%,
-    color-mix(in srgb, var(--cs-white) 55%, transparent) 66%,
-    transparent 100%);
-  animation: cs-td-flash 320ms 280ms ease-out both;
-}
-
-@keyframes cs-td-flash {
-  from { opacity: 0; transform: skewX(-14deg) scaleX(.3); }
-  16% { opacity: 1; }
-  to { opacity: 0; transform: skewX(-14deg) scaleX(1.9); }
-}
-
-.cs-td-hatch { z-index: 6; }
 
 .cs-td-vignette {
-  position: absolute;
-  inset: 0;
-  z-index: 7;
-  background: radial-gradient(ellipse at 50% 46%,
-    transparent 36%,
-    color-mix(in srgb, var(--cs-ink) 82%, transparent) 100%);
+  position: absolute; inset: 0; z-index: 7;
+  background: radial-gradient(ellipse at 50% 45%, transparent 42%,
+    color-mix(in srgb, var(--cs-ink) 72%, transparent) 100%);
 }
 
-/* A pool of light behind the word so the type separates from two saturated
- * panels without an outline doing all the work. */
-.cs-td-glow {
-  position: absolute;
-  inset: 0;
-  z-index: 7;
-  background: radial-gradient(ellipse at 50% 39%,
-    color-mix(in srgb, var(--cs-white) 20%, transparent) 0%,
-    transparent 48%);
-  animation: cs-td-glow-in 900ms 300ms ease-out both;
-}
-
-@keyframes cs-td-glow-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* The gold rule the word stands on. */
-.cs-td-rule {
-  position: absolute;
-  left: 18%;
-  top: 57.5%;
-  width: 64%;
-  height: calc(var(--stage-h) * 0.008);
-  z-index: 9;
-  transform-origin: 50% 50%;
-  transform: skewX(-14deg);
-  background: linear-gradient(to right,
-    transparent 0%,
-    var(--cs-gold) 22%,
-    var(--cs-gold) 78%,
-    transparent 100%);
-  box-shadow: 0 calc(var(--stage-h) * 0.004) calc(var(--stage-h) * 0.02)
-    color-mix(in srgb, var(--cs-ink) 65%, transparent);
-  animation: cs-td-rule-draw 620ms 1000ms cubic-bezier(.16, .86, .3, 1) both;
-}
-
-@keyframes cs-td-rule-draw {
-  from { transform: skewX(-14deg) scaleX(0); opacity: 0; }
-  to { transform: skewX(-14deg) scaleX(1); opacity: 1; }
-}
-
-/* Rays: twelve, wide, opening once from behind the word and settling to a
- * fifth of their strength. They breathe on an 8 s cycle during the hold --
- * slow enough that nobody sees it happen, which is the point. */
-/* Rays. They belong behind the word, but the slabs are opaque and would
- * simply swallow them, so they are drawn over the slabs at a low enough
- * opacity to read as light falling on the panels rather than as spokes
- * painted on them -- and under the type, which stays the brightest thing on
- * the stage. Twelve, wide, opening once and settling; the breathe cycle is
- * eight seconds, slow enough that nobody catches it moving. */
-.cs-td-rays {
-  position: absolute;
-  left: 50%;
-  top: 43%;
-  width: 0;
-  height: 0;
-  z-index: 5;
-}
-
-.cs-td-ray {
-  position: absolute;
-  left: calc(var(--stage-w) * -0.038);
-  bottom: 0;
-  width: calc(var(--stage-w) * 0.076);
-  height: calc(var(--stage-h) * 1.05);
-  transform-origin: 50% 100%;
-  animation:
-    cs-td-ray-open 1000ms cubic-bezier(.12, .8, .3, 1) both,
-    cs-td-ray-breathe 8000ms 2000ms ease-in-out infinite;
-}
-
-.cs-td-ray-gold {
-  background: linear-gradient(to top,
-    transparent 0%,
-    color-mix(in srgb, var(--cs-gold) 40%, transparent) 26%,
-    color-mix(in srgb, var(--cs-gold) 26%, transparent) 46%,
-    transparent 82%);
-}
-
-.cs-td-ray-white {
-  background: linear-gradient(to top,
-    transparent 0%,
-    color-mix(in srgb, var(--cs-white) 34%, transparent) 26%,
-    color-mix(in srgb, var(--cs-white) 22%, transparent) 46%,
-    transparent 82%);
-}
-
-@keyframes cs-td-ray-open {
-  from { transform: rotate(var(--cs-ray-angle)) scaleY(.04); opacity: 0; }
-  30% { opacity: .34; }
-  to { transform: rotate(var(--cs-ray-angle)) scaleY(1); opacity: .13; }
-}
-
-@keyframes cs-td-ray-breathe {
-  0%, 100% { opacity: .09; }
-  50% { opacity: .17; }
-}
-
-/* Confetti. One keyframe set, eighty-four pieces, each carrying its own
- * apex, landing point, spin, size and delay from tigers.js. */
-.cs-td-confetti {
-  position: absolute;
-  left: 50%;
-  top: 46%;
-  width: 0;
-  height: 0;
-  z-index: 8;
-}
-
-.cs-td-piece {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: var(--cs-cw);
-  height: var(--cs-ch);
-  border-radius: calc(var(--stage-h) * 0.0015);
-  animation-name: cs-td-confetti;
-  animation-timing-function: cubic-bezier(.22, .62, .38, 1);
-  animation-fill-mode: both;
-}
-
-.cs-td-c-red { background: var(--cs-red); }
-.cs-td-c-blue { background: var(--cs-blue-light); }
-.cs-td-c-white { background: var(--cs-white); }
-.cs-td-c-gold { background: var(--cs-gold); }
-
-@keyframes cs-td-confetti {
-  from {
-    transform: translate3d(0, 0, 0) rotate(0deg) scale(.5);
-    opacity: 0;
-  }
-  6% { opacity: 1; }
-  34% {
-    transform: translate3d(calc(var(--cs-cx) * .46), var(--cs-apex), 0)
-      rotate(calc(var(--cs-spin) * .38)) scale(1);
-    opacity: 1;
-  }
-  86% { opacity: 1; }
-  to {
-    transform: translate3d(var(--cs-cx), var(--cs-fall), 0)
-      rotate(var(--cs-spin)) scale(1);
-    opacity: 0;
-  }
-}
-
-/* The word. White fill, an ink extrude built from stacked shadows, and a
- * gold stroke -- the three things that make broadcast type sit on a panel
- * instead of floating over it. Revealed by the same moving clip-path the
- * first down uses; the word never moves once it has landed. */
+/* The word: one piece of gold-and-white metal on an ink extrude, dropping
+ * out of the lens and overshooting once. It never moves again. */
 .cs-td-headline {
-  position: absolute;
-  left: 4%;
-  top: 20%;
-  width: 92%;
-  height: 38%;
+  position: absolute; left: 2%; top: 6%; width: 80%; height: 44%;
   z-index: 9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  transform: skewX(-8deg);
+  display: flex; align-items: center; justify-content: center;
+  animation: cs-td-word-hit 640ms 600ms cubic-bezier(.16,.8,.2,1) both;
 }
-
 .cs-td-headline span {
-  display: inline-block;
-  animation: cs-kinetic-wipe 820ms 300ms cubic-bezier(.42, .12, .3, 1) both;
-  font-family: var(--cs-head-font);
-  font-weight: 700;
-  font-stretch: 75%;
-  font-size: calc(var(--stage-h) * 0.30);
-  line-height: .92;
-  letter-spacing: calc(var(--stage-w) * 0.0012);
-  white-space: nowrap;
-  color: var(--cs-white);
-  -webkit-text-stroke: calc(var(--stage-h) * 0.0045) var(--cs-gold);
-  paint-order: stroke fill;
-  text-shadow:
-    calc(var(--stage-w) * 0.0018) calc(var(--stage-h) * 0.005) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0036) calc(var(--stage-h) * 0.010) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0054) calc(var(--stage-h) * 0.015) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0072) calc(var(--stage-h) * 0.020) 0 var(--cs-ink),
-    calc(var(--stage-w) * 0.0090) calc(var(--stage-h) * 0.025) 0
-      color-mix(in srgb, var(--cs-ink) 78%, transparent);
+  display: block;
+  font-family: Impact, 'Bahnschrift', 'Arial Black', sans-serif;
+  font-weight: 900; font-stretch: condensed;
+  font-size: min(calc(var(--stage-h) * .31), calc(var(--stage-w) * .108));
+  line-height: 1; letter-spacing: -.02em; white-space: nowrap;
+  transform: skewX(-6deg);
+  color: var(--cs-gold);
+  background: linear-gradient(176deg,
+    var(--cs-white) 6%,
+    color-mix(in srgb, var(--cs-gold) 55%, var(--cs-white)) 34%,
+    color-mix(in srgb, var(--cs-gold) 72%, var(--cs-ink)) 47%,
+    var(--cs-white) 52%,
+    var(--cs-gold) 78%,
+    color-mix(in srgb, var(--cs-gold) 62%, var(--cs-ink)) 96%);
+  background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(calc(var(--stage-w) * .001) calc(var(--stage-h) * .003) 0 color-mix(in srgb, var(--cs-gold) 40%, var(--cs-ink)))
+    drop-shadow(calc(var(--stage-w) * .002) calc(var(--stage-h) * .006) 0 color-mix(in srgb, var(--cs-ink) 85%, var(--cs-gold)))
+    drop-shadow(calc(var(--stage-w) * .004) calc(var(--stage-h) * .010) 0 var(--cs-ink))
+    drop-shadow(0 calc(var(--stage-h) * .03) calc(var(--stage-h) * .025) rgba(0,0,0,.85));
+}
+@keyframes cs-td-word-hit {
+  from { opacity: 0; transform: scale(2.7) translateY(-8%); }
+  50% { opacity: 1; transform: scale(.955) translateY(1.5%); }
+  74% { transform: scale(1.02) translateY(-.6%); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.cs-td-headline::after {
-  animation: cs-light-sweep 820ms 1200ms cubic-bezier(.4, 0, .5, 1) both;
+/* The roar: three rings out of the crest's centre. */
+.cs-td-roar { position: absolute; left: 11.4%; top: 67%; width: 0; height: 0; z-index: 8; }
+.cs-td-roar-ring {
+  position: absolute;
+  width: calc(var(--stage-h) * .3); height: calc(var(--stage-h) * .3);
+  left: calc(var(--stage-h) * -.15); top: calc(var(--stage-h) * -.15);
+  border-radius: 50%;
+  border: calc(var(--stage-h) * .008) solid var(--cs-gold);
+  opacity: 0;
+  animation: cs-td-roar 900ms cubic-bezier(.1,.6,.3,1) forwards;
+}
+@keyframes cs-td-roar {
+  from { transform: scale(.4); opacity: .85; }
+  to { transform: scale(5); opacity: 0; }
 }
 
+/* The crest punches in from the lens at the lower left. */
 .cs-td-crest {
-  left: 11.5%;
-  top: 62%;
-  z-index: 10;
-  animation: cs-td-crest-land 620ms 1300ms cubic-bezier(.18, .9, .26, 1.04) both;
+  left: 6%; top: 52%; z-index: 10;
+  animation: cs-td-crest-punch 520ms 1250ms cubic-bezier(.18,.9,.26,1.04) both;
 }
-
-@keyframes cs-td-crest-land {
-  from { transform: scale(1.42); opacity: 0; }
+.cs-td-crest .cs-crest-panel { border-radius: 8%; }
+@keyframes cs-td-crest-punch {
+  from { transform: scale(2.2); opacity: 0; }
   45% { opacity: 1; }
-  74% { transform: scale(.975); }
+  72% { transform: scale(.95); }
   to { transform: scale(1); opacity: 1; }
 }
 
-/* TIGERS on an ink tag beside the crest. */
+/* TIGERS on a red tag with a gold edge, slammed in from the right. */
 .cs-td-subline {
-  position: absolute;
-  left: 26%;
-  top: 70.5%;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  padding: calc(var(--stage-h) * 0.022) calc(var(--stage-w) * 0.018)
-    calc(var(--stage-h) * 0.022) calc(var(--stage-w) * 0.016);
-  background: var(--cs-ink);
-  border-left: calc(var(--stage-w) * 0.005) solid var(--cs-gold);
-  box-shadow: 0 calc(var(--stage-h) * 0.01) calc(var(--stage-h) * 0.026)
-    color-mix(in srgb, var(--cs-ink) 70%, transparent);
-  animation: cs-td-tag-in 520ms 1560ms cubic-bezier(.2, .86, .28, 1.02) both;
+  position: absolute; left: 19.5%; top: 63%; z-index: 10;
+  display: flex; align-items: center;
+  padding: calc(var(--stage-h) * .02) calc(var(--stage-w) * .02);
+  background: var(--cs-red);
+  border-left: calc(var(--stage-w) * .005) solid var(--cs-gold);
+  transform: skewX(-8deg);
+  box-shadow: 0 calc(var(--stage-h) * .012) calc(var(--stage-h) * .03) rgba(0,0,0,.6),
+    inset 0 calc(var(--stage-h) * -.006) 0 color-mix(in srgb, var(--cs-red) 70%, var(--cs-ink));
+  animation: cs-td-tag-slam 420ms 1600ms cubic-bezier(.2,.86,.28,1.04) both;
 }
-
 .cs-td-subline span {
-  font-family: var(--cs-head-font);
-  font-weight: 700;
-  font-stretch: 75%;
-  font-size: calc(var(--stage-h) * 0.088);
-  line-height: 1;
-  letter-spacing: .2em;
-  white-space: nowrap;
-  color: var(--cs-mist);
+  display: block;
+  font-family: var(--cs-head-font); font-weight: 700; font-stretch: 75%;
+  font-size: calc(var(--stage-h) * .085); line-height: 1;
+  letter-spacing: .22em; white-space: nowrap;
+  color: var(--cs-white);
+  transform: skewX(8deg);
+  text-shadow: 0 calc(var(--stage-h) * .004) calc(var(--stage-h) * .008) var(--cs-ink);
+}
+@keyframes cs-td-tag-slam {
+  from { opacity: 0; transform: skewX(-8deg) translateX(30%) scale(1.3); }
+  60% { opacity: 1; transform: skewX(-8deg) translateX(-2%) scale(1); }
+  to { opacity: 1; transform: skewX(-8deg) translateX(0) scale(1); }
 }
 
-@keyframes cs-td-tag-in {
-  from { transform: translateX(-24%); opacity: 0; clip-path: inset(0 100% 0 0); }
-  to { transform: translateX(0); opacity: 1; clip-path: inset(0 0 0 0); }
+/* A late join and reduced motion both get the settled hold: every base
+ * style above is that state, and the one-shot bursts are hidden. */
+.cs-td-resumed *, .cs-td-resumed *::before, .cs-td-resumed *::after { animation: none !important; }
+.cs-td-resumed .cs-td-shock, .cs-td-resumed .cs-td-roar { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .cs-touchdown *, .cs-touchdown *::before, .cs-touchdown *::after { animation: none !important; }
+  .cs-touchdown .cs-td-shock, .cs-touchdown .cs-td-roar { display: none; }
 }
 
 /* ---------------------------------------------------------------------- */

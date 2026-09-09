@@ -37,10 +37,10 @@
   --cs-outro-ms: 600ms;
 }
 
-/* The intro moment: the stage covers the whole wall and dims the board just
- * enough for a white-hot tear to read against a bright scoreboard. */
+/* The intro overlays the board without dimming it. Live score and clock
+ * information stay fully visible beneath the cutscene artwork. */
 #cutscene-stage.intro {
-  background: rgba(3, 7, 17, .28);
+  background: transparent;
 }
 
 #cutscene-stage.outro {
@@ -88,14 +88,16 @@
   animation: cs-shake 360ms cubic-bezier(.32, .06, .18, .98) both;
 }
 
+/* `--cs-shake` scales the whole excursion: 1 (unset) for the ordinary
+ * strike, more for the touchdown's, set inline on #canvas by the intro. */
 @keyframes cs-shake {
   0% { transform: translate3d(0, 0, 0); }
-  10% { transform: translate3d(-1.2%, 0.9%, 0); }
-  22% { transform: translate3d(1.1%, -0.8%, 0); }
-  36% { transform: translate3d(-0.9%, -0.7%, 0); }
-  52% { transform: translate3d(0.7%, 0.6%, 0); }
-  70% { transform: translate3d(-0.4%, 0.3%, 0); }
-  86% { transform: translate3d(0.2%, -0.2%, 0); }
+  10% { transform: translate3d(calc(-1.2% * var(--cs-shake, 1)), calc(0.9% * var(--cs-shake, 1)), 0); }
+  22% { transform: translate3d(calc(1.1% * var(--cs-shake, 1)), calc(-0.8% * var(--cs-shake, 1)), 0); }
+  36% { transform: translate3d(calc(-0.9% * var(--cs-shake, 1)), calc(-0.7% * var(--cs-shake, 1)), 0); }
+  52% { transform: translate3d(calc(0.7% * var(--cs-shake, 1)), calc(0.6% * var(--cs-shake, 1)), 0); }
+  70% { transform: translate3d(calc(-0.4% * var(--cs-shake, 1)), calc(0.3% * var(--cs-shake, 1)), 0); }
+  86% { transform: translate3d(calc(0.2% * var(--cs-shake, 1)), calc(-0.2% * var(--cs-shake, 1)), 0); }
   100% { transform: translate3d(0, 0, 0); }
 }
 
@@ -602,4 +604,86 @@
                scale(var(--cs-puff-scale, 1.4));
     opacity: 0;
   }
+}
+
+/* First-down opening: four separated curved tracks with a Tigers-red torn
+ * edge. The scoreboard stays visible below; no opaque surface sits over it. */
+.cs-field-claw { animation: cs-field-claw-away var(--cs-intro-ms) linear both; }
+.cs-field-claw-surface {
+  position: absolute; inset: 0;
+  background: transparent;
+}
+.cs-field-claw-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.cs-field-claw-reveal {
+  animation: cs-field-claw-draw var(--cs-intro-ms) cubic-bezier(.2,.4,.2,1) both;
+  filter: url(#cs-field-torn-edge);
+}
+.cs-field-claw-shadow {
+  fill: rgb(2,5,6); stroke: rgba(0,0,0,.8); stroke-width: .9;
+  filter: drop-shadow(.35px .4px .4px rgba(0,0,0,.9));
+}
+.cs-field-claw-edge {
+  fill: color-mix(in srgb, var(--cs-red) 58%, rgb(46,25,24));
+  stroke: color-mix(in srgb, var(--cs-red) 72%, var(--cs-white));
+  stroke-width: .22;
+  filter: drop-shadow(0 0 .25px color-mix(in srgb, var(--cs-red) 72%, transparent));
+  transform: translate(-.16px,-.12px);
+}
+.cs-field-claw-cut {
+  fill: rgb(2,6,7); stroke: rgb(12,17,16); stroke-width: .3;
+  transform: translate(.28px,.2px);
+}
+@keyframes cs-field-claw-draw {
+  0%, 5% { clip-path: inset(-10% -30% 110% -30%); }
+  32% { clip-path: inset(-10% -30% -10% -30%); }
+  45% { clip-path: inset(-10% -30% -10% -30%); transform: scaleX(1); }
+  75%, 100% { clip-path: inset(-10% -30% -10% -30%); transform: scaleX(1.35); }
+}
+@keyframes cs-field-claw-away {
+  0%, 62% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-field-claw, .cs-field-claw-reveal { animation: none; }
+}
+
+/* Touchdown's opening: the whole paw. Five wider tracks through their own
+ * torn filter, one white flash at contact, and red light bleeding out of
+ * the cuts once the board has morphed under them (45 %, the player's
+ * MORPH_AT_FRACTION). The board still shows through: nothing here is an
+ * opaque surface. */
+.cs-td-claw .cs-td-claw-reveal { filter: url(#cs-td-torn-edge); }
+.cs-td-claw .cs-field-claw-edge {
+  stroke-width: .3;
+  filter: drop-shadow(0 0 .5px color-mix(in srgb, var(--cs-red) 80%, transparent));
+}
+.cs-td-claw .cs-field-claw-cut { stroke-width: .4; }
+.cs-td-claw-flash {
+  position: absolute; inset: 0;
+  background: var(--cs-white, #FFFFFF);
+  opacity: 0;
+  animation: cs-td-claw-flash 240ms linear 120ms both;
+}
+@keyframes cs-td-claw-flash {
+  0% { opacity: 0; }
+  30% { opacity: .55; }
+  100% { opacity: 0; }
+}
+.cs-td-claw-bleed {
+  position: absolute; inset: -10%;
+  background: radial-gradient(ellipse at 50% 45%,
+    color-mix(in srgb, var(--cs-red, #C8242B) 55%, transparent) 0%,
+    color-mix(in srgb, var(--cs-red, #C8242B) 22%, transparent) 40%,
+    transparent 72%);
+  opacity: 0;
+  animation: cs-td-claw-bleed var(--cs-intro-ms, 1600ms) linear both;
+}
+@keyframes cs-td-claw-bleed {
+  0%, 38% { opacity: 0; }
+  52% { opacity: 1; }
+  70% { opacity: .8; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-td-claw-flash, .cs-td-claw-bleed { animation: none; }
 }

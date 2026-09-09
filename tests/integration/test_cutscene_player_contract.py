@@ -111,8 +111,18 @@ class SpectatorPageLoadsThePlayerTests(unittest.TestCase):
         self.assertEqual(css_order, sorted(css_order), "the spectator page's stylesheet order is wrong")
 
     def test_the_page_still_has_no_operator_control(self) -> None:
+        # Widened for the September 8, 2026 control-refresh (spec section 3):
+        # the page now carries exactly one <button>, the self-closing
+        # #close-display, which never gains data-command/data-action and
+        # never calls api.command (test_spectator_close_ui.py pins that). The
+        # "<button" check still runs against everything else, so a second,
+        # game-affecting control would still be caught here.
+        without_close_button = re.sub(
+            r'<button type="button" id="close-display"[^>]*>[^<]*</button>', "", self.html
+        )
+        self.assertIn('id="close-display"', self.html)
         for forbidden in ("<button", "<input", "<dialog", "data-command", "data-action"):
-            self.assertNotIn(forbidden, self.html)
+            self.assertNotIn(forbidden, without_close_button)
 
 
 class PlayerGlobalsTests(unittest.TestCase):

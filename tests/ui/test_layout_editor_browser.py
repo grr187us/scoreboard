@@ -64,6 +64,8 @@ class LayoutEditorBrowserTests(unittest.TestCase):
             "nudge by key and button", "arrows leave fields alone",
             "history back and forward", "add text element", "add box", "align",
             "multi-select drag", "delete element",
+            "add ticker", "ticker lines", "ticker rotate mode", "ticker speed",
+            "ticker history", "delete ticker",
             "switch to pre-game", "apply a pre-game preset",
             "add text on the pre-game screen", "switch back to the game screen",
             "save after editing another screen",

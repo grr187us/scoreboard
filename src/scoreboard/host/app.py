@@ -38,7 +38,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Final, NamedTuple
 
 import webview
 
@@ -50,6 +50,7 @@ from scoreboard.application.recovery import (
     start_new_game,
 )
 from scoreboard.application.service import ScoreboardService
+from scoreboard.domain.rules import GameRules
 from scoreboard.domain.state import APP_VERSION
 from scoreboard.host.bridge import (
     DisplayLink,
@@ -110,6 +111,16 @@ REFRESH_INTERVAL_SECONDS: float = 0.1
 #: the fullscreen production display and is deliberately not configurable.
 TEST_SPECTATOR_WIDTH: int = 640
 TEST_SPECTATOR_HEIGHT: int = 360
+
+#: What the health strip says after a *deliberate* close -- Esc or the corner
+#: button on the display window, or Close Display in the operator's drawer. It
+#: is worded so the operator can tell it apart from a crash or an unplugged
+#: cable at a glance, and so the one-click way back is named (D-005: closing
+#: the display changes no game state).
+CLOSED_BY_OPERATOR_DETAIL: Final[str] = (
+    "The display window was closed on purpose. Reopen Display puts it back on "
+    "the saved display."
+)
 
 #: How often the host looks at the list of connected displays. Windows offers
 #: no event pywebview passes on, so noticing an unplugged LED wall means
@@ -212,6 +223,10 @@ class ScoreboardApplication:
         # its own file, never game state. Applying one is an ordinary
         # ``set_team_name`` command through the bridge.
         self.teams = TeamPresets(self.paths, diagnostics=self.diagnostics)
+        # The game's timing rules (September 9, 2026) are a laptop preference
+        # too: read once here, handed to whichever service the operator's
+        # startup choice builds, and written back through save_rules.
+        self.rules = config.read_rules(self.paths)
         # Cutscenes are a host concern too (spec section 1): no command, no
         # revision, no history row. Created before any game exists, exactly
         # like ``self.layouts``/``self.teams``, so it survives a
@@ -256,19 +271,21 @@ class ScoreboardApplication:
 
         payload = self.report.to_dict()
         payload["view"] = (None if self.report.state is None
-                           else spectator_view_model(self.report.state))
+                           else spectator_view_model(self.report.state, rules=self.rules))
         return payload
 
     def resume(self) -> ScoreboardBridge:
         """Continue the recovered game, with every clock stopped."""
 
-        service = resume_recovered_game(self.report, monotonic_clock=self._monotonic)
+        service = resume_recovered_game(
+            self.report, monotonic_clock=self._monotonic, rules=self.rules
+        )
         return self._begin(service, resume_game_id=self.report.game_id)
 
     def start_new(self) -> ScoreboardBridge:
         """Begin a clean game. Nothing already on disk is deleted."""
 
-        service = start_new_game(monotonic_clock=self._monotonic)
+        service = start_new_game(monotonic_clock=self._monotonic, rules=self.rules)
         return self._begin(service, resume_game_id=None)
 
     def _begin(
@@ -283,6 +300,7 @@ class ScoreboardApplication:
         self.service = service
         self.store = store
         self.display.reopen = self.reopen_spectator  # type: ignore[method-assign]
+        self.display.close = self.close_spectator  # type: ignore[method-assign]
         self.bridge = ScoreboardBridge(
             service,
             store,
@@ -293,8 +311,15 @@ class ScoreboardApplication:
             layouts=self.layouts,
             teams=self.teams,
             cutscenes=self.cutscenes,
+            rules_writer=self._write_rules,
         )
         return self.bridge
+
+    def _write_rules(self, rules: GameRules) -> bool:
+        """Keep the host's copy current and persist it; the bridge reports."""
+
+        self.rules = rules
+        return config.write_rules(self.paths, rules)
 
     def _read_spectator_view(self) -> dict[str, Any]:
         """The live spectator snapshot the director builds a program's text
@@ -480,6 +505,11 @@ class ScoreboardApplication:
 
         return self.display.status
 
+    def close_spectator(self) -> Any:
+        """Replaced by :class:`WindowHost`; alone this closes no window."""
+
+        return self.display.status
+
     def spectator_opened(self, target: str | None = None) -> None:
         if self.bridge is not None:
             self._publish(self.bridge.display_opened(target))
@@ -594,13 +624,16 @@ class WindowHost:
         application.set_publisher(self._push)
         application.set_display_watch(self.check_displays)
         application.reopen_spectator = self.reopen_spectator  # type: ignore[method-assign]
+        application.close_spectator = self.close_spectator  # type: ignore[method-assign]
         application.display.reopen = self.reopen_spectator  # type: ignore[method-assign]
+        application.display.close = self.close_spectator  # type: ignore[method-assign]
         application.display.list_displays = self.list_displays  # type: ignore[method-assign]
         application.display.select = self.select_display  # type: ignore[method-assign]
         application.display.forget = self.forget_display  # type: ignore[method-assign]
         application.display.open_test_window = self.open_test_window  # type: ignore[method-assign]
         application.layouts.link.open_editor = self.open_layout_editor  # type: ignore[method-assign]
         application.layouts.link.publish = self.publish_layout  # type: ignore[method-assign]
+        application.layouts.link.publish_motion = self.publish_motion  # type: ignore[method-assign]
         application.set_field_assistant_active(
             lambda: self.field_assistant_window is not None
         )
@@ -868,6 +901,10 @@ class WindowHost:
                 self._spectator_snapshot,
                 read_layout=self.application.layouts.current_layout,
                 read_cutscene=self.application.cutscenes.current_program,
+                # The wall's Esc key and corner button reach exactly this and
+                # nothing else in the host (D-005).
+                close=self.close_spectator,
+                read_motion=self.application.layouts.motion_enabled,
             ),
             screen=screen,
             fullscreen=True,
@@ -893,6 +930,7 @@ class WindowHost:
         # pushing it here means a spectator opened mid-game shows the right
         # layout immediately rather than waiting on the next save (spec 6.2).
         self.publish_layout(self.application.layouts.current_layout())
+        self.publish_motion(self.application.layouts.motion_enabled())
         self.application.diagnostics.note(
             "DISPLAY_SELECTED", target=target.description, how=match.how
         )
@@ -908,6 +946,46 @@ class WindowHost:
         """
 
         return self.open_spectator(self.initial_display_index)
+
+    def close_spectator(self) -> dict[str, str]:
+        """Put the spectator window away on purpose (D-005).
+
+        The exact mirror of :meth:`reopen_spectator`: the game keeps running,
+        the clocks keep running, no revision moves and no history row is
+        written -- a monitor is not game state (R-002). The saved display is
+        untouched, so ``can_reopen`` stays true and one click brings the wall
+        back where it was.
+
+        The window is destroyed OUTSIDE the lock, as :meth:`open_spectator`
+        does, because ``destroy()`` re-enters the UI thread. Taking the window
+        and clearing the attribute first also makes the ``closed`` event that
+        arrives afterwards a no-op: :meth:`_spectator_closed` returns early
+        because ``self.spectator_window`` is no longer that window, so the
+        deliberate wording below is not overwritten by the generic one.
+        """
+
+        with self._lock:
+            window, self.spectator_window = self.spectator_window, None
+        if window is None:
+            return self._set_status("DISPLAY CLOSED: no display window is open")
+        window.destroy()
+        self.application.spectator_closed(CLOSED_BY_OPERATOR_DETAIL)
+        return self._set_status("DISPLAY CLOSED: closed on purpose; Reopen Display puts it back")
+
+    def close_test_window(self) -> dict[str, str]:
+        """Close the practice preview and forget it. Touches no display health.
+
+        The practice window has never had a display-selection or health role,
+        so its own close button -- and now Esc inside it -- must not make the
+        operator's health strip say anything at all.
+        """
+
+        with self._lock:
+            window, self.test_window = self.test_window, None
+        if window is None:
+            return {"message": "No test spectator window is open."}
+        window.destroy()
+        return {"message": "Test spectator window closed."}
 
     def select_display(self, key: Any) -> dict[str, str]:
         """The operator picked a display. Open it there and remember it."""
@@ -934,6 +1012,10 @@ class WindowHost:
                 self._spectator_snapshot,
                 read_layout=self.application.layouts.current_layout,
                 read_cutscene=self.application.cutscenes.current_program,
+                # The practice window closes itself and nothing else; display
+                # health belongs to the production window alone.
+                close=self.close_test_window,
+                read_motion=self.application.layouts.motion_enabled,
             ),
             width=TEST_SPECTATOR_WIDTH,
             height=TEST_SPECTATOR_HEIGHT,
@@ -1126,6 +1208,30 @@ class WindowHost:
                 try:
                     window.evaluate_js(script)
                 except Exception as exc:  # noqa: BLE001 - a layout push must not stop the game
+                    self.application.diagnostics.unhandled_error(context=context, error=exc)
+
+    def publish_motion(self, enabled: bool) -> None:
+        """Push the animation switch to every open board (event-screens spec
+        section 2.9). Mirrors :meth:`publish_layout`: spectator, practice
+        window and layout editor; a failure in one window is logged and the
+        others are unaffected (R-002). Changes no game state.
+        """
+
+        with self._lock:
+            spectator = self.spectator_window
+            test_window = self.test_window
+            layout_window = self.layout_window
+        flag = "true" if enabled else "false"
+        script = f"window.applyMotion && window.applyMotion({flag})"
+        for window, context in (
+            (spectator, "spectator_motion_push"),
+            (test_window, "test_spectator_motion_push"),
+            (layout_window, "layout_editor_motion_push"),
+        ):
+            if window is not None and window.events.loaded.is_set():
+                try:
+                    window.evaluate_js(script)
+                except Exception as exc:  # noqa: BLE001 - a motion push must not stop the game
                     self.application.diagnostics.unhandled_error(context=context, error=exc)
 
     def _layout_window_closed(self, window: webview.Window) -> None:
@@ -1393,6 +1499,7 @@ def _json(payload: dict[str, Any]) -> str:
 
 
 __all__ = [
+    "CLOSED_BY_OPERATOR_DETAIL",
     "REFRESH_INTERVAL_SECONDS",
     "TEST_SPECTATOR_HEIGHT",
     "TEST_SPECTATOR_WIDTH",

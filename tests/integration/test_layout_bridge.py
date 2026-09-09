@@ -20,6 +20,7 @@ from scoreboard.host.layout_bridge import (
     LayoutLink,
     PresentationLayouts,
 )
+from scoreboard.infrastructure import config
 from scoreboard.infrastructure.persistence import read_action_history
 from scoreboard.presentation import layout as layout_module
 
@@ -123,7 +124,7 @@ class LayoutCannotTouchTheGameTests(LayoutTestCase):
         self.assertTrue(commands.issubset(
             {command.value for command in CommandType}
             | {"session_started", "session_resumed", "session_shutdown",
-               "game_clock_expired", "play_clock_expired", "event_countdown_expired",
+               "game_clock_expired", "play_clock_expired",
                "play_clock_cleared_on_game_clock_stop"}
         ), commands)
 
@@ -141,6 +142,9 @@ class LayoutCannotTouchTheGameTests(LayoutTestCase):
             "get_snapshot", "layout_state", "preview_layout", "clamp_layout",
             "reset_widget", "save_layout", "select_layout", "delete_layout",
             "rename_layout", "duplicate_layout", "reset_layout",
+            # The motion switch (event-screens spec section 2.9): a host
+            # preference, deliberately not named like any CommandType.
+            "set_motion",
         })
 
     def test_opening_the_editor_is_a_host_action(self) -> None:
@@ -269,6 +273,117 @@ class RenameAndDuplicateTests(LayoutTestCase):
 
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["active"], "Night copy")
+
+
+class MotionSwitchTests(LayoutTestCase):
+    """The animation kill switch (event-screens spec section 2.9) is a host
+    preference in ``config.json``, exactly like the display: it advances no
+    revision, writes no history row, and is pushed to the boards through the
+    link -- never through a command.
+    """
+
+    def test_set_motion_advances_no_revision_and_writes_no_history_row(self) -> None:
+        application = self.make_application()
+        bridge = application.start_new()
+        bridge.command("add_score", {"team": "home", "points": 7})
+        bridge.command("game_clock_start")
+        self.monotonic.advance(5.0)
+        before_state = application.service.materialized_state()
+        before_revision = application.service.revision
+        before_history = len(read_action_history(self.paths.database))
+
+        layouts = self.make_layouts()
+        self.assertTrue(layouts.motion_enabled(), "motion is on until an operator turns it off")
+        off = layouts.set_motion(False)
+        on = layouts.set_motion(True)
+        refused = layouts.set_motion("off")
+
+        self.monotonic.advance(2.0)
+        after_state = application.service.materialized_state()
+        self.assertEqual(application.service.revision, before_revision)
+        self.assertEqual(len(read_action_history(self.paths.database)), before_history)
+        self.assertEqual(after_state.home_score, before_state.home_score)
+        self.assertTrue(after_state.game_clock.running)
+        self.assertTrue(off["ok"])
+        self.assertFalse(off["motion"])
+        self.assertEqual(off["message"], "Motion is off.")
+        self.assertTrue(on["ok"])
+        self.assertTrue(on["motion"])
+        self.assertEqual(on["message"], "Motion is on.")
+        self.assertFalse(refused["ok"])
+        self.assertEqual(refused["message"], "Motion must be on or off.")
+        self.assertTrue(refused["motion"], "a refused answer changes nothing")
+        for payload in (off, on, refused):
+            self.assertIn("layout", payload, "set_motion answers with the full layout state")
+
+    def test_the_preference_round_trips_through_config_json(self) -> None:
+        layouts = self.make_layouts()
+        self.assertTrue(layouts.set_motion(False)["ok"])
+
+        self.assertEqual(config.read_section(self.paths, config.PRESENTATION_SECTION), {"motion": False})
+        self.assertFalse(config.read_motion(self.paths))
+        self.assertFalse(self.make_layouts().motion_enabled(), "a fresh host reads the stored switch")
+        self.assertFalse(self.make_layouts().state()["motion"])
+
+        layouts.set_motion(True)
+        self.assertEqual(config.read_section(self.paths, config.PRESENTATION_SECTION), {"motion": True})
+        self.assertTrue(config.read_motion(self.paths))
+
+    def test_a_non_bool_writes_nothing_and_an_unreadable_section_means_on(self) -> None:
+        layouts = self.make_layouts()
+        for bad in ("off", 0, None, [False]):
+            with self.subTest(value=bad):
+                self.assertFalse(layouts.set_motion(bad)["ok"])
+                self.assertIsNone(config.read_section(self.paths, config.PRESENTATION_SECTION))
+        for broken in ({"motion": "no"}, {"motion": 0}, "off", 3, {}):
+            with self.subTest(section=broken):
+                config.write_section(self.paths, config.PRESENTATION_SECTION, broken)
+                self.assertTrue(config.read_motion(self.paths))
+                self.assertTrue(self.make_layouts().motion_enabled())
+        config.write_section(self.paths, config.PRESENTATION_SECTION, {"motion": False, "future_key": 1})
+        config.write_motion(self.paths, True)
+        self.assertEqual(config.read_section(self.paths, config.PRESENTATION_SECTION),
+                         {"motion": True, "future_key": 1}, "other presentation keys survive")
+
+    def test_set_motion_publishes_the_switch_through_the_link_and_survives_a_failure(self) -> None:
+        pushed: list[bool] = []
+        link = LayoutLink()
+        link.publish_motion = pushed.append  # type: ignore[method-assign]
+        layouts = self.make_layouts(link=link)
+        layouts.set_motion(False)
+        layouts.set_motion("nonsense")
+        layouts.set_motion(True)
+        self.assertEqual(pushed, [False, True])
+
+        def explode(enabled: bool) -> None:
+            raise RuntimeError("window gone")
+
+        link.publish_motion = explode  # type: ignore[method-assign]
+        result = layouts.set_motion(False)
+        self.assertTrue(result["ok"], "a publish failure never fails the switch (R-002)")
+        self.assertFalse(config.read_motion(self.paths))
+
+    def test_the_spectator_bridge_reads_the_switch_read_only(self) -> None:
+        layouts = self.make_layouts()
+        spectator = SpectatorBridge(lambda: {}, layouts.current_layout, read_motion=layouts.motion_enabled)
+        self.assertTrue(spectator.get_motion())
+        layouts.set_motion(False)
+        self.assertFalse(spectator.get_motion())
+        self.assertFalse(hasattr(spectator, "set_motion"))
+        self.assertTrue(SpectatorBridge(lambda: {}).get_motion(), "no reader means motion on")
+
+    def test_every_motion_payload_is_json_compatible(self) -> None:
+        application = self.make_application()
+        bridge = application.start_new()
+        layouts = self.make_layouts()
+        editor = LayoutEditorBridge(layouts, bridge.spectator_snapshot)
+        self.assert_json_only(editor.set_motion(False))
+        self.assert_json_only(editor.set_motion(True))
+        self.assert_json_only(editor.set_motion("no"))
+        self.assert_json_only(editor.layout_state())
+        self.assertIn("motion", editor.layout_state())
+        self.assert_json_only(SpectatorBridge(bridge.spectator_snapshot, layouts.current_layout,
+                                              read_motion=layouts.motion_enabled).get_motion())
 
 
 class LayoutPayloadTests(LayoutTestCase):

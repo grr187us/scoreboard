@@ -562,3 +562,23 @@ svg { display: block; }
 .severity { font-weight: 700; letter-spacing: .06em; margin-right: 6px; }
 .error .severity { color: var(--danger); }
 .warning .severity { color: var(--warn); }
+
+/* --- Motion switch (event screens, September 8, 2026) -------------------------
+ * A pressed (on) button reads as "live"; off dims the glyph and strikes it,
+ * so the state is never told by colour alone: the label says it in words. */
+
+#motion-toggle { gap: 6px; }
+#motion-toggle[aria-pressed="true"] svg { color: var(--ok); }
+#motion-toggle[aria-pressed="false"] { color: var(--ink-2); border-style: dashed; }
+#motion-toggle[aria-pressed="false"] svg { color: var(--ink-3); }
+
+/* Fill effect, Motion, and Ticker rows. */
+#field-fill-effect { margin-top: 4px; }
+#prop-lines { width: 100%; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.4; }
+#lines-note, #animation-note { color: var(--ink-3); font-size: 11px; margin: -4px 0 8px; }
+#prop-border_style { flex: 0 0 auto; width: 84px; }
+#field-orientation .choices button { font-size: 11px; }
+/* Colour A/B rows: swatch + hex + opacity + unit must fit on one line. */
+#field-fill_color_a input[type="text"], #field-fill_color_b input[type="text"] { flex: 1 1 60px; }
+#field-fill_color_a input[type="number"], #field-fill_color_b input[type="number"] { flex: 0 0 56px; }
+#field-fill_stripes input[type="number"] { flex: 1 1 56px; }

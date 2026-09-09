@@ -31,22 +31,45 @@
   <p class="alert" id="alert" hidden role="alert" aria-live="assertive"></p>
 
   <main class="board">
-    <section class="team" aria-labelledby="home-heading">
-      <h2 id="home-heading">HOME<span class="possession-flag" id="home-possession"></span></h2>
+    <!--
+      Scoring is two steps on the main screen (owner decision 2): SCORE arms
+      the panel, one point press applies and disarms. Both groups live inside
+      one fixed-height .score-controls block and are swapped with `hidden`, so
+      arming a team never changes the board's height (U-001). The point
+      buttons are still ordinary data-command controls (K-001).
+    -->
+    <section class="team" id="home-panel" aria-labelledby="home-heading">
+      <h2 id="home-heading">HOME<span class="possession-flag" id="home-possession"></span><span
+          class="armed-flag" id="home-armed-flag" hidden> &middot; SCORING</span></h2>
       <p class="team-name" data-field="teams.home.name">HOME</p>
       <span class="identity-stripe" id="home-identity-stripe" hidden></span>
+      <!-- Impossible to miss that the teams were never chosen (owner decision
+           1). Text, not colour alone (U-002); hidden it costs no height. -->
+      <p class="team-pending" id="home-pending" hidden>NOT CHOSEN</p>
       <p class="score numeric" data-field="teams.home.score">0</p>
-      <div class="score-buttons">
-        <button type="button" data-command="add_score" data-team="home" data-points="1">+1</button>
-        <button type="button" data-command="add_score" data-team="home" data-points="2">+2</button>
-        <button type="button" data-command="add_score" data-team="home" data-points="3">+3</button>
-        <button type="button" class="wide" data-command="add_score" data-team="home" data-points="6">+6</button>
+      <div class="score-controls" id="home-score-controls" data-armed="false">
+        <div class="score-idle" id="home-idle">
+          <button type="button" id="home-arm" data-action="arm_score" data-team="home">SCORE &#9656;</button>
+          <!-- One press, undoable, and it touches nothing else (owner
+               decision 4): no crowd message, no countdown, no clock. -->
+          <button type="button" id="home-timeout" data-command="timeout_used" data-team="home">TIMEOUT
+            &middot; <span data-field="football.timeouts.home">3</span></button>
+        </div>
+        <div class="score-armed" id="home-armed" hidden>
+          <button type="button" data-command="add_score" data-team="home" data-points="1">+1</button>
+          <button type="button" data-command="add_score" data-team="home" data-points="2">+2</button>
+          <button type="button" data-command="add_score" data-team="home" data-points="3">+3</button>
+          <button type="button" data-command="add_score" data-team="home" data-points="6">+6</button>
+          <button type="button" data-action="disarm_score" aria-label="Cancel scoring">&#10005;</button>
+        </div>
       </div>
     </section>
 
     <section class="clocks" aria-label="Clocks">
       <div class="clock-block">
-        <h2>GAME CLOCK</h2>
+        <!-- One clock for every quarter label: KICKOFF COUNTDOWN in PRE,
+             HALFTIME COUNTDOWN in HALF, GAME CLOCK in play. Python names it. -->
+        <h2 data-field="clocks.game.label">GAME CLOCK</h2>
         <p class="clock big" id="game-display" data-field="clocks.game.display">12:00</p>
         <p class="state" id="game-state" data-field="clocks.game.status">STOPPED</p>
         <div class="pair">
@@ -78,16 +101,26 @@
       </div>
     </section>
 
-    <section class="team" aria-labelledby="away-heading">
-      <h2 id="away-heading">AWAY<span class="possession-flag" id="away-possession"></span></h2>
+    <section class="team" id="away-panel" aria-labelledby="away-heading">
+      <h2 id="away-heading">AWAY<span class="possession-flag" id="away-possession"></span><span
+          class="armed-flag" id="away-armed-flag" hidden> &middot; SCORING</span></h2>
       <p class="team-name" data-field="teams.away.name">AWAY</p>
       <span class="identity-stripe" id="away-identity-stripe" hidden></span>
+      <p class="team-pending" id="away-pending" hidden>NOT CHOSEN</p>
       <p class="score numeric" data-field="teams.away.score">0</p>
-      <div class="score-buttons">
-        <button type="button" data-command="add_score" data-team="away" data-points="1">+1</button>
-        <button type="button" data-command="add_score" data-team="away" data-points="2">+2</button>
-        <button type="button" data-command="add_score" data-team="away" data-points="3">+3</button>
-        <button type="button" class="wide" data-command="add_score" data-team="away" data-points="6">+6</button>
+      <div class="score-controls" id="away-score-controls" data-armed="false">
+        <div class="score-idle" id="away-idle">
+          <button type="button" id="away-arm" data-action="arm_score" data-team="away">SCORE &#9656;</button>
+          <button type="button" id="away-timeout" data-command="timeout_used" data-team="away">TIMEOUT
+            &middot; <span data-field="football.timeouts.away">3</span></button>
+        </div>
+        <div class="score-armed" id="away-armed" hidden>
+          <button type="button" data-command="add_score" data-team="away" data-points="1">+1</button>
+          <button type="button" data-command="add_score" data-team="away" data-points="2">+2</button>
+          <button type="button" data-command="add_score" data-team="away" data-points="3">+3</button>
+          <button type="button" data-command="add_score" data-team="away" data-points="6">+6</button>
+          <button type="button" data-action="disarm_score" aria-label="Cancel scoring">&#10005;</button>
+        </div>
       </div>
     </section>
   </main>
@@ -138,26 +171,27 @@
     -->
     <button type="button" class="last-action" id="last-action-button" data-action="open_history">LAST: <span
         id="last-action">nothing yet</span><span class="undo-depth" id="undo-depth" hidden></span></button>
-    <button type="button" id="undo" data-command="undo">UNDO</button>
+    <!-- Undo asks first (owner decision 3). The dialog's change line is
+         'Reverses: ' + Python's own last_action.label, so the operator sees
+         exactly what they are giving up before anything is sent. -->
+    <button type="button" id="undo" data-command="undo" data-confirm="local"
+            data-confirm-title="Undo the last action?">UNDO&hellip;</button>
   </section>
 
   <footer class="tools">
     <button type="button" id="open-teams" data-action="open_teams">Teams &#9656;</button>
     <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
-    <button type="button" id="open-event" data-action="open_event">Halftime &#9656;</button>
+    <button type="button" id="open-setup" data-action="open_setup">Setup &#9656;</button>
     <button type="button" id="open-field" data-action="open_field">Field &#9656;</button>
     <button type="button" id="open-field-assistant" data-action="open_field_assistant">Field Assistant</button>
     <button type="button" id="open-cutscenes" data-action="open_cutscenes">Cutscenes</button>
     <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
     <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
     <span class="spacer"></span>
-    <button type="button" class="danger" data-command="game_clock_reset" data-confirm="local"
-            data-confirm-title="Reset the game clock?"
-            data-confirm-detail="The game clock returns to 12:00 and stays stopped.">Reset Game Clock&hellip;</button>
-    <button type="button" class="danger" data-command="end_game" data-confirm="local"
-            data-confirm-title="End the game?"
-            data-confirm-detail="Both clocks stop and the game is marked FINAL. Scores and names are kept.">End Game&hellip;</button>
-    <button type="button" class="danger" data-command="new_game">New Game&hellip;</button>
+    <!-- The three game-lifecycle commands moved into their own drawer (owner
+         request 5, UX section 2's "separate danger area"): every button left
+         in the always-visible footer only opens something. -->
+    <button type="button" id="open-game" class="danger" data-action="open_game">Game &#9656;</button>
   </footer>
 
   <!-- Corrective controls live in an overlay, visually separated from normal
@@ -169,6 +203,12 @@
 
       <div class="row">
         <span class="row-label">HOME score <span class="numeric" data-field="teams.home.score">0</span></span>
+        <!-- Adding points is still possible without arming the board: the
+             drawer is itself the protection, so these need no confirmation. -->
+        <button type="button" data-command="add_score" data-team="home" data-points="1">+1</button>
+        <button type="button" data-command="add_score" data-team="home" data-points="2">+2</button>
+        <button type="button" data-command="add_score" data-team="home" data-points="3">+3</button>
+        <button type="button" data-command="add_score" data-team="home" data-points="6">+6</button>
         <button type="button" data-command="correct_score" data-team="home" data-points="1">&minus;1</button>
         <button type="button" data-command="correct_score" data-team="home" data-points="2">&minus;2</button>
         <button type="button" data-command="correct_score" data-team="home" data-points="3">&minus;3</button>
@@ -181,6 +221,10 @@
 
       <div class="row">
         <span class="row-label">AWAY score <span class="numeric" data-field="teams.away.score">0</span></span>
+        <button type="button" data-command="add_score" data-team="away" data-points="1">+1</button>
+        <button type="button" data-command="add_score" data-team="away" data-points="2">+2</button>
+        <button type="button" data-command="add_score" data-team="away" data-points="3">+3</button>
+        <button type="button" data-command="add_score" data-team="away" data-points="6">+6</button>
         <button type="button" data-command="correct_score" data-team="away" data-points="1">&minus;1</button>
         <button type="button" data-command="correct_score" data-team="away" data-points="2">&minus;2</button>
         <button type="button" data-command="correct_score" data-team="away" data-points="3">&minus;3</button>
@@ -263,6 +307,9 @@
         <span class="chip" id="drawer-display-chip">DISPLAY CLOSED</span>
         <span class="folder-path" id="display-detail">&hellip;</span>
         <button type="button" id="drawer-reopen-display" class="chip-button" data-action="reopen_display">Reopen Display</button>
+        <!-- A host action like Reopen: it closes that one window and changes
+             no game state (D-005). Shown only while a display is open. -->
+        <button type="button" id="close-display" data-action="close_display" hidden>Close Display</button>
       </div>
 
       <div class="row" id="display-row">
@@ -289,6 +336,9 @@
   <div class="drawer" id="teams-drawer" hidden aria-label="Teams">
     <div class="drawer-panel">
       <h2>TEAMS</h2>
+      <!-- The soft prompt (owner decision 1). Python owns the sentence; this
+           page only shows or hides it. Nothing here is locked. -->
+      <p class="hint attention" id="teams-prompt" hidden></p>
       <p class="hint">Pick a saved team for each side. Team names can change only
         before kickoff, and each change asks you to confirm. Colours and short
         names are saved for the board; they never change scores or clocks.</p>
@@ -330,44 +380,88 @@
     </div>
   </div>
 
-  <div class="drawer" id="event-drawer" hidden aria-label="Halftime countdown">
+  <!--
+    Game rules (September 9, 2026). Every length the board loads -- quarter,
+    overtime, the kickoff and halftime countdowns, the warmup label, the crowd
+    timeout, timeouts per half -- is edited here and nowhere else. Saving is a
+    host action (api.save_rules), not a command: it advances no revision and
+    writes no history row, and it changes nothing already on a clock. Each
+    value is used the next time that period, a new game, or a timeout is
+    loaded. Typing changes nothing until Save (F-016).
+  -->
+  <div class="drawer" id="setup-drawer" hidden aria-label="Setup">
     <div class="drawer-panel">
-      <h2>HALFTIME COUNTDOWN</h2>
-      <p class="hint">Pregame is controlled by Game Clock. This separate countdown runs only halftime.</p>
+      <h2>SETUP</h2>
+      <p class="hint">Period and countdown lengths, the crowd timeout, and timeouts per half.
+        Saving changes nothing already on the clock: each length is used the next time that
+        period, a new game, or a timeout is loaded.</p>
 
       <div class="row">
-        <span class="row-label"><span data-field="clocks.event.title">UNTIL SECOND HALF</span>
-          <span class="clock" data-field="clocks.event.display">15:00</span>
-          <span class="state" data-field="clocks.event.status">STOPPED</span>
-          <span class="state" data-field="clocks.event.phase">PREGAME</span></span>
-      </div>
-
-      <div class="row">
-        <span class="row-label">Load</span>
-        <button type="button" data-command="event_countdown_select" data-label="HALFTIME">Halftime 15:00</button>
-      </div>
-
-      <div class="row">
-        <span class="row-label">Run</span>
-        <button type="button" id="event-start" data-command="event_countdown_start">START</button>
-        <button type="button" id="event-stop" data-command="event_countdown_stop">STOP</button>
-        <button type="button" data-command="event_countdown_reset">RESET</button>
-      </div>
-
-      <div class="row">
-        <span class="row-label">Edit current time</span>
-        <input type="number" id="event-minutes" min="0" max="15" step="1" value="15" data-draft="true"
-               aria-label="Countdown minutes">
+        <span class="row-label">Quarter length</span>
+        <input type="number" id="rule-quarter-minutes" min="1" max="60" step="1" value="12" data-draft="true"
+               aria-label="Quarter length minutes">
         <span>:</span>
-        <input type="number" id="event-seconds" min="0" max="59" step="1" value="0" data-draft="true"
-               aria-label="Countdown seconds">
-        <button type="button" data-command="event_countdown_correct" data-arg-minutes="#event-minutes"
-                data-arg-seconds="#event-seconds" data-arg-name="seconds" data-confirm="local"
-                data-confirm-title="Set the countdown?"
-                data-confirm-detail="Editing stops the countdown. Remain stopped is the default; use START to run it.">Apply&hellip;</button>
+        <input type="number" id="rule-quarter-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Quarter length seconds">
       </div>
+
+      <div class="row">
+        <span class="row-label">Overtime length</span>
+        <input type="number" id="rule-overtime-minutes" min="1" max="60" step="1" value="12" data-draft="true"
+               aria-label="Overtime length minutes">
+        <span>:</span>
+        <input type="number" id="rule-overtime-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Overtime length seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Pregame countdown</span>
+        <input type="number" id="rule-pregame-minutes" min="1" max="60" step="1" value="30" data-draft="true"
+               aria-label="Pregame countdown minutes">
+        <span>:</span>
+        <input type="number" id="rule-pregame-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Pregame countdown seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Halftime countdown</span>
+        <input type="number" id="rule-halftime-minutes" min="1" max="60" step="1" value="15" data-draft="true"
+               aria-label="Halftime countdown minutes">
+        <span>:</span>
+        <input type="number" id="rule-halftime-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Halftime countdown seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Warmup label at</span>
+        <input type="number" id="rule-warmup-minutes" min="0" max="60" step="1" value="3" data-draft="true"
+               aria-label="Warmup label minutes">
+        <span>:</span>
+        <input type="number" id="rule-warmup-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Warmup label seconds">
+      </div>
+      <p class="hint">The halftime countdown says HALFTIME until this much remains, then WARMUP.
+        0:00 turns the WARMUP label off.</p>
+
+      <div class="row">
+        <span class="row-label">Timeout countdown</span>
+        <input type="number" id="rule-timeout-seconds" min="1" max="300" step="1" value="60" data-draft="true"
+               aria-label="Timeout countdown seconds">
+        <span>seconds</span>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Timeouts per half</span>
+        <input type="number" id="rule-timeouts-per-half" min="1" max="5" step="1" value="3" data-draft="true"
+               aria-label="Timeouts per half">
+      </div>
+      <p class="hint">Each team starts a game, and the second half, with this many.</p>
+
+      <p class="hint" id="rules-note" hidden></p>
 
       <div class="row end">
+        <button type="button" data-action="restore_default_rules">Restore defaults</button>
+        <button type="button" data-action="save_rules">Save rules</button>
         <button type="button" data-action="close_drawer">Close</button>
       </div>
     </div>
@@ -444,6 +538,44 @@
   </div>
 
   <!--
+    The game's lifecycle, out of the always-visible footer (owner request 5).
+    An overlay drawer is UX section 2's "separate danger area": these three
+    are the only commands that can lose a game, and none of them is now one
+    stray press away from a control used during normal play (U-004).
+  -->
+  <div class="drawer" id="game-drawer" hidden aria-label="Game">
+    <div class="drawer-panel">
+      <h2>GAME</h2>
+      <p class="hint">Nothing here happens without a confirmation. Scores and clocks stay on
+        the main screen.</p>
+
+      <div class="row">
+        <span class="row-label">Game clock <span class="clock" data-field="clocks.game.display">12:00</span></span>
+        <button type="button" class="danger" data-command="game_clock_reset" data-confirm="local"
+                data-confirm-title="Reset the game clock?"
+                data-confirm-detail="The game clock returns to 12:00 and stays stopped.">Reset Game Clock&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">This game</span>
+        <button type="button" class="danger" data-command="end_game" data-confirm="local"
+                data-confirm-title="End the game?"
+                data-confirm-detail="Both clocks stop and the game is marked FINAL. Scores and names are kept.">End Game&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Next game</span>
+        <!-- No local confirm: the service asks for this one itself. -->
+        <button type="button" class="danger" data-command="new_game">New Game&hellip;</button>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
     Undo history (audit item I4). This is a read-only view of the reversible
     transitions the service is holding, newest first, plus the Undo button
     itself so the operator can walk back while watching the list. It shows
@@ -459,7 +591,8 @@
         clears this list rather than letting Undo skip past it.</p>
       <ol class="history-list" id="history-list"></ol>
       <div class="row">
-        <button type="button" data-command="undo">UNDO</button>
+        <button type="button" data-command="undo" data-confirm="local"
+                data-confirm-title="Undo the last action?">UNDO&hellip;</button>
         <button type="button" data-action="close_drawer">Close</button>
       </div>
     </div>

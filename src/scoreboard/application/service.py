@@ -33,14 +33,14 @@ from typing import Any, Callable, Final, Mapping
 
 from scoreboard.application.snapshots import state_to_snapshot
 from scoreboard.domain.clocks import (
-    EventCountdown,
     GameClock,
     PlayClock,
     StatusCountdown,
     clear_play_clock_on_game_clock_start,
     clear_play_clock_on_game_clock_stop,
-    event_phase_for,
 )
+from scoreboard.domain.formatting import format_game_clock
+from scoreboard.domain.rules import GameRules, default_rules
 from scoreboard.domain.field_assistant import (
     FieldAction,
     FieldAssistantContext,
@@ -54,7 +54,6 @@ from scoreboard.domain.field_assistant import (
 from scoreboard.domain.commands import (
     CONFIRMATION_REQUIRED,
     INVALID_CLOCK_TIME,
-    INVALID_EVENT_PHASE,
     INVALID_FIELD_ACTION,
     INVALID_COMMAND,
     INVALID_PLAY_CLOCK_PRESET,
@@ -82,17 +81,16 @@ from scoreboard.domain.commands import (
     validate_command,
 )
 from scoreboard.domain.state import (
+    INTERVAL_QUARTER_LABELS,
     LIVE_QUARTER_LABELS,
     MAX_SCORE,
-    MAX_TIMEOUTS,
     QUARTER_LABELS,
     BallSpot,
     ClockValue,
     GameState,
     MAX_GAME_CLOCK_SECONDS,
-    MAX_PREGAME_CLOCK_SECONDS,
     StateValidationError,
-    default_state,
+    setup_prompt_detail,
 )
 
 FINAL_LIFECYCLE: Final[str] = "FINAL"
@@ -106,7 +104,6 @@ class _Transition:
     changes: dict[str, Any] = field(default_factory=dict)
     game_clock: GameClock | None = None
     play_clock: PlayClock | None = None
-    event_clock: EventCountdown | None = None
     status_clock: StatusCountdown | None = None
     undo: UndoEntry | None = None
     clears_undo: bool = False
@@ -117,6 +114,21 @@ class _Transition:
     #: otherwise wipe out the older entries a second Undo is meant to reach).
     pops_undo: bool = False
     replacement_state: GameState | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _QuarterClockPlan:
+    """What a quarter move does to the game clock, decided once.
+
+    ``loads_seconds`` is ``None`` when the clock simply keeps its stopped
+    value; otherwise the fresh stopped value it loads, with
+    ``maximum_seconds`` as that period's length (what Reset returns to).
+    """
+
+    loads_seconds: float | None
+    maximum_seconds: float
+    remaining_seconds: float
+    resets_timeouts: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +208,24 @@ def _undo_reported_value(value: Any) -> Any:
     return value
 
 
+def initial_state(rules: GameRules | None = None, *, revision: int = 0) -> GameState:
+    """The stopped pregame baseline a new game starts from, under ``rules``.
+
+    ``GameState()`` alone carries the shipped defaults (a 30:00 kickoff, three
+    timeouts a side); this applies the operator's configured pregame length
+    and timeouts per half instead, which is what New Game and a fresh launch
+    both mean by "a clean board".
+    """
+
+    active = default_rules() if rules is None else rules
+    return GameState(
+        revision=revision,
+        game_clock=ClockValue(active.pregame_seconds, False, active.pregame_seconds),
+        home_timeouts=active.timeouts_per_half,
+        away_timeouts=active.timeouts_per_half,
+    )
+
+
 class ScoreboardService:
     """Validates and applies every authoritative mutation, one at a time."""
 
@@ -204,22 +234,25 @@ class ScoreboardService:
         *,
         state: GameState | None = None,
         monotonic_clock: Callable[[], float] | None = None,
+        rules: GameRules | None = None,
     ) -> None:
         monotonic = time.monotonic if monotonic_clock is None else monotonic_clock
         if not callable(monotonic):
             raise TypeError("monotonic_clock must be callable")
-        initial = default_state() if state is None else state
+        if rules is not None and not isinstance(rules, GameRules):
+            raise TypeError("rules must be a GameRules")
+        self._rules = default_rules() if rules is None else rules
+        initial = initial_state(self._rules) if state is None else state
         if not isinstance(initial, GameState):
             raise TypeError("state must be a GameState")
         self._monotonic = monotonic
         self._state = initial
-        # Both engines share the service's single time source. A play clock
+        # Every engine shares the service's single time source. A play clock
         # rebuilt from state starts with no remembered preset, because
         # preset_seconds is engine-only bookkeeping and is not part of the
         # persisted ClockValue contract; a preset command reloads it.
         self._game_clock = GameClock.from_state(initial, monotonic_clock=monotonic)
         self._play_clock = PlayClock.from_state(initial, monotonic_clock=monotonic)
-        self._event_clock = EventCountdown.from_state(initial, monotonic_clock=monotonic)
         self._status_clock = StatusCountdown.from_state(initial, monotonic_clock=monotonic)
         # A bounded, strictly last-in-first-out stack (I4): the newest entry
         # is always index -1, and Undo only ever reverses that one. A single
@@ -258,8 +291,23 @@ class ScoreboardService:
         return self._play_clock
 
     @property
-    def event_clock(self) -> EventCountdown:
-        return self._event_clock
+    def rules(self) -> GameRules:
+        """The timing rules the next quarter change, New Game, or TIMEOUT uses."""
+
+        return self._rules
+
+    def set_rules(self, rules: GameRules) -> None:
+        """Replace the rules. Not a command: no revision, no history row.
+
+        Nothing already loaded changes -- a running 2nd quarter keeps its
+        clock -- because a rule is what a period *loads*, not a correction to
+        the one in progress. The next quarter change, New Game, or crowd
+        TIMEOUT press picks the new values up.
+        """
+
+        if not isinstance(rules, GameRules):
+            raise TypeError("rules must be a GameRules")
+        self._rules = rules
 
     @property
     def status_clock(self) -> StatusCountdown:
@@ -282,15 +330,10 @@ class ScoreboardService:
         """
 
         current = float(self._monotonic()) if now is None else float(now)
-        countdown = self._event_clock.to_clock_value(now=current)
         return replace(
             self._state,
             game_clock=self._game_clock.to_clock_value(now=current),
             play_clock=self._play_clock.to_clock_value(now=current),
-            event_countdown=countdown,
-            # The HALFTIME/WARMUP label is derived, so it changes at 3:00 while
-            # the countdown runs rather than waiting for the next command.
-            event_phase=event_phase_for(self._state.event_phase, countdown.seconds),
             status_clock=self._status_clock.to_clock_value(now=current),
         )
 
@@ -313,11 +356,11 @@ class ScoreboardService:
 
         if game_expired:
             self._game_clock = self._game_clock.expire(now=current)
-            # PRE is a kickoff countdown, not football game time. Its natural
-            # expiry intentionally remains PRE and never invokes the normal
-            # game/play-clock stop coupling.
+            # PRE and HALF are interval countdowns, not football game time.
+            # Their natural expiry intentionally stays in that quarter and
+            # never invokes the normal game/play-clock stop coupling.
             next_play_clock = self._play_clock
-            if self._state.quarter != "PRE":
+            if self._state.quarter not in INTERVAL_QUARTER_LABELS:
                 next_play_clock = clear_play_clock_on_game_clock_stop(
                     self._play_clock,
                     game_clock_is_running=False,
@@ -593,9 +636,6 @@ class ScoreboardService:
     ) -> CommandResult:
         game_clock = self._game_clock if transition.game_clock is None else transition.game_clock
         play_clock = self._play_clock if transition.play_clock is None else transition.play_clock
-        event_clock = (
-            self._event_clock if transition.event_clock is None else transition.event_clock
-        )
         status_clock = (
             self._status_clock if transition.status_clock is None else transition.status_clock
         )
@@ -609,14 +649,8 @@ class ScoreboardService:
                 quarter = changes["quarter"]
                 changes["lifecycle"] = {"PRE": "PRE_GAME", "HALF": "HALFTIME",
                                         "FINAL": "FINAL"}.get(quarter, "IN_PROGRESS")
-                phase = {"PRE": "PREGAME", "HALF": "HALFTIME"}.get(quarter)
-                if phase is not None:
-                    previous = "PREGAME" if self._state.event_phase == "PREGAME" else "HALFTIME"
-                    if phase != previous:
-                        event_clock = event_clock.select(phase, now=now)
-                    changes["event_phase"] = phase
             if command.type is CommandType.GAME_CLOCK_START and (
-                    self._state.quarter != "PRE" and
+                    self._state.quarter not in INTERVAL_QUARTER_LABELS and
                     not self._game_clock.current_value(now).running
                     and game_clock.current_value(now).running):
                 changes["play_clock_cleared"] = True
@@ -638,11 +672,6 @@ class ScoreboardService:
             if command.type is not CommandType.FINALIZE_FIELD_ACTION:
                 changes.setdefault("game_clock", game_clock.to_clock_value(now=now))
                 changes.setdefault("play_clock", play_clock.to_clock_value(now=now))
-                countdown = event_clock.to_clock_value(now=now)
-                changes.setdefault("event_countdown", countdown)
-                changes["event_phase"] = event_phase_for(
-                    changes.get("event_phase", self._state.event_phase), countdown.seconds
-                )
                 changes.setdefault("status_clock", status_clock.to_clock_value(now=now))
             try:
                 next_state = self._state.evolve(**changes)
@@ -654,7 +683,6 @@ class ScoreboardService:
         self._state = next_state
         self._game_clock = game_clock
         self._play_clock = play_clock
-        self._event_clock = event_clock
         self._status_clock = status_clock
 
         # The declared eligibility sets have the final say, so a handler can
@@ -871,7 +899,6 @@ class ScoreboardService:
         a_clock_is_running = (
             self._game_clock.current_value(now).running
             or self._play_clock.current_value(now).running
-            or self._event_clock.current_value(now).running
         )
         if not command.confirmed:
             # Every quarter move is a major lifecycle action. Nothing is
@@ -890,46 +917,37 @@ class ScoreboardService:
             source=command.source,
         )
         next_game_clock = self._game_clock.stop(now=now)
-        # Moving out of PRE abandons the kickoff countdown deliberately. A
-        # live target receives its stopped regulation period; HALF/FINAL have
-        # no playable game time to carry forward. Moving back to PRE reloads a
-        # stopped full kickoff countdown rather than exposing a 12:00 value.
-        left_pregame = old_value == "PRE" and target != "PRE"
-        entered_pregame = old_value != "PRE" and target == "PRE"
-        if left_pregame:
-            seconds = MAX_GAME_CLOCK_SECONDS if target in LIVE_QUARTER_LABELS else 0.0
+        plan = self._quarter_clock_plan(old_value, target, next_game_clock, now)
+        changes: dict[str, Any] = {"quarter": target}
+        if plan.loads_seconds is not None:
+            # One game-clock engine for every quarter label: PRE loads the
+            # kickoff countdown, HALF the halftime countdown, a playing
+            # quarter its regulation period, overtime its own length --
+            # each stopped, each with its period's length as the maximum so
+            # Reset Game Clock returns to it. Leaving an interval abandons
+            # whatever was left on it deliberately.
             next_game_clock = GameClock(
-                value=ClockValue(seconds, False, MAX_GAME_CLOCK_SECONDS),
+                value=ClockValue(plan.loads_seconds, False, plan.maximum_seconds),
                 monotonic_clock=self._monotonic,
             )
-        elif entered_pregame:
-            next_game_clock = GameClock(
-                value=ClockValue(MAX_PREGAME_CLOCK_SECONDS, False, MAX_PREGAME_CLOCK_SECONDS),
-                monotonic_clock=self._monotonic,
-            )
-        auto_reset_game_clock = (
-            target in LIVE_QUARTER_LABELS
-            and next_game_clock.current_value(now).seconds <= 0.0
-        )
-        if auto_reset_game_clock:
-            # A live quarter beginning at zero needs its full stopped length,
-            # but a nonzero correction always remains the operator's choice.
-            next_game_clock = next_game_clock.reset()
+        if plan.resets_timeouts:
+            per_half = self._rules.timeouts_per_half
+            changes["home_timeouts"] = per_half
+            changes["away_timeouts"] = per_half
 
-        if a_clock_is_running or auto_reset_game_clock or left_pregame or entered_pregame:
+        if a_clock_is_running or plan.loads_seconds is not None:
             # Either stopping a clock or loading a fresh quarter clock makes a
             # simple quarter-only Undo misleading: it could not restore the
             # clock value that existed before this transition.
             return _Transition(
-                changes={"quarter": target},
+                changes=changes,
                 event=event,
                 game_clock=next_game_clock,
                 play_clock=self._play_clock.stop(now=now),
-                event_clock=self._event_clock.stop(now=now),
                 clears_undo=True,
             )
         return _Transition(
-            changes={"quarter": target},
+            changes=changes,
             event=event,
             game_clock=next_game_clock,
             undo=UndoEntry(
@@ -938,6 +956,43 @@ class ScoreboardService:
                 old_value=old_value,
                 new_value=target,
             ),
+        )
+
+    def _quarter_clock_plan(
+        self, source: str, target: str, stopped: GameClock, now: float
+    ) -> "_QuarterClockPlan":
+        """What the game clock (and the timeouts) do on ``source`` -> ``target``.
+
+        Shared by the confirmation text and the transition itself, so the
+        dialog can never promise one thing and the commit do another.
+        """
+
+        rules = self._rules
+        length = rules.period_seconds(target)
+        current = stopped.current_value(now)
+        entering_interval = target in INTERVAL_QUARTER_LABELS
+        leaving_interval = source in INTERVAL_QUARTER_LABELS
+        live_needs_fresh = target in LIVE_QUARTER_LABELS and (
+            current.seconds <= 0.0
+            # A period whose configured length differs from the clock's
+            # current maximum (4th -> OT with a shorter overtime, or a rule
+            # changed since the last quarter loaded) gets its own length.
+            or current.maximum_seconds != length
+        )
+        if entering_interval or leaving_interval or live_needs_fresh:
+            loads = 0.0 if length is None else length
+            maximum = MAX_GAME_CLOCK_SECONDS if length is None else length
+        else:
+            loads, maximum = None, current.maximum_seconds
+        return _QuarterClockPlan(
+            loads_seconds=loads,
+            maximum_seconds=maximum,
+            remaining_seconds=current.seconds,
+            # NFHS grants each side its timeouts per half: the second half
+            # begins with a full allotment. The move is HALF -> 3rd only;
+            # stepping back into HALF and forward again would reset twice,
+            # which is also what an operator correcting that mistake wants.
+            resets_timeouts=(source == "HALF" and target == "3rd"),
         )
 
     def _handle_new_game(self, command: Command, now: float) -> _Transition | CommandError:
@@ -949,8 +1004,9 @@ class ScoreboardService:
             )
         previous = self._state
         # A new game replaces the current one; the revision keeps moving forward
-        # so downstream consumers never see it go backwards (F-023).
-        fresh = GameState(revision=previous.revision + 1)
+        # so downstream consumers never see it go backwards (F-023). It loads
+        # the operator's configured pregame length and timeouts per half.
+        fresh = initial_state(self._rules, revision=previous.revision + 1)
         return _Transition(
             event=EventIntent(
                 command=command.type,
@@ -962,7 +1018,6 @@ class ScoreboardService:
             replacement_state=fresh,
             game_clock=GameClock(value=fresh.game_clock, monotonic_clock=self._monotonic),
             play_clock=PlayClock(value=fresh.play_clock, monotonic_clock=self._monotonic),
-            event_clock=EventCountdown.from_state(fresh, monotonic_clock=self._monotonic),
             status_clock=StatusCountdown(value=fresh.status_clock, monotonic_clock=self._monotonic),
             clears_undo=True,
         )
@@ -1011,7 +1066,7 @@ class ScoreboardService:
         # The service is the first component that knows whether this Start was a
         # real stopped-to-running transition, so it applies the documented
         # coupling here (F-048). A redundant Start leaves the play clock alone.
-        next_play_clock = self._play_clock if self._state.quarter == "PRE" else (
+        next_play_clock = self._play_clock if self._state.quarter in INTERVAL_QUARTER_LABELS else (
             clear_play_clock_on_game_clock_start(
                 self._play_clock,
                 game_clock_was_running=not became_running,
@@ -1026,7 +1081,7 @@ class ScoreboardService:
         was_running = self._game_clock.current_value(now).running
         next_clock = self._game_clock.stop(now=now)
         next_play_clock = self._play_clock
-        if was_running and self._state.quarter != "PRE":
+        if was_running and self._state.quarter not in INTERVAL_QUARTER_LABELS:
             next_play_clock = clear_play_clock_on_game_clock_stop(
                 self._play_clock,
                 game_clock_is_running=next_clock.current_value(now).running,
@@ -1058,47 +1113,65 @@ class ScoreboardService:
 
         This data crosses the bridge so mouse, keyboard, and direct selection
         get precisely the same words and the same authoritative revision check.
+
+        Leaving PRE with a team name still on its placeholder puts the setup
+        sentence first (spec 1.2). The Teams drawer's prompt is the soft half
+        of that reminder and can be dismissed; this is the half that cannot be
+        missed, because kickoff is the last moment the names still matter.
         """
 
         target = self._quarter_target(command)
         assert not isinstance(target, CommandError)
         source = self._state.quarter
+        setup = self._setup_sentence() if source == "PRE" and target != "PRE" else ""
+        prefix = f"{setup} " if setup else ""
         game = self._game_clock.current_value(now)
         active = [
             name for name, running in (
                 ("game clock", game.running),
                 ("play clock", self._play_clock.current_value(now).running),
-                ("halftime countdown", self._event_clock.current_value(now).running),
             ) if running
         ]
         clocks = (
             "The " + ", ".join(active) + " will stop."
             if active else "All clocks are already stopped."
         )
-        if source == "PRE" and target == "1st" and game.seconds > 0.0:
-            return {
-                "title": "Discard remaining pregame time?",
-                "detail": (
-                    f"Change quarter from {source} to {target}. {clocks} "
-                    f"The {game.seconds:.1f}-second pregame countdown will be discarded. "
-                    "The game clock will load 12:00 stopped."
-                ),
-                "accept_label": "Start 1st quarter — discard remaining pregame time",
-            }
-        if source == "PRE" and target != "PRE":
-            load = "12:00" if target in LIVE_QUARTER_LABELS else "0:00"
-            clock_plan = f"The game clock will load {load} stopped."
-        elif target == "PRE" and source != "PRE":
-            clock_plan = "The game clock will load 30:00 stopped."
-        elif target in LIVE_QUARTER_LABELS and game.seconds <= 0.0:
-            clock_plan = "The game clock will load 12:00 stopped."
+        plan = self._quarter_clock_plan(source, target, self._game_clock.stop(now=now), now)
+        timeouts = (
+            f" Both teams return to {self._rules.timeouts_per_half} timeouts."
+            if plan.resets_timeouts else ""
+        )
+        if plan.loads_seconds is not None:
+            clock_plan = f"The game clock will load {format_game_clock(plan.loads_seconds)} stopped."
         else:
-            clock_plan = f"The game clock will remain {game.seconds / 60:.0f}:{int(game.seconds % 60):02d} stopped."
+            clock_plan = f"The game clock will remain {format_game_clock(game.seconds)} stopped."
+        if (
+            source in INTERVAL_QUARTER_LABELS
+            and target in LIVE_QUARTER_LABELS
+            and game.seconds > 0.0
+        ):
+            # Leaving a countdown with time still on it is the one quarter
+            # move that throws something away, so it says so in the title.
+            what = "pregame" if source == "PRE" else "halftime"
+            return {
+                "title": f"Discard remaining {what} time?",
+                "detail": (
+                    f"{prefix}Change quarter from {source} to {target}. {clocks} "
+                    f"The {game.seconds:.1f}-second {what} countdown will be discarded. "
+                    f"{clock_plan}{timeouts}"
+                ),
+                "accept_label": f"Start {target} quarter — discard remaining {what} time",
+            }
         return {
             "title": "Confirm quarter change",
-            "detail": f"Change quarter from {source} to {target}. {clocks} {clock_plan}",
+            "detail": f"{prefix}Change quarter from {source} to {target}. {clocks} {clock_plan}{timeouts}",
             "accept_label": f"Change to {target}",
         }
+
+    def _setup_sentence(self) -> str:
+        """The same sentence the operator view model's ``setup.detail`` shows."""
+
+        return setup_prompt_detail(self._state.home_name, self._state.away_name)
 
     # --- Play clock ---------------------------------------------------------
 
@@ -1166,74 +1239,6 @@ class ScoreboardService:
         except StateValidationError as exc:
             return CommandError(INVALID_CLOCK_TIME, f"Play clock correction rejected: {exc}.")
         return self._play_clock_transition(command, now, corrected)
-
-    # --- Event countdowns ---------------------------------------------------
-
-    def _event_transition(
-        self,
-        command: Command,
-        now: float,
-        next_clock: EventCountdown,
-        *,
-        phase: str | None = None,
-    ) -> _Transition:
-        changes: dict[str, Any] = {}
-        if phase is not None:
-            changes["event_phase"] = phase
-        return _Transition(
-            changes=changes,
-            event=EventIntent(
-                command=command.type,
-                field="event_countdown",
-                old_value=_clock_snapshot(self._event_clock.current_value(now)),
-                new_value=_clock_snapshot(next_clock.current_value(now)),
-                source=command.source,
-            ),
-            event_clock=next_clock,
-        )
-
-    def _handle_event_countdown_select(
-        self, command: Command, now: float
-    ) -> _Transition | CommandError:
-        # Selecting an event loads its configured length while stopped, so no
-        # countdown can begin without a separate, deliberate Start (F-028).
-        stopped = self._event_clock.stop(now=now)
-        try:
-            loaded = stopped.select(str(command.label), now=now)
-        except StateValidationError as exc:
-            return CommandError(INVALID_EVENT_PHASE, f"Event countdown rejected: {exc}.")
-        return self._event_transition(command, now, loaded, phase=str(command.label))
-
-    def _handle_event_countdown_start(
-        self, command: Command, now: float
-    ) -> _Transition | CommandError:
-        # A countdown never alters the game or play clock (F-025).
-        return self._event_transition(command, now, self._event_clock.start(now=now))
-
-    def _handle_event_countdown_stop(
-        self, command: Command, now: float
-    ) -> _Transition | CommandError:
-        return self._event_transition(command, now, self._event_clock.stop(now=now))
-
-    def _handle_event_countdown_reset(
-        self, command: Command, now: float
-    ) -> _Transition | CommandError:
-        return self._event_transition(command, now, self._event_clock.reset())
-
-    def _handle_event_countdown_correct(
-        self, command: Command, now: float
-    ) -> _Transition | CommandError:
-        # Edit Current Time stops a running countdown first. The optional
-        # start-after-applying choice is a separate Start command issued by the
-        # operator view, so remaining stopped is the default by construction.
-        stopped = self._event_clock.stop(now=now)
-        try:
-            corrected = stopped.correct(target=float(command.seconds), now=now)
-        except StateValidationError as exc:
-            return CommandError(
-                INVALID_CLOCK_TIME, f"Event countdown correction rejected: {exc}."
-            )
-        return self._event_transition(command, now, corrected)
 
     # --- Crowd status (F3) --------------------------------------------------
     #
@@ -1433,10 +1438,10 @@ class ScoreboardService:
                 f"The {command.team} team's timeouts are {old_value}; "
                 "a correction cannot take them below 0.",
             )
-        if new_value > MAX_TIMEOUTS:
+        if new_value > self._rules.timeouts_per_half:
             return CommandError(
                 TIMEOUT_ABOVE_MAXIMUM,
-                f"Timeouts remaining cannot exceed {MAX_TIMEOUTS}.",
+                f"Timeouts remaining cannot exceed {self._rules.timeouts_per_half}.",
             )
         return self._timeout_transition(command, state_field, old_value, new_value)
 
@@ -1444,6 +1449,11 @@ class ScoreboardService:
         state_field = self._timeout_field(str(command.team))
         old_value = getattr(self._state, state_field)
         new_value = int(command.value)
+        if new_value > self._rules.timeouts_per_half:
+            return CommandError(
+                TIMEOUT_ABOVE_MAXIMUM,
+                f"Timeouts remaining cannot exceed {self._rules.timeouts_per_half}.",
+            )
         return self._timeout_transition(command, state_field, old_value, new_value)
 
     def _timeout_transition(
@@ -1571,11 +1581,6 @@ class ScoreboardService:
         CommandType.PLAY_CLOCK_CLEAR: _handle_play_clock_clear,
         CommandType.PLAY_CLOCK_RESET: _handle_play_clock_reset,
         CommandType.PLAY_CLOCK_CORRECT: _handle_play_clock_correct,
-        CommandType.EVENT_COUNTDOWN_SELECT: _handle_event_countdown_select,
-        CommandType.EVENT_COUNTDOWN_START: _handle_event_countdown_start,
-        CommandType.EVENT_COUNTDOWN_STOP: _handle_event_countdown_stop,
-        CommandType.EVENT_COUNTDOWN_RESET: _handle_event_countdown_reset,
-        CommandType.EVENT_COUNTDOWN_CORRECT: _handle_event_countdown_correct,
         CommandType.SET_DOWN: _handle_set_down,
         CommandType.SET_DISTANCE: _handle_set_distance,
         CommandType.SET_POSSESSION: _handle_set_possession,
@@ -1591,4 +1596,4 @@ class ScoreboardService:
     }
 
 
-__all__ = ["FINAL_LIFECYCLE", "ScoreboardService", "TickObservation"]
+__all__ = ["FINAL_LIFECYCLE", "ScoreboardService", "TickObservation", "initial_state"]

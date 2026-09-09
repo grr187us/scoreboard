@@ -7,8 +7,8 @@ The operator bridge exposes deliberately few methods:
   :class:`~scoreboard.application.service.ScoreboardService`, persist the
   result through Task 6, and return a JSON-compatible dictionary;
 * ``get_snapshot()`` -- return the same dictionary without changing anything;
-* ``reopen_display()`` -- ask the host to recreate the spectator window, which
-  changes no game state (D-005);
+* ``reopen_display()`` and ``close_display()`` -- ask the host to recreate or
+  put away the spectator window, neither of which changes game state (D-005);
 * ``displays()``, ``select_display(key)``, and ``forget_display()`` -- report
   which displays exist and put the spectator window on one of them (Task 10);
 * ``open_test_window()`` -- open a small practice-only spectator preview,
@@ -27,7 +27,9 @@ something about this laptop or this presentation, not something that happened
 in the football game.
 
 The spectator bridge exposes ``get_snapshot()``, an optional ``get_layout()``,
-and nothing that mutates.
+``get_cutscene()``, and nothing that mutates the game. Its one action,
+``close_display()``, closes the window it belongs to and can reach nothing
+else.
 
 No domain object crosses this boundary. Every value returned here is a
 ``str``, ``int``, ``float``, ``bool``, ``None``, ``list``, or ``dict``, so the
@@ -49,18 +51,20 @@ from pathlib import Path
 from typing import Any, Callable, Final
 
 from scoreboard.application.service import ScoreboardService
-from scoreboard.domain.clocks import SELECTABLE_EVENT_PHASES, event_phase_for
+from scoreboard.domain.clocks import event_phase_for
 from scoreboard.domain.commands import (
     Command,
     CommandError,
     CommandResult,
     CommandType,
+    PREGAME_LIFECYCLES,
     UndoEntry,
     FieldAction,
     finalize_field_action,
     validate_command,
 )
 from scoreboard.domain.field_assistant import absolute_from_ball_spot, home_goal_side
+from scoreboard.domain.rules import RULE_FIELDS, GameRules, RulesError, default_rules
 from scoreboard.domain.formatting import (
     BLANK_DISPLAY,
     FormattingError,
@@ -79,11 +83,16 @@ from scoreboard.domain.formatting import (
     format_timeout_dots,
 )
 from scoreboard.domain.state import (
+    DEFAULT_AWAY_NAME,
+    DEFAULT_HOME_NAME,
     GAME_STATUS_LABELS,
+    INTERVAL_QUARTER_LABELS,
     BallSpot,
+    ClockValue,
     GameState,
     QUARTER_LABELS,
     SCHEMA_VERSION,
+    setup_prompt_detail,
 )
 from scoreboard.host.cutscenes import CutsceneDirector
 from scoreboard.host.folders import (
@@ -145,11 +154,6 @@ _ALLOWED_ARGUMENTS: Final[dict[CommandType, frozenset[str]]] = {
     CommandType.PLAY_CLOCK_CLEAR: frozenset(),
     CommandType.PLAY_CLOCK_RESET: frozenset(),
     CommandType.PLAY_CLOCK_CORRECT: frozenset({"seconds"}),
-    CommandType.EVENT_COUNTDOWN_SELECT: frozenset({"label"}),
-    CommandType.EVENT_COUNTDOWN_START: frozenset(),
-    CommandType.EVENT_COUNTDOWN_STOP: frozenset(),
-    CommandType.EVENT_COUNTDOWN_RESET: frozenset(),
-    CommandType.EVENT_COUNTDOWN_CORRECT: frozenset({"seconds"}),
     CommandType.SET_DOWN: frozenset({"value"}),
     CommandType.SET_DISTANCE: frozenset({"value"}),
     CommandType.SET_POSSESSION: frozenset({"team"}),
@@ -218,9 +222,9 @@ class DisplayLink:
     Keeping this tiny means the bridge can be tested without a webview, and a
     spectator rendering failure has no path to the state engine (R-002).
 
-    The four hooks below are replaced by :class:`~scoreboard.host.app.WindowHost`
-    at wiring time. On their own they open, move, and forget nothing, which is
-    what lets every display test run on a machine with one screen.
+    The hooks below are replaced by :class:`~scoreboard.host.app.WindowHost`
+    at wiring time. On their own they open, close, move, and forget nothing,
+    which is what lets every display test run on a machine with one screen.
     """
 
     def __init__(self) -> None:
@@ -250,6 +254,17 @@ class DisplayLink:
 
     def reopen(self) -> DisplayStatus:
         """Overridden by the host. On its own this link opens no window."""
+
+        return self._status
+
+    def close(self) -> DisplayStatus:
+        """Overridden by the host. On its own this link closes nothing.
+
+        The counterpart to :meth:`reopen`: the operator (or the display window
+        itself) can put the wall away on purpose. Like reopening, it is a host
+        action about this laptop, not something that happened in the football
+        game -- no revision, no history row, no clock touched (D-005).
+        """
 
         return self._status
 
@@ -521,7 +536,9 @@ def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
     }
 
 
-def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[str, Any]:
+def _football_view(
+    state: GameState, *, home_name: str, away_name: str, timeouts_per_half: int
+) -> dict[str, Any]:
     """Down/distance/possession/ball-on/timeouts, plus their rendered text.
 
     Every string here is produced in Python from
@@ -562,8 +579,8 @@ def _football_view(state: GameState, *, home_name: str, away_name: str) -> dict[
         ),
         "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
         "ball_on_value_display": "—" if ball_on is None else str(ball_on.yard_line),
-        "home_timeouts_dots": format_timeout_dots(state.home_timeouts),
-        "away_timeouts_dots": format_timeout_dots(state.away_timeouts),
+        "home_timeouts_dots": format_timeout_dots(state.home_timeouts, total=timeouts_per_half),
+        "away_timeouts_dots": format_timeout_dots(state.away_timeouts, total=timeouts_per_half),
         "home_timeouts_display": format_timeouts(state.home_timeouts),
         "away_timeouts_display": format_timeouts(state.away_timeouts),
     }
@@ -590,15 +607,40 @@ def _status_view(state: GameState) -> dict[str, Any]:
     }
 
 
-def spectator_view_model(state: GameState) -> dict[str, Any]:
-    """Everything the spectator window renders. It requests nothing else."""
+#: What the operator's game-clock card is called in each kind of quarter.
+#: Python owns the words; the page copies ``clocks.game.label``.
+GAME_CLOCK_LABELS: Final[dict[str, str]] = {
+    "PRE": "KICKOFF COUNTDOWN",
+    "HALF": "HALFTIME COUNTDOWN",
+}
 
-    # PRE has one authoritative countdown: the game-clock engine. The event
-    # engine remains the independent halftime interval timer.
-    pregame = state.lifecycle == "PRE_GAME"
-    event_value = state.game_clock if pregame else state.event_countdown
-    countdown_phase = "PREGAME" if pregame else event_phase_for(
-        state.event_phase, event_value.seconds
+
+def spectator_view_model(
+    state: GameState, *, rules: GameRules | None = None
+) -> dict[str, Any]:
+    """Everything the spectator window renders. It requests nothing else.
+
+    ``rules`` supplies the warmup threshold (``GameRules.warmup_seconds``)
+    the halftime phase label is derived from; the shipped 3:00 when absent.
+    """
+
+    active_rules = default_rules() if rules is None else rules
+    # One authoritative countdown for every quarter label: the game-clock
+    # engine. In PRE it is the kickoff countdown and in HALF the halftime
+    # countdown (September 9, 2026: the separate interval engine is gone).
+    # Outside those two the event block still carries the halftime shape so
+    # a layout's event widgets always have something to bind to.
+    interval = state.quarter in INTERVAL_QUARTER_LABELS
+    event_value = state.game_clock if interval else ClockValue(
+        0.0, False, state.game_clock.maximum_seconds
+    )
+    countdown_phase = "PREGAME" if state.quarter == "PRE" else event_phase_for(
+        "HALFTIME", event_value.seconds, warmup_threshold=active_rules.warmup_seconds
+    )
+    warmup_follows = (
+        format_event_countdown(active_rules.warmup_seconds)
+        if countdown_phase == "HALFTIME" and active_rules.warmup_seconds > 0
+        else None
     )
     play_display = format_play_clock(
         state.play_clock.seconds,
@@ -617,11 +659,19 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
         "quarter_display": _spectator_quarter_label(state.quarter),
         "lifecycle": state.lifecycle,
         "clocks": {
-            "game": _clock_view(
-                state.game_clock.seconds,
-                state.game_clock.running,
-                format_game_clock(state.game_clock.seconds),
-            ),
+            "game": {
+                **_clock_view(
+                    state.game_clock.seconds,
+                    state.game_clock.running,
+                    format_game_clock(state.game_clock.seconds),
+                ),
+                # The length of the period this clock is running, so the
+                # operator's correction field and Reset wording follow the
+                # configured rules rather than a literal 12:00.
+                "maximum_seconds": state.game_clock.maximum_seconds,
+                "full_display": format_game_clock(state.game_clock.maximum_seconds),
+                "label": GAME_CLOCK_LABELS.get(state.quarter, "GAME CLOCK"),
+            },
             "play": _clock_view(
                 state.play_clock.seconds,
                 state.play_clock.running,
@@ -637,22 +687,24 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
                 ),
                 "phase": countdown_phase,
                 "title": "KICKOFF IN" if countdown_phase == "PREGAME" else "UNTIL SECOND HALF",
-                # Shown only during HALFTIME, per the confirmed presentation.
-                "warmup_follows": "3:00" if countdown_phase == "HALFTIME" else None,
+                # Shown only during HALFTIME, per the confirmed presentation,
+                # and only when the rules have a warmup label at all.
+                "warmup_follows": warmup_follows,
                 # The pre-game/halftime layout screens (presentation-screens
                 # spec section 1.2) bind a single warmup-line widget to this
                 # field rather than composing "Warmup follows: " with
                 # warmup_follows in JavaScript -- every game value is produced
                 # in Python and merely copied by the renderer.
                 "warmup_display": (
-                    "Warmup follows: 3:00" if countdown_phase == "HALFTIME" else None
+                    None if warmup_follows is None else f"Warmup follows: {warmup_follows}"
                 ),
             },
         },
         # Meaningful only once a game is live; the spectator page hides this
         # alongside the game board during PRE_GAME/HALFTIME (D-001).
         "football": _football_view(
-            state, home_name=state.home_name, away_name=state.away_name
+            state, home_name=state.home_name, away_name=state.away_name,
+            timeouts_per_half=active_rules.timeouts_per_half,
         ),
         # F3: the crowd-facing status word and its countdown. ``display`` is
         # "" with nothing raised and ``clock_display`` is "" while the
@@ -660,6 +712,77 @@ def spectator_view_model(state: GameState) -> dict[str, Any]:
         # dotted paths hide themselves on empty text (OPTIONAL_WIDGET_IDS),
         # which is how they stay off the wall until the operator raises one.
         "status": _status_view(state),
+    }
+
+
+def _rule_fields_view(rules: GameRules) -> list[dict[str, Any]]:
+    """The Setup drawer's fields, each already split for its inputs.
+
+    A ``clock`` field is edited as minutes and seconds, so Python does the
+    split here (and the ``display`` string), keeping the page free of any
+    arithmetic on a game value beyond re-joining what it was given.
+    """
+
+    fields = []
+    for name, label, kind in RULE_FIELDS:
+        value = getattr(rules, name)
+        entry: dict[str, Any] = {"name": name, "label": label, "kind": kind, "value": value}
+        if kind == "clock":
+            whole = int(value)
+            entry["minutes"] = whole // 60
+            entry["seconds"] = whole % 60
+            entry["display"] = format_game_clock(value)
+        else:
+            entry["display"] = str(int(value))
+        fields.append(entry)
+    return fields
+
+
+def _rule_fields_view(rules: GameRules) -> list[dict[str, Any]]:
+    """The Setup drawer's fields, each already split for its inputs.
+
+    A ``clock`` field is edited as minutes and seconds, so Python does the
+    split here (and the ``display`` string), keeping the page free of any
+    arithmetic on a game value beyond re-joining what it was given.
+    """
+
+    fields = []
+    for name, label, kind in RULE_FIELDS:
+        value = getattr(rules, name)
+        entry: dict[str, Any] = {"name": name, "label": label, "kind": kind, "value": value}
+        if kind == "clock":
+            whole = int(value)
+            entry["minutes"] = whole // 60
+            entry["seconds"] = whole % 60
+            entry["display"] = format_game_clock(value)
+        else:
+            entry["display"] = str(int(value))
+        fields.append(entry)
+    return fields
+
+
+def _setup_view(state: GameState) -> dict[str, Any]:
+    """The pregame "you have not chosen the teams yet" prompt (spec 1.1).
+
+    Python owns the sentence, as it owns every displayed string that describes
+    game state: the operator page only copies ``detail`` into its Teams drawer
+    and shows NOT CHOSEN where a side is flagged. A name is "pending" only
+    while it is still the shipped placeholder and the game has not kicked off,
+    so a team really called HOME stops being flagged the moment the quarter
+    leaves PRE.
+    """
+
+    pregame = state.lifecycle in PREGAME_LIFECYCLES
+    home_pending = pregame and state.home_name == DEFAULT_HOME_NAME
+    away_pending = pregame and state.away_name == DEFAULT_AWAY_NAME
+    detail = (
+        setup_prompt_detail(state.home_name, state.away_name) if pregame else ""
+    )
+    return {
+        "teams_pending": home_pending or away_pending,
+        "home_pending": home_pending,
+        "away_pending": away_pending,
+        "detail": detail,
     }
 
 
@@ -673,9 +796,12 @@ def operator_view_model(
     """Everything the operator window renders, including health and last action."""
 
     state = service.materialized_state(now)
-    model = spectator_view_model(state)
+    model = spectator_view_model(state, rules=service.rules)
     model["quarter_labels"] = list(QUARTER_LABELS)
-    model["event_phases"] = list(SELECTABLE_EVENT_PHASES)
+    # The Setup drawer edits these; the labels are Python's so the page never
+    # composes a rule's name (September 9, 2026).
+    model["rules"] = service.rules.to_dict()
+    model["rule_fields"] = _rule_fields_view(service.rules)
     model["play_clock_presets"] = [25, 40]
     model["status_labels"] = list(GAME_STATUS_LABELS)
     model["status_clock_presets"] = [30, 60, 90]
@@ -692,6 +818,9 @@ def operator_view_model(
         _last_action_view(entry) for entry in service.undo_history
     ]
     model["undo_depth"] = len(model["undo_history"])
+    # Operator-only: the wall never shows an instruction meant for the booth,
+    # so this deliberately does not go into spectator_view_model.
+    model["setup"] = _setup_view(state)
     model["assistant"] = {
         "first_quarter_home_direction": state.assistant_first_quarter_home_direction,
         "line_to_gain": state.assistant_line_to_gain,
@@ -731,17 +860,29 @@ def _json_safe(value: Any) -> Any:
 
 
 class SpectatorBridge:
-    """Read-only. There is deliberately no method here that changes anything."""
+    """Read-only *about the game*: nothing here changes state (D-005).
+
+    The one action it exposes, :meth:`close_display`, closes the window this
+    bridge belongs to and can reach nothing else -- no score, no clock, no
+    quarter, not even another window. That is what lets the wall carry an Esc
+    key and a corner button without the spectator page becoming a second
+    control surface.
+    """
 
     def __init__(
         self,
         read_snapshot: Callable[[], dict[str, Any]],
         read_layout: Callable[[], dict[str, Any]] | None = None,
         read_cutscene: Callable[[], dict[str, Any] | None] | None = None,
+        *,
+        close: Callable[[], dict[str, Any]] | None = None,
+        read_motion: Callable[[], bool] | None = None,
     ) -> None:
         self._read_snapshot = read_snapshot
         self._read_layout = read_layout
         self._read_cutscene = read_cutscene
+        self._close = close
+        self._read_motion = read_motion
 
     def get_snapshot(self) -> dict[str, Any]:
         return self._read_snapshot()
@@ -770,6 +911,38 @@ class SpectatorBridge:
         if self._read_cutscene is None:
             return None
         return self._read_cutscene()
+
+    def get_motion(self) -> bool:
+        """Whether board animations are on (event-screens spec section 2.9).
+
+        ``read_motion`` is optional so a bridge built without the layout
+        library -- a unit test, an older host -- answers ``True`` (motion is
+        the designed look) rather than raising. Read-only: the switch itself
+        lives on the layout editor, never on the wall.
+        """
+
+        if self._read_motion is None:
+            return True
+        return bool(self._read_motion())
+
+    def close_display(self) -> dict[str, Any]:
+        """Close this window only. Changes no game state (D-005).
+
+        ``close`` is optional so an older host -- or a bridge built by a test
+        with no window behind it -- answers plainly instead of raising; the
+        spectator page feature-detects this method for the same reason.
+        """
+
+        if self._close is None:
+            return {
+                "closed": False,
+                "message": "This display cannot close itself in this build.",
+            }
+        result = self._close()
+        message = ""
+        if isinstance(result, dict):
+            message = str(result.get("message") or result.get("status") or "")
+        return {"closed": True, "message": message}
 
 
 class FieldAssistantBridge:
@@ -825,9 +998,15 @@ class ScoreboardBridge:
         field_assistant_opener: Callable[[], dict[str, str]] | None = None,
         logs_opener: Callable[[Path], None] | None = None,
         cutscenes: CutsceneDirector | None = None,
+        rules_writer: Callable[[GameRules], bool] | None = None,
     ) -> None:
         self._service = service
         self._store = store
+        # Where accepted rules go to survive a restart (config.json through
+        # the host). Optional like every other host surface: a bridge built
+        # without one still applies the rules to the running service and
+        # says plainly that they were not saved.
+        self._rules_writer = rules_writer
         self._display = DisplayLink() if display is None else display
         self._diagnostics = NullDiagnostics() if diagnostics is None else diagnostics
         # Optional: many tests build a bridge with no layout library at all.
@@ -1183,6 +1362,69 @@ class ScoreboardBridge:
         with self._lock:
             return {**self._teams_payload(), "ok": result["ok"], "message": result["message"]}
 
+    # --- Game rules (Setup drawer, September 9, 2026) ------------------------
+
+    def rules(self) -> dict[str, Any]:
+        """The timing rules in force, plus their operator-facing labels."""
+
+        with self._lock:
+            return self._rules_payload()
+
+    def save_rules(self, payload: Any) -> dict[str, Any]:
+        """Apply and store a new set of timing rules.
+
+        Not a command: no revision, no history row, and nothing already loaded
+        changes (the next quarter change, New Game, or TIMEOUT press uses the
+        new values). It is the same validate-then-apply-then-persist shape
+        as ``save_team``: a refused payload changes nothing and returns the
+        sentence the operator should see; a disk failure keeps the rules in
+        force for this session and says they were not saved.
+        """
+
+        view: dict[str, Any] | None = None
+        with self._lock:
+            try:
+                rules = GameRules.from_payload(payload)
+            except RulesError as exc:
+                self._diagnostics.command_rejected(
+                    command="save_rules", code="INVALID_RULES", message=str(exc),
+                    source=OPERATOR_MOUSE_SOURCE,
+                )
+                return {"ok": False, "message": str(exc), **self._rules_payload()}
+            self._service.set_rules(rules)
+            saved = True
+            if self._rules_writer is not None:
+                try:
+                    saved = bool(self._rules_writer(rules))
+                except Exception as exc:  # noqa: BLE001 - reported, never left silent
+                    self._diagnostics.unhandled_error(
+                        context="save_rules", error=exc, command="save_rules"
+                    )
+                    saved = False
+            message = (
+                "Rules saved. They apply the next time a quarter, a new game, "
+                "or a timeout is loaded."
+                if saved else
+                "Rules applied for this game but could not be saved to disk; "
+                "they will return to the previous values at the next launch."
+            )
+            view = self._view()
+            result = {"ok": True, "saved": saved, "message": message, **self._rules_payload()}
+        # Published like an accepted command: the crowd TIMEOUT button and
+        # the warmup line read the rules from the view, so every window gets
+        # the new one. Off the lock, for the same reason command() is.
+        if self._on_accepted is not None:
+            self._on_accepted(view)
+        return result
+
+    def _rules_payload(self) -> dict[str, Any]:
+        return {
+            "rules": self._service.rules.to_dict(),
+            "defaults": default_rules().to_dict(),
+            "fields": _rule_fields_view(self._service.rules),
+            "default_fields": _rule_fields_view(default_rules()),
+        }
+
     def _teams_payload(self) -> dict[str, Any]:
         state = self._service.state
         if self._teams is None:
@@ -1351,6 +1593,26 @@ class ScoreboardBridge:
                 self._display.mark_closed(f"The display could not be reopened: {exc}")
             return self._view()
 
+    def close_display(self) -> dict[str, Any]:
+        """Put the spectator window away on purpose. Changes no game state.
+
+        The mirror image of :meth:`reopen_display` and a host action in the
+        same family: no revision, no database write, no history row, and a
+        running clock keeps running (D-005, R-002). It returns the
+        :meth:`displays` payload so the operator's Display drawer re-renders
+        from authority in the same round trip that closed the window.
+        """
+
+        with self._lock:
+            try:
+                self._display.close()
+            except Exception as exc:  # noqa: BLE001 - a display must never stop the game
+                # Contained and reported, exactly as reopening is: the clocks
+                # and the operator keep running (R-002).
+                self._diagnostics.unhandled_error(context="close_display", error=exc)
+                self._display.mark_closed(f"The display could not be closed: {exc}")
+            return self.displays()
+
     def open_test_window(self) -> dict[str, str]:
         """Open a practice-only spectator preview without changing game state.
 
@@ -1485,7 +1747,6 @@ class ScoreboardBridge:
         current = {
             "game": (state.game_clock.running, state.game_clock.seconds),
             "play": (state.play_clock.running, state.play_clock.seconds),
-            "event": (state.event_countdown.running, state.event_countdown.seconds),
             "status": (state.status_clock.running, state.status_clock.seconds),
         }
         previous = self._observed
@@ -1520,7 +1781,9 @@ class ScoreboardBridge:
     def spectator_snapshot(self) -> dict[str, Any]:
         with self._lock:
             return self._with_identity(
-                spectator_view_model(self._service.materialized_state())
+                spectator_view_model(
+                    self._service.materialized_state(), rules=self._service.rules
+                )
             )
 
     def shutdown(self) -> dict[str, Any]:

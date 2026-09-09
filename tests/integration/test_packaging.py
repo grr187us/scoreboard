@@ -74,6 +74,64 @@ class PackageDataTests(unittest.TestCase):
         self.assertEqual(expected - required, set(), "a view file is never verified")
 
 
+#: Every bundled asset the boards load offline (assets/README.md): the two
+#: SIL OFL font families with their licence texts, and the crest an image
+#: element names as ``asset:tigers-crest``.
+BUNDLED_ASSETS = (
+    "shared/fonts/Graduate-Regular.ttf",
+    "shared/fonts/Graduate-OFL.txt",
+    "shared/fonts/BarlowCondensed-Medium.ttf",
+    "shared/fonts/BarlowCondensed-SemiBold.ttf",
+    "shared/fonts/BarlowCondensed-Bold.ttf",
+    "shared/fonts/Barlow-OFL.txt",
+    "shared/img/tigers-crest.png",
+)
+
+
+class BundledAssetTests(PackageDataTests):
+    """Fonts and images ship inside the package; nothing is fetched at game
+    time (event-screens spec sections 1 and 2.10)."""
+
+    def test_every_bundled_asset_is_on_disk_and_not_empty(self) -> None:
+        for relative in BUNDLED_ASSETS:
+            with self.subTest(asset=relative):
+                path = VIEWS / relative
+                self.assertTrue(path.is_file(), f"{relative} is missing from views/")
+                self.assertGreater(path.stat().st_size, 0, relative)
+
+    def test_every_bundled_asset_is_declared_as_package_data(self) -> None:
+        patterns = self.package_data_patterns()
+        self.assertIn("views/**/img/*.png", patterns)
+        self.assertIn("views/**/fonts/*.ttf", patterns)
+        self.assertIn("views/**/fonts/*.txt", patterns)
+        for relative in BUNDLED_ASSETS:
+            with self.subTest(asset=relative):
+                declared = f"views/{relative}"
+                self.assertTrue(any(fnmatch.fnmatch(declared, pattern) for pattern in patterns), declared)
+
+    def test_every_bundled_asset_is_verified_by_the_build_script(self) -> None:
+        required = set(re.findall(r'"(_internal/[^"]+)"', BUILD_SCRIPT.read_text(encoding="utf-8")))
+        for relative in BUNDLED_ASSETS:
+            with self.subTest(asset=relative):
+                self.assertIn(f"_internal/scoreboard/views/{relative}", required)
+
+    def test_the_layout_schema_names_only_bundled_images_that_exist(self) -> None:
+        from scoreboard.presentation.layout import BUNDLED_IMAGES
+
+        for key, relative in BUNDLED_IMAGES.items():
+            with self.subTest(key=key):
+                self.assertTrue((VIEWS / relative).is_file(), relative)
+                self.assertIn(relative, BUNDLED_ASSETS)
+
+    def test_each_font_ships_with_its_licence_text(self) -> None:
+        graduate = (VIEWS / "shared/fonts/Graduate-OFL.txt").read_text(encoding="utf-8")
+        barlow = (VIEWS / "shared/fonts/Barlow-OFL.txt").read_text(encoding="utf-8")
+        for licence in (graduate, barlow):
+            self.assertIn("SIL Open Font License", licence)
+        self.assertIn("Graduate", graduate)
+        self.assertIn("Barlow", barlow)
+
+
 class FrozenLayoutTests(unittest.TestCase):
     """The packaged build must look where PyInstaller puts the pages."""
 

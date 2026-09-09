@@ -26,6 +26,13 @@
          it; the boards underneath keep updating from applyView the whole
          time, so the bar's clock never stops while the stage is up. -->
     <section id="cutscene-stage" hidden aria-hidden="true"></section>
+    <!-- The one interactive element this page has ever had. Hidden until the
+         pointer moves (spectator.js); Esc and a click both close *only this
+         window* and change no game state (D-005) -- it sends no bridge
+         command of any kind, which is what "control-free" means for the
+         source-contract tests that scan this file. -->
+    <button type="button" id="close-display" class="close-display" hidden
+      aria-label="Close this display window">✕ CLOSE DISPLAY (Esc)</button>
   </main>
   <script src="../shared/render.js"></script>
   <script src="../shared/board.js"></script>

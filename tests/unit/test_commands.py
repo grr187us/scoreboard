@@ -292,8 +292,14 @@ class RejectedCommandContractTests(unittest.TestCase):
             (
                 "set timeouts out of range",
                 lambda s, f: None,
-                cmd.set_timeouts("home", 4),
+                cmd.set_timeouts("home", 6),
                 cmd.INVALID_TIMEOUT_TARGET,
+            ),
+            (
+                "set timeouts above the rules' per-half allotment",
+                lambda s, f: None,
+                cmd.set_timeouts("home", 4),
+                cmd.TIMEOUT_ABOVE_MAXIMUM,
             ),
             (
                 "unknown crowd status label",
@@ -302,9 +308,9 @@ class RejectedCommandContractTests(unittest.TestCase):
                 cmd.INVALID_GAME_STATUS,
             ),
             (
-                "non-preset status clock seconds",
+                "fractional status clock seconds",
                 lambda s, f: None,
-                cmd.set_game_status("TIMEOUT", seconds=45.0),
+                cmd.set_game_status("TIMEOUT", seconds=45.5),
                 cmd.INVALID_STATUS_CLOCK_PRESET,
             ),
         ]
@@ -430,15 +436,18 @@ class UndoTests(unittest.TestCase):
         self.assertEqual(result.event.new_value, 0)
 
     def test_undo_restores_the_previous_quarter(self) -> None:
+        # A live-to-live move keeps the stopped clock, so it stays undoable.
+        # (2nd -> HALF loads the halftime countdown and is a barrier, exactly
+        # like PRE -> 1st: see test_a_confirmed_quarter_change_cannot_be_undone.)
         service, _ = make_service()
-        service.submit(cmd.set_quarter("2nd", confirmed=True))
+        service.submit(cmd.set_quarter("1st", confirmed=True))
         service.submit(cmd.quarter_forward(confirmed=True))
-        self.assertEqual(service.state.quarter, "HALF")
+        self.assertEqual(service.state.quarter, "2nd")
 
         result = service.submit(cmd.undo())
 
         self.assertTrue(result.accepted)
-        self.assertEqual(result.state.quarter, "2nd")
+        self.assertEqual(result.state.quarter, "1st")
 
     def test_undo_reverses_only_the_most_recent_reversible_command(self) -> None:
         service, _ = make_service()
@@ -716,7 +725,10 @@ class QuarterTests(unittest.TestCase):
         halftime = service.submit(cmd.quarter_forward(confirmed=True))
         self.assertTrue(halftime.accepted)
         self.assertEqual(halftime.state.quarter, "HALF")
-        self.assertAlmostEqual(halftime.state.game_clock.seconds, 0.0)
+        # HALF loads the halftime countdown on the same game-clock engine
+        # (September 9, 2026): 15:00 stopped, not a dead 0:00.
+        self.assertAlmostEqual(halftime.state.game_clock.seconds, 15 * 60)
+        self.assertFalse(halftime.state.game_clock.running)
 
         second_half = service.submit(cmd.set_quarter("3rd", confirmed=True))
         self.assertTrue(second_half.accepted)
@@ -1367,10 +1379,12 @@ class CrowdStatusTests(unittest.TestCase):
         self.assertIsNone(service.state.game_status)
 
     def test_non_preset_seconds_is_rejected_and_mutates_nothing(self) -> None:
+        # Any whole number of seconds the clock can hold is fine now (the
+        # crowd TIMEOUT length is a configured rule); a fraction is not.
         service, _ = make_service()
         before_state = service.state
 
-        result = service.submit(cmd.set_game_status("TIMEOUT", seconds=45.0))
+        result = service.submit(cmd.set_game_status("TIMEOUT", seconds=45.5))
 
         self.assertFalse(result.accepted)
         self.assertEqual(result.error.code, cmd.INVALID_STATUS_CLOCK_PRESET)
@@ -1658,7 +1672,7 @@ class FieldAssistantCompositeCommandTests(unittest.TestCase):
         service, fake = self._service_in_first()
         service.submit(cmd.game_clock_start())
         service.submit(cmd.play_clock_preset_start(25))
-        clocks_before = (service.state.game_clock, service.state.play_clock, service.state.event_countdown)
+        clocks_before = (service.state.game_clock, service.state.play_clock)
         stale = service.finalize_field_action(
             FieldAction("touchdown", {"scoring_team": "home"}), expected_revision=0
         )
@@ -1668,7 +1682,7 @@ class FieldAssistantCompositeCommandTests(unittest.TestCase):
         result = service.finalize_field_action(FieldAction("touchdown", {"scoring_team": "home"}))
         self.assertTrue(result.accepted, result.error)
         self.assertEqual(
-            (result.state.game_clock, result.state.play_clock, result.state.event_countdown),
+            (result.state.game_clock, result.state.play_clock),
             clocks_before,
         )
 

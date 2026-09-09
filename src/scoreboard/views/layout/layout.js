@@ -58,7 +58,8 @@
     collapsedGroups: {},
     selection: S.createSelection(),
     history: null,
-    screen: 'game'
+    screen: 'game',
+    motion: true
   };
 
   /* --- Screens -------------------------------------------------------------
@@ -122,6 +123,49 @@
   function showAlert(message) {
     R.setText(alertLine, message);
     alertLine.hidden = false;
+  }
+
+  /* --- Motion switch ----------------------------------------------------------
+   *
+   * A host preference, not a layout property: `state.motion` reports it and
+   * `api.set_motion` (when the bridge offers it) changes it for the wall and
+   * every window at once. The preview honours it through the same
+   * `data-motion` hook on #canvas that the spectator page uses -- the
+   * renderer's kill switch reads that attribute; the editor never touches
+   * an animation itself. Without the bridge method the switch is local to
+   * this preview.
+   */
+
+  function applyMotion(enabled) {
+    app.motion = enabled !== false;
+    if (typeof Board.setMotion === 'function') {
+      Board.setMotion(canvas, app.motion);
+    }
+    canvas.setAttribute('data-motion', app.motion ? 'on' : 'off');
+    var button = el('motion-toggle');
+    button.setAttribute('aria-pressed', app.motion ? 'true' : 'false');
+    R.setText(el('motion-label'), app.motion ? 'Motion on' : 'Motion off');
+  }
+
+  function toggleMotionAction() {
+    var wanted = !app.motion;
+    if (!app.api || typeof app.api.set_motion !== 'function') {
+      applyMotion(wanted);
+      return;
+    }
+    Promise.resolve(app.api.set_motion(wanted)).then(function (payload) {
+      if (!payload || payload.ok === false) {
+        showAlert((payload && payload.message) || 'The motion setting could not be changed.');
+        return;
+      }
+      // A full layout_state payload: adopt its library/limits, keep the draft.
+      adoptState(payload, { resetDraft: false, announce: false });
+      // adoptState reported the stored layout's issues; the draft on screen
+      // is what the operator is judging, so ask about that again.
+      app.validateDraft();
+    }).catch(function (error) {
+      showAlert('The motion setting could not be changed: ' + error);
+    });
   }
 
   function clearAlert() {
@@ -458,6 +502,7 @@
       // The draft now equals what is stored: nothing is unsaved.
       app.markDirty(false);
     }
+    applyMotion(payload.motion !== false);
     Panels.renderLibraryMenu(app);
     Panels.renderPresets(app);
     app.renderAll();
@@ -660,8 +705,23 @@
 
   var PERCENT_PROPS = {
     x: 1, y: 1, width: 1, height: 1, font_scale: 1, background_opacity: 1,
-    border_width: 1, corner_radius: 1, corner_cut: 1, padding: 1, opacity: 1
+    border_width: 1, corner_radius: 1, corner_cut: 1, padding: 1, opacity: 1,
+    fill_opacity_a: 1, fill_opacity_b: 1, fill_on: 1, fill_off: 1
   };
+
+  /* Controls whose value is not a property of its own but one piece of a
+   * composite the schema stores as an object or a list: `animation`
+   * ({preset, duration_seconds} or null), `fill` (a gradient/stripes
+   * descriptor or null), a ticker's `lines`, and an image's bundled `asset`.
+   * `writeComposite` below turns each into the exact schema shape. */
+  var COMPOSITE_PROPS = {
+    animation_preset: 1, animation_seconds: 1,
+    fill_kind: 1, fill_angle: 1, fill_color_a: 1, fill_opacity_a: 1,
+    fill_color_b: 1, fill_opacity_b: 1, fill_on: 1, fill_off: 1,
+    lines: 1, asset: 1
+  };
+
+  var PLAIN_NUMBER_PROPS = { rotate_degrees: 1, speed_seconds: 1, fill_angle: 1, animation_seconds: 1 };
 
   function currentSingleItem() {
     if (app.selection.ids.length !== 1) {
@@ -671,13 +731,13 @@
   }
 
   function valueForProp(prop, target) {
-    if (prop === 'visible' || prop === 'fit_text') {
+    if (prop === 'visible' || prop === 'fit_text' || prop === 'bleed') {
       return target.checked;
     }
     if (PERCENT_PROPS[prop]) {
       return Panels.fromPercentInput(target);
     }
-    if (prop === 'z_index' || prop === 'font_weight' || prop === 'letter_spacing') {
+    if (prop === 'z_index' || prop === 'font_weight' || prop === 'letter_spacing' || PLAIN_NUMBER_PROPS[prop]) {
       return target.value === '' ? null : Number(target.value);
     }
     if (prop === 'background') {
@@ -686,8 +746,158 @@
     return target.value;
   }
 
+  function limitsNow() {
+    return (app.state && app.state.limits) || {};
+  }
+
+  function finiteOr(value, fallback) {
+    return S.isFiniteNumber(value) ? value : fallback;
+  }
+
+  /** A number bounded to `[low, high]` and rounded to schema precision, or
+   * `fallback` when the input was not a finite number at all. */
+  function boundedNumber(value, low, high, fallback) {
+    if (!S.isFiniteNumber(value)) {
+      return fallback;
+    }
+    return S.roundTo(S.clampRange(value, low, high), precisionScale());
+  }
+
+  function writeAnimation(item, prop, value) {
+    var current = item.animation && typeof item.animation === 'object' ? item.animation : null;
+    var preset = prop === 'animation_preset' ? value : (current ? current.preset : 'none');
+    if (!preset || preset === 'none') {
+      item.animation = null;
+      return;
+    }
+    var low = Panels.animationMinSeconds(limitsNow(), preset);
+    var high = Panels.animationMaxSeconds(limitsNow());
+    var seconds = prop === 'animation_seconds' ? value : (current ? current.duration_seconds : null);
+    item.animation = {
+      preset: preset,
+      duration_seconds: boundedNumber(finiteOr(seconds, low), low, high, low)
+    };
+  }
+
+  function twoStops(colorA, opacityA, colorB, opacityB) {
+    return [
+      { color: colorA, opacity: opacityA, at: 0 },
+      { color: colorB, opacity: opacityB, at: 1 }
+    ];
+  }
+
+  /** Switch a box to a new fill kind, carrying over whatever the previous
+   * descriptor already had (colours, angle, radial centre/radius, extra
+   * stops) so changing the kind and back does not erase the operator's
+   * numbers. Values the editor cannot show are preserved, never rebuilt. */
+  function fillForKind(item, kind) {
+    var previous = item.fill && typeof item.fill === 'object' ? item.fill : {};
+    var previousStops = Object.prototype.toString.call(previous.stops) === '[object Array]' ? previous.stops : null;
+    var baseColor = previous.color || (previousStops && previousStops[0] && previousStops[0].color)
+      || item.background || '#FFFFFF';
+    var baseOpacity = finiteOr(previous.opacity, previousStops && previousStops[0]
+      ? finiteOr(previousStops[0].opacity, 1) : 1);
+    if (kind === 'stripes') {
+      return {
+        kind: 'stripes',
+        angle: boundedNumber(finiteOr(previous.angle, 45), 0, 360, 45),
+        color: baseColor,
+        opacity: boundedNumber(baseOpacity, 0, 1, 1),
+        on: boundedNumber(finiteOr(previous.on, 0.002), 0.001, 0.5, 0.002),
+        off: boundedNumber(finiteOr(previous.off, 0.008), 0, 1, 0.008)
+      };
+    }
+    var stops = previousStops && previousStops.length >= 2
+      ? clone(previousStops)
+      : twoStops(baseColor, boundedNumber(baseOpacity, 0, 1, 1), previous.color || baseColor, 0);
+    if (kind === 'radial') {
+      return {
+        kind: 'radial',
+        center_x: boundedNumber(finiteOr(previous.center_x, 0.5), 0, 1, 0.5),
+        center_y: boundedNumber(finiteOr(previous.center_y, 0), 0, 1, 0),
+        radius_x: boundedNumber(finiteOr(previous.radius_x, 0.6), 0.05, 2, 0.6),
+        radius_y: boundedNumber(finiteOr(previous.radius_y, 1), 0.05, 2, 1),
+        stops: stops
+      };
+    }
+    return {
+      kind: 'linear',
+      angle: boundedNumber(finiteOr(previous.angle, 0), 0, 360, 0),
+      stops: stops
+    };
+  }
+
+  function writeFill(item, prop, value) {
+    if (prop === 'fill_kind') {
+      item.fill = (!value || value === 'none') ? null : fillForKind(item, value);
+      return;
+    }
+    var fill = item.fill && typeof item.fill === 'object' ? item.fill : null;
+    if (!fill) {
+      return; // the fields for a flat box are hidden; nothing to write
+    }
+    if (prop === 'fill_angle') {
+      fill.angle = boundedNumber(value, 0, 360, finiteOr(fill.angle, 0));
+      return;
+    }
+    if (fill.kind === 'stripes') {
+      if (prop === 'fill_color_a') { fill.color = value; }
+      if (prop === 'fill_opacity_a') { fill.opacity = boundedNumber(value, 0, 1, finiteOr(fill.opacity, 1)); }
+      if (prop === 'fill_on') { fill.on = boundedNumber(value, 0.001, 0.5, finiteOr(fill.on, 0.002)); }
+      if (prop === 'fill_off') { fill.off = boundedNumber(value, 0, 1, finiteOr(fill.off, 0.008)); }
+      return;
+    }
+    if (Object.prototype.toString.call(fill.stops) !== '[object Array]' || fill.stops.length < 2) {
+      fill.stops = twoStops(item.background || '#FFFFFF', 1, item.background || '#FFFFFF', 0);
+    }
+    var first = fill.stops[0];
+    var last = fill.stops[fill.stops.length - 1];
+    if (prop === 'fill_color_a') { first.color = value; }
+    if (prop === 'fill_opacity_a') { first.opacity = boundedNumber(value, 0, 1, finiteOr(first.opacity, 1)); }
+    if (prop === 'fill_color_b') { last.color = value; }
+    if (prop === 'fill_opacity_b') { last.opacity = boundedNumber(value, 0, 1, finiteOr(last.opacity, 1)); }
+  }
+
+  function writeLines(item, value) {
+    var maxLines = typeof limitsNow().max_ticker_lines === 'number' ? limitsNow().max_ticker_lines : 8;
+    var lines = String(value || '').split('\n').map(function (line) { return line.trim(); })
+      .filter(function (line) { return line !== ''; });
+    item.lines = lines.slice(0, maxLines);
+  }
+
+  function writeAsset(item, value) {
+    if (value) {
+      item.src = 'asset:' + value;
+      return;
+    }
+    // "Uploaded image" with nothing uploaded yet: keep whatever src the
+    // element has (a bundled one stays until Replace image... supplies a
+    // data URI), so the element never loses its picture.
+  }
+
+  function writeComposite(item, prop, value) {
+    if (prop === 'animation_preset' || prop === 'animation_seconds') { writeAnimation(item, prop, value); return; }
+    if (prop === 'lines') { writeLines(item, value); return; }
+    if (prop === 'asset') { writeAsset(item, value); return; }
+    writeFill(item, prop, value);
+  }
+
   function applyPropertyValue(item, prop, value) {
-    if (NUMERIC_WIDGET_PROPS[prop]) {
+    if (COMPOSITE_PROPS[prop]) {
+      writeComposite(item, prop, value);
+    } else if (prop === 'rotate_degrees') {
+      var maxRotate = typeof limitsNow().max_rotate_degrees === 'number' ? limitsNow().max_rotate_degrees : 180;
+      item.rotate_degrees = boundedNumber(value, -maxRotate, maxRotate, finiteOr(item.rotate_degrees, 0));
+    } else if (prop === 'speed_seconds') {
+      var range = Panels.tickerSpeedRange(limitsNow(), item.mode === 'rotate' ? 'rotate' : 'scroll');
+      item.speed_seconds = boundedNumber(value, range[0], range[1], finiteOr(item.speed_seconds, range[0]));
+    } else if (prop === 'mode') {
+      item.mode = value;
+      // The two modes measure speed differently (per loop / per line) and
+      // have different legal ranges; keep the number legal for the new one.
+      var newRange = Panels.tickerSpeedRange(limitsNow(), value === 'rotate' ? 'rotate' : 'scroll');
+      item.speed_seconds = boundedNumber(finiteOr(item.speed_seconds, newRange[0]), newRange[0], newRange[1], newRange[0]);
+    } else if (NUMERIC_WIDGET_PROPS[prop]) {
       S.setGeometry(item, prop, value, precisionScale());
     } else {
       item[prop] = value;
@@ -831,6 +1041,8 @@
 
     if (action === 'add_text') { app.addElement(S.makeTextElement(app.screenDoc(), app.widgetIds())); return; }
     if (action === 'add_box') { app.addElement(S.makeBoxElement(app.screenDoc(), app.widgetIds())); return; }
+    if (action === 'add_ticker') { app.addElement(S.makeTickerElement(app.screenDoc(), app.widgetIds())); return; }
+    if (action === 'toggle_motion') { toggleMotionAction(); return; }
     if (action === 'add_image') { pendingReplaceId = null; el('image-file-input').click(); return; }
     if (action === 'replace_image') {
       pendingReplaceId = app.selection.ids.length === 1 ? app.selection.ids[0] : null;
@@ -940,7 +1152,7 @@
     if (choiceButton) {
       var item = currentSingleItem();
       if (item) {
-        item[choiceButton.getAttribute('data-choice-prop')] = choiceButton.getAttribute('data-choice');
+        applyPropertyValue(item, choiceButton.getAttribute('data-choice-prop'), choiceButton.getAttribute('data-choice'));
         app.commit();
       }
       return;
@@ -974,6 +1186,12 @@
       liveChangeProperty('border_color', el('prop-border_color').value);
       return;
     }
+    if (target.id === 'prop-fill_color_a-swatch' || target.id === 'prop-fill_color_b-swatch') {
+      var fillField = el(target.id.replace('-swatch', ''));
+      fillField.value = target.value.toUpperCase();
+      liveChangeProperty(fillField.getAttribute('data-prop'), fillField.value);
+      return;
+    }
     if (target.id === 'prop-background-toggle') {
       liveChangeProperty('background', target.checked ? (el('prop-background').value || '#1B222B') : null);
       return;
@@ -995,6 +1213,7 @@
     }
     var target = event.target;
     var swatchIds = ['prop-color-swatch', 'prop-background-swatch', 'prop-border_color-swatch',
+      'prop-fill_color_a-swatch', 'prop-fill_color_b-swatch',
       'board-background_color-swatch', 'prop-background-toggle'];
     if (swatchIds.indexOf(target.id) !== -1) {
       // The paired text field already picked up the value on 'input'.
@@ -1117,6 +1336,12 @@
   window.applyView = function (model) {
     app.snapshot = model;
     app.refreshPreview();
+  };
+
+  /* The host pushes the motion preference to every window when it changes,
+   * so a switch flipped here (or anywhere) is mirrored in this preview. */
+  window.applyMotion = function (enabled) {
+    applyMotion(enabled !== false);
   };
 
   Board.build(boardRoot, 'game');

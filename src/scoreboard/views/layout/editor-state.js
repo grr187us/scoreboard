@@ -89,8 +89,27 @@
     return kind === 'widget' || kind === 'text';
   }
 
-  function boundsFor(draft, kind) {
-    return usesSafeArea(kind) ? safeBounds(draft) : canvasBounds();
+  /** A box flagged `bleed` may overhang the canvas by up to half its span on
+   * every side (BLEED_MIN/BLEED_MAX in Python) so a rotated bar or a light
+   * sweep can start off-board; the board sections clip whatever crosses. */
+  var BLEED_MIN = -0.5;
+  var BLEED_MAX = 1.5;
+
+  function bleedBounds() {
+    return { left: BLEED_MIN, top: BLEED_MIN, right: BLEED_MAX, bottom: BLEED_MAX };
+  }
+
+  function isBleedBox(item) {
+    return Boolean(item && item.type === 'box' && item.bleed === true);
+  }
+
+  /** `item` is optional: without it a box gets the plain canvas bounds. A
+   * ticker, like a box, may sit anywhere inside the canvas. */
+  function boundsFor(draft, kind, item) {
+    if (usesSafeArea(kind)) {
+      return safeBounds(draft);
+    }
+    return isBleedBox(item) ? bleedBounds() : canvasBounds();
   }
 
   /* --- Item lookup ---------------------------------------------------------
@@ -118,7 +137,7 @@
     return index === -1 ? null : draft.elements[index];
   }
 
-  /** 'widget' | 'text' | 'image' | 'box' | null */
+  /** 'widget' | 'text' | 'image' | 'box' | 'ticker' | null */
   function kindOf(draft, id) {
     if (getWidget(draft, id)) {
       return 'widget';
@@ -295,6 +314,39 @@
     return element;
   }
 
+  /** A ticker is a band along the bottom of the board carrying announcement
+   * lines. Its text style mirrors a text element's; `lines`/`mode`/
+   * `speed_seconds` are its own. The defaults are pinned by the event-screens
+   * spec (section 4) and match what the built-in welcome screens use. */
+  function makeTickerElement(draft, widgetIds) {
+    var element = {
+      id: nextElementId(draft, widgetIds, 'ticker'),
+      type: 'ticker',
+      visible: true,
+      x: 0,
+      y: 0.89,
+      width: 1,
+      height: 0.1,
+      z_index: 10,
+      opacity: 1,
+      lines: ['NEW ANNOUNCEMENT'],
+      mode: 'scroll',
+      speed_seconds: 30
+    };
+    withFillDefaults(element);
+    element.background = '#0D2B5A';
+    var textKeys = Object.keys(TEXT_STYLE_DEFAULTS);
+    for (var i = 0; i < textKeys.length; i += 1) {
+      element[textKeys[i]] = TEXT_STYLE_DEFAULTS[textKeys[i]];
+    }
+    element.color = '#DDE7F4';
+    element.font_family = 'barlow_condensed';
+    element.font_weight = 500;
+    element.font_scale = 0.025;
+    element.letter_spacing = 0.16;
+    return element;
+  }
+
   /** `naturalWidth`/`naturalHeight` come from the loaded `Image`; the width
    * fraction is fixed by the spec, and the height fraction is derived so the
    * image keeps its own aspect ratio on the 16:9 canvas. */
@@ -424,7 +476,7 @@
       if (!item) {
         continue;
       }
-      var bounds = boundsFor(draft, kindOf(draft, ids[i]));
+      var bounds = boundsFor(draft, kindOf(draft, ids[i]), item);
       var itemLowDx = bounds.left - item.x;
       var itemHighDx = (bounds.right - item.width) - item.x;
       var itemLowDy = bounds.top - item.y;
@@ -454,6 +506,8 @@
     canvasBounds: canvasBounds,
     usesSafeArea: usesSafeArea,
     boundsFor: boundsFor,
+    bleedBounds: bleedBounds,
+    isBleedBox: isBleedBox,
     getWidget: getWidget,
     getElement: getElement,
     getElementIndex: getElementIndex,
@@ -466,6 +520,7 @@
     nextElementId: nextElementId,
     makeTextElement: makeTextElement,
     makeBoxElement: makeBoxElement,
+    makeTickerElement: makeTickerElement,
     makeImageElement: makeImageElement,
     createHistory: createHistory,
     pushHistory: pushHistory,
@@ -494,6 +549,7 @@
     text: '<path d="M3 4h10M8 4v9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>',
     image: '<rect x="2.5" y="3" width="11" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.75"/><circle cx="6" cy="7" r="1.1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 11.5l3-3 2.3 2.3 2-2 2.2 2.2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>',
     box: '<rect x="2.5" y="2.5" width="11" height="11" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.75"/>',
+    ticker: '<rect x="1.5" y="5" width="13" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M4 8h5M10.5 8h1.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>',
     field: '<circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.75"/>',
     eye: '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.75"/>',
     eyeOff: '<path d="M2 2l12 12M6.6 6.7A2 2 0 0 0 9.3 9.4M4 4.4C2.4 5.6 1.5 8 1.5 8S4 12.5 8 12.5c1.2 0 2.2-.3 3.1-.8M9.9 3.8c-.6-.2-1.2-.3-1.9-.3-4 0-6.5 4.5-6.5 4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>',

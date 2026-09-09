@@ -187,17 +187,62 @@ body {
   min-height: 0;
 }
 
-.score-buttons {
+/* "NOT CHOSEN" on a pregame panel (owner decision 1). Text first (U-002) and
+ * deliberately tiny: 16px of line plus 2px of margin, well inside the 20px
+ * the board's height budget can spare (U-001). Hidden it costs nothing. */
+.team-pending {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-align: center;
+  color: var(--warn);
+}
+
+/* --- Armed scoring (owner decision 2) ----------------------------------- */
+
+/* One block of fixed height holds both states, so arming a team swaps the
+ * buttons in place and the panel never grows (U-001). The armed row replaces
+ * the SCORE/TIMEOUT row; it does not appear below it. */
+.score-controls {
+  min-height: 52px;
+}
+
+.score-idle,
+.score-armed {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 
-.score-buttons .wide {
-  grid-column: 1 / -1;
+.score-idle {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Four points and a cancel, all still large targets. */
+.score-armed {
+  grid-template-columns: repeat(4, 1fr) 0.6fr;
+}
+
+.score-idle button,
+.score-armed button {
   min-height: 52px;
   font-size: 18px;
   font-weight: 700;
+  padding: 0 4px;
+}
+
+/* The armed panel is outlined, but the heading's SCORING word is what
+ * actually says so; colour is never the only cue (U-002). */
+.team.is-armed {
+  border-color: var(--accent);
+}
+
+.armed-flag {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .clocks {
@@ -480,6 +525,18 @@ button.is-current {
 
 .tools .spacer {
   flex: 1 1 auto;
+}
+
+/* The way into the Teams drawer while a name is still the default (owner
+ * decision 1). A warm border plus the button's own title; the sentence that
+ * explains it lives in the drawer and on the panels (U-002). */
+.tools button.is-attention {
+  border-color: var(--warn);
+}
+
+.hint.attention {
+  color: var(--warn);
+  font-weight: 700;
 }
 
 /* Dangerous actions sit apart from everything used during normal play (U-004). */

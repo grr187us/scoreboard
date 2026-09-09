@@ -51,7 +51,7 @@ class StatusCountdownTests(unittest.TestCase):
         clock = StatusCountdown().load_preset(30.0, now=0.0)
 
         with self.assertRaises(StateValidationError):
-            clock.load_preset(45.0, now=0.0)
+            clock.load_preset(45.5, now=0.0)
 
         self.assertEqual(clock.revision, 1)
         self.assertAlmostEqual(clock.remaining_at(0.0), 30.0)
@@ -157,17 +157,24 @@ class StatusCountdownTests(unittest.TestCase):
         engine = StatusCountdown.from_state(state)
 
         with self.assertRaises(StateValidationError):
-            engine.load_preset(45.0)
+            engine.load_preset(301.0)
 
         self.assertEqual(engine.revision, 0)
         self.assertEqual(state.revision, 0)
 
     def test_a_non_preset_value_is_rejected(self) -> None:
+        # Since September 9, 2026 the crowd TIMEOUT loads the configured
+        # timeout length, so any whole second from 1 to 300 loads; what is
+        # still refused is zero, negative, over the clock's maximum, a
+        # fraction, or not a number at all.
         clock = StatusCountdown()
-        for bad in (0.0, 15.0, 45.0, 120.0, -1.0, "60", None, True):
+        for bad in (0.0, -1.0, 301.0, 45.5, "60", None, True):
             with self.subTest(bad=bad):
                 with self.assertRaises(StateValidationError):
                     clock.load_preset(bad)
+        for fine in (15.0, 45.0, 120.0):
+            with self.subTest(fine=fine):
+                self.assertAlmostEqual(clock.load_preset(fine, now=0.0).remaining_at(0.0), fine)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from scoreboard.domain.state import (
     MAX_SCORE,
     MAX_STATUS_CLOCK_SECONDS,
     MAX_TIMEOUTS,
+    MAX_TIMEOUTS_CAP,
     MAX_YARD_LINE,
     BallSpot,
     ClockValue,
@@ -36,8 +37,7 @@ class StateTests(unittest.TestCase):
         self.assertEqual(state.lifecycle, "PRE_GAME")
         self.assertEqual(state.game_clock.seconds, 1800)
         self.assertFalse(state.game_clock.running)
-        self.assertEqual(state.event_countdown.seconds, 1800)
-        self.assertEqual(state.event_phase, "PREGAME")
+        self.assertEqual(state.game_clock.maximum_seconds, 1800)
         self.assertEqual(state.revision, 0)
 
     def test_valid_evolve_is_immutable_and_increments_revision(self) -> None:
@@ -68,7 +68,6 @@ class StateTests(unittest.TestCase):
             {"away_score": MAX_SCORE + 1},
             {"quarter": "3Q"},
             {"lifecycle": "BROKEN"},
-            {"event_phase": "BREAK"},
             {"schema_version": 2},
             {"revision": -1},
         )
@@ -183,7 +182,7 @@ class StateTests(unittest.TestCase):
             {"distance": MAX_DISTANCE + 1},
             {"possession": "visitor"},
             {"home_timeouts": -1},
-            {"away_timeouts": MAX_TIMEOUTS + 1},
+            {"away_timeouts": MAX_TIMEOUTS_CAP + 1},
             {"ball_on": "home"},
         )
         for changes in invalid_changes:

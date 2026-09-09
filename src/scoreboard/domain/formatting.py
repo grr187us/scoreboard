@@ -234,11 +234,15 @@ def format_distance_value(distance: int | None) -> str:
     return GOAL_TO_GO_DISPLAY if distance == 0 else str(distance)
 
 
-def format_timeout_dots(remaining: int | None) -> str:
-    """One filled/hollow circle per allowed timeout; unknown is not zero."""
-    if isinstance(remaining, bool) or not isinstance(remaining, int) or not 0 <= remaining <= MAX_TIMEOUTS:
+def format_timeout_dots(remaining: int | None, *, total: int = MAX_TIMEOUTS) -> str:
+    """One filled/hollow circle per allowed timeout; unknown is not zero.
+
+    ``total`` is the league's timeouts per half (``GameRules``); the shipped
+    three when the caller has no rules in hand.
+    """
+    if isinstance(remaining, bool) or not isinstance(remaining, int) or not 0 <= remaining <= total:
         return BLANK_DISPLAY
-    return " ".join("●" if index < remaining else "○" for index in range(MAX_TIMEOUTS))
+    return " ".join("●" if index < remaining else "○" for index in range(total))
 
 
 def format_timeouts(remaining: int | None) -> str:

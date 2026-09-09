@@ -147,15 +147,22 @@ class FullGameRehearsal(TemporaryDataDirectoryTest):
         self.assertEqual(self.bridge.get_snapshot()["teams"]["home"]["score"],
                          self.expected_home)
 
-        # Halftime: one 15:00 countdown whose label becomes WARMUP at 3:00.
+        # Halftime: entering HALF loads one 15:00 countdown on the game clock
+        # itself (September 9, 2026: no separate interval engine), whose
+        # label becomes WARMUP at 3:00. The same START runs it.
         self.send("set_quarter", {"label": "HALF"}, confirm=True)
-        self.send("event_countdown_select", {"label": "HALFTIME"})
-        self.send("event_countdown_start")
+        self.assertEqual(self.bridge.get_snapshot()["clocks"]["game"]["display"], "15:00")
+        self.send("game_clock_start")
         self.advance(11 * 60.0 + 59.0, step=1.0)
         self.assertEqual(self.bridge.get_snapshot()["clocks"]["event"]["phase"], "HALFTIME")
         self.advance(2.0)
         self.assertEqual(self.bridge.get_snapshot()["clocks"]["event"]["phase"], "WARMUP")
         self.advance(3 * 60.0, step=1.0)
+        # It ran itself to zero and stayed in HALF; the second half is still
+        # the operator's explicit, confirmed quarter change.
+        halftime_view = self.bridge.get_snapshot()
+        self.assertEqual(halftime_view["quarter"], "HALF")
+        self.assertEqual(halftime_view["clocks"]["event"]["display"], "0:00")
 
         # Second half, interrupted by a crash partway through the third.
         self.quarter("3rd")
@@ -270,16 +277,16 @@ class FullGameRehearsal(TemporaryDataDirectoryTest):
             "game_clock_reset",
             "play_clock_preset",
             "play_clock_start",
-            "event_countdown_start",
             "end_game",
             "session_started",
             "session_resumed",
         ):
             self.assertIn(required, commands, f"{required} missing from the history")
 
-        # The countdowns ran themselves to zero, so their expiry is recorded
-        # even though no operator pressed anything (F-037, F-046).
-        self.assertIn("event_countdown_expired", commands)
+        # The kickoff and halftime countdowns ran themselves to zero on the
+        # game clock, so their expiry is recorded even though no operator
+        # pressed anything (F-037, F-046): at least those two rows.
+        self.assertGreaterEqual(commands.count("game_clock_expired"), 2)
 
         # Revisions only ever move forward, including across the restart.
         self.assertEqual(self.revisions, sorted(self.revisions))
