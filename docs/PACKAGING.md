@@ -1,6 +1,19 @@
 # Windows packaging and offline launch
 
-**Latest local build:** September 8, 2026, from the working tree with the
+**Latest local build:** September 10, 2026, from commit `f5d3ad6` on
+`improvements`: halftime on the game clock, the Setup drawer for timing rules,
+the turnover cutscene rebuild, and the button box hot key remap (F15-F22, with
+F13/F14 unbound). Built with the repository `.venv` (python.org CPython 3.11.9,
+PyInstaller 6.22.2) using `tools/build_package.py`, whose required-asset,
+no-remote-resource, and frozen `--check` verification passed.
+`dist/Scoreboard` contains version 0.1.0, 787 files, 28.4 MB, and
+`dist/Scoreboard-0.1.0.zip` (13.4 MB, 787 entries) was refreshed from the same
+build, so either can be copied to the operator laptop. The built
+`operator/keyboard.js` was confirmed identical to source and the frozen archive
+was confirmed to contain `scoreboard.domain.rules`. Physical display and
+target-laptop acceptance remain open.
+
+**Earlier local build:** September 8, 2026, from the working tree with the
 five-second first-down redesign, red scratch edge, undimmed claw intro, and
 the preceding cutscene colour fix.
 `dist/Scoreboard` contains version 0.1.0, 825 files, 31.2 MB. Required assets
@@ -27,7 +40,7 @@ remain open. An earlier eight-second frozen-process smoke check against an
 isolated saved Tigers Stadium layout exited 0 and logged clean
 startup/shutdown; this does not establish physical display placement or
 readability.
-**Last updated:** September 8, 2026
+**Last updated:** September 10, 2026
 
 This document covers how the offline package is built, what it contains, what the operator's laptop must already have, and which acceptance checks still need a person.
 
