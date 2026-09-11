@@ -7,14 +7,18 @@
     {key: '4', label: '4', action: 'Load play clock 40 (stopped)', command: 'play_clock_preset', args: {seconds: 40}},
     {key: 'p', label: 'P', action: 'Start play clock', command: 'play_clock_start'},
     {key: 's', label: 'S', action: 'Stop play clock', command: 'play_clock_stop'},
-    {key: 'f13', label: 'F13', action: 'Start game clock', command: 'game_clock_start'},
-    {key: 'f14', label: 'F14', action: 'Stop game clock', command: 'game_clock_stop'},
-    {key: 'f15', label: 'F15', action: 'Load play clock 25 and start', command: 'play_clock_preset_start', args: {seconds: 25}},
-    {key: 'f16', label: 'F16', action: 'Load play clock 40 and start', command: 'play_clock_preset_start', args: {seconds: 40}},
-    {key: 'f17', label: 'F17', action: 'Clear play clock', command: 'play_clock_clear'},
+    // Button box (hardware/scoreboard_button_box, September 10, 2026 pin map):
+    // D4-D9 play clock buttons, and a D10 rocker that sends F21 when flipped
+    // on and F22 when flipped off. F13/F14 (the old game clock paddle) are
+    // deliberately unbound: the rocker is the only hardware game clock control.
+    {key: 'f15', label: 'F15', action: 'Load play clock 40 and start (Quick 40)', command: 'play_clock_preset_start', args: {seconds: 40}},
+    {key: 'f16', label: 'F16', action: 'Load play clock 25 and start (Quick 25)', command: 'play_clock_preset_start', args: {seconds: 25}},
+    {key: 'f17', label: 'F17', action: 'Load play clock 40 (stopped)', command: 'play_clock_preset', args: {seconds: 40}},
     {key: 'f18', label: 'F18', action: 'Load play clock 25 (stopped)', command: 'play_clock_preset', args: {seconds: 25}},
-    {key: 'f19', label: 'F19', action: 'Load play clock 40 (stopped)', command: 'play_clock_preset', args: {seconds: 40}},
-    {key: 'f20', label: 'F20', action: 'Start play clock', command: 'play_clock_start'},
+    {key: 'f19', label: 'F19', action: 'Start play clock', command: 'play_clock_start'},
+    {key: 'f20', label: 'F20', action: 'Clear play clock', command: 'play_clock_clear'},
+    {key: 'f21', label: 'F21', action: 'Start game clock (rocker on)', command: 'game_clock_start'},
+    {key: 'f22', label: 'F22', action: 'Stop game clock (rocker off)', command: 'game_clock_stop'},
     {key: 'q', label: 'Q', action: 'Quarter forward', command: 'quarter_forward'},
     {key: 'q', shift: true, label: 'Shift+Q', action: 'Quarter back', command: 'quarter_back'},
     // Scoring is two steps for the keyboard too (control refresh spec 2.8):

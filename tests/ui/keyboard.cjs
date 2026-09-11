@@ -78,14 +78,14 @@ async function main(data) {
       ['4','play_clock_preset',{seconds:40},'4','Load play clock 40 (stopped)'],
       ['p','play_clock_start',{},'P','Start play clock'],
       ['s','play_clock_stop',{},'S','Stop play clock'],
-      ['F13','game_clock_start',{},'F13','Start game clock'],
-      ['F14','game_clock_stop',{},'F14','Stop game clock'],
-      ['F15','play_clock_preset_start',{seconds:25},'F15','Load play clock 25 and start'],
-      ['F16','play_clock_preset_start',{seconds:40},'F16','Load play clock 40 and start'],
-      ['F17','play_clock_clear',{},'F17','Clear play clock'],
+      ['F15','play_clock_preset_start',{seconds:40},'F15','Load play clock 40 and start (Quick 40)'],
+      ['F16','play_clock_preset_start',{seconds:25},'F16','Load play clock 25 and start (Quick 25)'],
+      ['F17','play_clock_preset',{seconds:40},'F17','Load play clock 40 (stopped)'],
       ['F18','play_clock_preset',{seconds:25},'F18','Load play clock 25 (stopped)'],
-      ['F19','play_clock_preset',{seconds:40},'F19','Load play clock 40 (stopped)'],
-      ['F20','play_clock_start',{},'F20','Start play clock'],
+      ['F19','play_clock_start',{},'F19','Start play clock'],
+      ['F20','play_clock_clear',{},'F20','Clear play clock'],
+      ['F21','game_clock_start',{},'F21','Start game clock (rocker on)'],
+      ['F22','game_clock_stop',{},'F22','Stop game clock (rocker off)'],
       ['q','quarter_forward',{},'Q','Quarter forward'],
       ['Shift+Q','quarter_back',{},'Shift+Q','Quarter back'],
       ['z','add_score',{team:'home',points:1},'Z','Home +1 (press once to arm, again to apply)'],
@@ -116,7 +116,15 @@ async function main(data) {
       await press(key);
       assert.deepEqual(calls,[[command,{...args,source:'operator-keyboard'},model.revision]],key);
       assert.equal(results[0].accepted,true,key);
-      if (key==='2'||key==='4'||key==='F18'||key==='F19') assert.equal(results[0].view.clocks.play.running,false);
+      if (key==='2'||key==='4'||key==='F17'||key==='F18') assert.equal(results[0].view.clocks.play.running,false);
+      if (key==='F15'||key==='F16') assert.equal(results[0].view.clocks.play.running,true,key+' must start the play clock');
+    }
+    // F13/F14 are unbound since September 10, 2026: pressing them sends nothing.
+    await reset();
+    for (const key of ['F13','F14']) {
+      await pressKey(page,key);
+      await page.waitForTimeout(150);
+      assert.deepEqual(calls,[],key+' must send nothing');
     }
     await reset(); await press('Space'); calls.length=0;
     await press('Space'); assert.equal(calls[0][0],'game_clock_stop');
