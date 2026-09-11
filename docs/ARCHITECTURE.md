@@ -487,10 +487,10 @@ property of the event, not an argument: `EVENT_TEAM` maps every event to
 `CutsceneDirector.trigger()`, `CutscenesBridge.trigger()`, and
 `ScoreboardBridge.trigger_cutscene()` all take an event and nothing else.
 The sibling tables `EVENT_DEFAULT_INTRO` and `DEFAULT_DURATION_SECONDS`
-give the claw strike and 5/10/7 s to first down, touchdown, and turnover,
-and no intro at all to the 7 s penalty and the 5 s make-some-noise crowd
+give the claw strike and 5/10 s to first down and touchdown, and no intro
+to the 5 s turnover, the 7 s penalty and the 5 s make-some-noise crowd
 prompt (at 5 s a 1.6 s claw would eat a third of the scene). `EVENT_SUBLINE`
-is the per-event subline template — `{team}`, `{team}`, `{team} BALL`,
+is the per-event subline template — `{team}`, `{team}`, `TIGER'S BALL`,
 `PENALTY`, `{team} FANS` — formatted with the fixed school identity.
 
 Triggering a cutscene builds one JSON **program** — `build_program()` in
@@ -502,7 +502,7 @@ and scene descriptors, theme colours, and the three text values
 under the stage is already showing. For every branded event, `team_name` is
 the fixed school identity `Tigers` rather than the configurable home-team
 name, and `subline` is `EVENT_SUBLINE[event]` formatted with `TIGERS`
-(`TIGERS`, `TIGERS BALL`, `TIGERS FANS`), so the scoreboard's initial
+(`TIGERS`, `TIGER'S BALL`, `TIGERS FANS`), so the scoreboard's initial
 `HOME` label cannot leak into a cutscene; the penalty remains team-neutral
 with subline `PENALTY` and an empty `team_name`. `CutsceneDirector.trigger()` reads the
 live spectator snapshot

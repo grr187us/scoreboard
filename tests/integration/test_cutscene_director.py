@@ -218,9 +218,9 @@ class TriggerTests(CutsceneDirectorTestCase):
         self.assertIn("CUTSCENE_STARTED", self.log_text())
         self.assertIn("cutscene_event=penalty", self.log_text())
 
-    def test_a_turnover_is_the_tigers_taking_the_ball_with_the_claw(self) -> None:
+    def test_a_turnover_is_the_tigers_taking_the_ball_with_the_immediate_impact(self) -> None:
         # Cutscenes v3 (.scratch/cutscenes-v3/spec.md 2.1): a takeaway is a
-        # home-team event with the claw intro and a 7 s run.
+        # home-team event with no separate intro and a 5 s run.
         diagnostics = self.make_diagnostics()
         director, _monotonic, scheduler, link = self.make_director(diagnostics=diagnostics)
 
@@ -228,15 +228,15 @@ class TriggerTests(CutsceneDirectorTestCase):
         diagnostics.flush()
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["message"], "Playing Turnover (7 s).")
+        self.assertEqual(result["message"], "Playing Turnover (5 s).")
         program = link.published[0]
         self.assertEqual(program["event"], "turnover")
         self.assertEqual(program["team"], "home")
         self.assertEqual(program["label"], "Turnover")
-        self.assertEqual(program["duration_ms"], 7000)
-        self.assertEqual(program["intro"], {"id": "claw_scratch", "duration_ms": 1600})
-        self.assertEqual(program["texts"]["subline"], "TIGERS BALL")
-        self.assertEqual(scheduler.calls[0].delay_seconds, 7.0)
+        self.assertEqual(program["duration_ms"], 5000)
+        self.assertEqual(program["intro"], {"id": "none", "duration_ms": 0})
+        self.assertEqual(program["texts"]["subline"], "TIGER'S BALL")
+        self.assertEqual(scheduler.calls[0].delay_seconds, 5.0)
         self.assertEqual(director.status()["team"], "home")
         self.assertIn("cutscene_event=turnover", self.log_text())
 

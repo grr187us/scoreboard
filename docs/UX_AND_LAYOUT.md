@@ -1141,7 +1141,7 @@ five events, their durations, and their sublines:
 |---|---|---|---|---|---|
 | `first_down` | FIRST DOWN | TIGERS | 5 s | claw strike | home |
 | `touchdown` | TOUCHDOWN | TIGERS | 10 s | claw strike | home |
-| `turnover` | TURNOVER | TIGERS BALL | 7 s | claw strike | home |
+| `turnover` | TURNOVER | TIGER'S BALL | 5 s | none (immediate impact) | home |
 | `penalty` | FLAG ON THE PLAY | PENALTY | 7 s | none | nobody |
 | `make_some_noise` | MAKE SOME NOISE | TIGERS FANS | 5 s | none | home |
 
@@ -1184,11 +1184,10 @@ it stays on the Broadcast bar underneath. The hide and the embers are
 generated from seeded sequences, so every replay is identical;
 nothing is downloaded and no new dependency or animation loop is involved.
 A late display join shows the settled hold; reduced-motion mode omits the
-entrances and the one-shot bursts. Turnover keeps its slabs and the
-original claw.
+entrances and the one-shot bursts. Turnover now uses the defensive breakthrough described below.
 
 The two v3 additions: **TURNOVER** (the Tigers take the ball away — the
-defensive counterpart of the touchdown, and it earns the claw) and **MAKE
+defensive counterpart of the touchdown, now opening with its own impact) and **MAKE
 SOME NOISE** (a 5 s crowd prompt with a live level meter; it has no intro
 because a 1.6 s claw would eat a third of it and a crowd prompt wants to be
 on the wall *now*).
@@ -1237,7 +1236,7 @@ not copied from the configurable home-team name, so a fresh scoreboard that
 still says `HOME` — or a game whose host name was changed — cannot alter the
 school-branded scene copy. The subline is a per-event template
 (`EVENT_SUBLINE` in `presentation/cutscenes.py`): first down and touchdown
-read **TIGERS**, Turnover reads **TIGERS BALL**, Make Some Noise reads
+read **TIGERS**, Turnover reads **TIGER'S BALL**, Make Some Noise reads
 **TIGERS FANS**, and the team-neutral penalty remains **PENALTY**.
 
 ### 12.2 Opening it
@@ -1308,6 +1307,24 @@ pauses the authoritative game. Triggering a second cutscene while one is
 already playing replaces it immediately rather than queuing; the Cancel
 button/hotkey ends one early and restores the board at once.
 
+### Turnover — defensive breakthrough (September 9, 2026)
+
+The owner requested a defensive impact breaking through the screen, with
+material depth instead of clip art, touchdown-level aggression in less time,
+and the wording **TURNOVER** / **TIGER'S BALL**. The built-in runs five seconds
+including its 600 ms exit, with no separate claw intro. A textured concrete
+barrier breaks outward into twelve irregular pieces, with flying chips, a
+brief shake and dust. Metal TURNOVER lettering lands in the opening, followed
+by the gold possession line and crest. The score and clocks remain live below.
+The existing Broadcast geometry still borrows the active layout's widget styles.
+
+The concrete texture is generated locally and cached; CSS handles motion.
+Canvas failure retains the CSS material and readable text. Late joins and
+OS reduced-motion mode show the settled composition immediately. Custom packs
+with explicit durations or intros retain those settings. Select **Built-in
+turnover**, then press **O** or **TURNOVER** to play it. Stadium appearance and
+performance still need the physical display rehearsal.
+
 ### 12.5 Packs and the manifest
 
 Cutscenes ship with five code-authored built-in animations (one per event),
@@ -1330,9 +1347,9 @@ straight there) containing a `manifest.json`:
 The folder name becomes the pack's id. `event` is `first_down`, `touchdown`,
 `turnover`, `penalty`, or `make_some_noise`; `duration_seconds` is optional
 (2–30 seconds, clamped rather than rejected if out of range, defaulting per
-event if left out: 5, 10, 7, 7, and 5); `intro` is optional (`claw_scratch`
+event if left out: 5, 10, 5, 7, and 5); `intro` is optional (`claw_scratch`
 or `none`) and, left out, defaults **per event** — the claw strike for a
-first down, touchdown, or turnover, none for a penalty or make some noise;
+first down or touchdown, none for turnover, penalty, or make some noise;
 `scene` is required and is either a built-in animation
 (`{"type": "builtin", "id": "first_down"}`, `"touchdown"`, `"turnover"`,
 `"penalty"`, or `"make_some_noise"`)

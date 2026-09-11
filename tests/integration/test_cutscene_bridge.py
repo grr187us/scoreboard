@@ -168,18 +168,18 @@ class TriggerAndCancelHostActionTests(CutsceneBridgeTestCase):
         self.assertIsNone(playing["team"])
 
     def test_the_turnover_event_reaches_the_badge_as_the_home_teams(self) -> None:
-        # Cutscenes v3: a takeaway is the Tigers', 7 s, with the claw intro.
+        # Cutscenes v3: a takeaway is the Tigers', 5 s, with no separate intro.
         result = self.bridge.trigger_cutscene("turnover")
 
         self.assertTrue(result["ok"], result)
-        self.assertEqual(result["message"], "Playing Turnover (7 s).")
+        self.assertEqual(result["message"], "Playing Turnover (5 s).")
         playing = result["view"]["cutscenes"]["playing"]
         self.assertEqual(playing["event"], "turnover")
         self.assertEqual(playing["label"], "Turnover")
         self.assertEqual(playing["team"], "home")
-        self.assertEqual(playing["duration_ms"], 7000)
-        self.assertEqual(self.scheduler.calls[0].delay_seconds, 7.0)
-        self.assertEqual(self.director.current_program()["intro"]["id"], "claw_scratch")
+        self.assertEqual(playing["duration_ms"], 5000)
+        self.assertEqual(self.scheduler.calls[0].delay_seconds, 5.0)
+        self.assertEqual(self.director.current_program()["intro"]["id"], "none")
 
     def test_the_make_some_noise_event_reaches_the_badge_as_a_five_second_home_prompt(self) -> None:
         # Cutscenes v3: the crowd prompt is the Tigers', 5 s, with no intro.

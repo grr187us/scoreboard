@@ -430,7 +430,7 @@ class BuildProgramTests(unittest.TestCase):
                 self.assertEqual(program["team"], EVENT_TEAM[event])
                 self.assertEqual(program["team"], "home")
                 self.assertEqual(program["texts"]["team_name"], "Tigers")
-                self.assertTrue(program["texts"]["subline"].startswith("TIGERS"))
+                self.assertTrue(program["texts"]["subline"].startswith("TIGER"))
 
         for event in ("first_down", "touchdown"):
             with self.subTest(event=event, subline="bare team name"):
@@ -451,13 +451,13 @@ class BuildProgramTests(unittest.TestCase):
 
         self.assertEqual(program["team"], "home")
         self.assertEqual(program["label"], "Turnover")
-        self.assertEqual(program["duration_ms"], 7000)
-        # A takeaway earns the claw: it is the most Tigers thing a defence does.
-        self.assertEqual(program["intro"], {"id": "claw_scratch", "duration_ms": 1600})
+        self.assertEqual(program["duration_ms"], 5000)
+        # The defensive impact starts immediately, without a separate claw.
+        self.assertEqual(program["intro"], {"id": "none", "duration_ms": 0})
         self.assertEqual(program["scene"], {"type": "builtin", "id": "turnover"})
         self.assertEqual(
             program["texts"],
-            {"headline": "TURNOVER", "subline": "TIGERS BALL", "team_name": "Tigers"},
+            {"headline": "TURNOVER", "subline": "TIGER'S BALL", "team_name": "Tigers"},
         )
 
     def test_make_some_noise_is_a_five_second_prompt_with_no_intro(self) -> None:
@@ -488,7 +488,7 @@ class BuildProgramTests(unittest.TestCase):
         view = {"teams": {"home": {"name": "HOME"}}}
         expected = {
             "first_down": "TIGERS", "touchdown": "TIGERS",
-            "turnover": "TIGERS BALL", "penalty": "PENALTY",
+            "turnover": "TIGER'S BALL", "penalty": "PENALTY",
             "make_some_noise": "TIGERS FANS",
         }
 
@@ -513,7 +513,7 @@ class BuildProgramTests(unittest.TestCase):
             spectator_view=view, layout=self._layout(),
         )
 
-        self.assertEqual(program["texts"]["subline"], "TIGERS BALL")
+        self.assertEqual(program["texts"]["subline"], "TIGER'S BALL")
         self.assertEqual(program["texts"]["team_name"], CUTSCENE_TEAM_NAME)
 
     def test_build_program_takes_no_team_argument(self) -> None:
@@ -864,7 +864,7 @@ class ConstantSanityTests(unittest.TestCase):
         )
         self.assertEqual(
             EVENT_DEFAULT_INTRO,
-            {"first_down": "claw_scratch", "touchdown": "claw_scratch", "turnover": "claw_scratch",
+            {"first_down": "claw_scratch", "touchdown": "claw_scratch", "turnover": "none",
              "penalty": "none", "make_some_noise": "none"},
         )
         self.assertEqual(EVENT_HEADLINES["penalty"], "FLAG ON THE PLAY")
@@ -887,12 +887,12 @@ class ConstantSanityTests(unittest.TestCase):
         )
         self.assertEqual(
             EVENT_SUBLINE,
-            {"first_down": "{team}", "touchdown": "{team}", "turnover": "{team} BALL",
+            {"first_down": "{team}", "touchdown": "{team}", "turnover": "TIGER'S BALL",
              "penalty": "PENALTY", "make_some_noise": "{team} FANS"},
         )
         self.assertEqual(
             DEFAULT_DURATION_SECONDS,
-            {"first_down": 5.0, "touchdown": 10.0, "turnover": 7.0,
+            {"first_down": 5.0, "touchdown": 10.0, "turnover": 5.0,
              "penalty": 7.0, "make_some_noise": 5.0},
         )
         self.assertEqual(

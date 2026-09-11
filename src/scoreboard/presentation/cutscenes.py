@@ -65,11 +65,11 @@ CUTSCENE_TEAM_NAME: Final[str] = "Tigers"
 #: The subline under the headline, as a template. ``{team}`` is the fixed
 #: cutscene identity above, upper-cased. A penalty remains team-neutral.
 EVENT_SUBLINE = {
-    "first_down": "{team}", "touchdown": "{team}", "turnover": "{team} BALL",
+    "first_down": "{team}", "touchdown": "{team}", "turnover": "TIGER'S BALL",
     "penalty": "PENALTY", "make_some_noise": "{team} FANS",
 }
 DEFAULT_DURATION_SECONDS = {
-    "first_down": 5.0, "touchdown": 10.0, "turnover": 7.0,
+    "first_down": 5.0, "touchdown": 10.0, "turnover": 5.0,
     "penalty": 7.0, "make_some_noise": 5.0,
 }
 MIN_DURATION_SECONDS: Final[float] = 2.0
@@ -81,10 +81,10 @@ INTRO_DURATION_MS = {"claw_scratch": 1600, "none": 0}
 #: is not a Tigers moment, so a penalty opens with no claw strike at all. The
 #: crowd prompt has none either, for a different reason: at 5 s a 1.6 s
 #: strike would eat a third of the scene, and "make some noise" wants to be
-#: on the wall *now*. A takeaway is the most Tigers thing a defence can do,
-#: so the turnover earns the claw.
+#: on the wall *now*. Turnover also starts immediately: its own defensive
+#: breakthrough is the opening impact, within a five-second total.
 EVENT_DEFAULT_INTRO = {
-    "first_down": "claw_scratch", "touchdown": "claw_scratch", "turnover": "claw_scratch",
+    "first_down": "claw_scratch", "touchdown": "claw_scratch", "turnover": "none",
     "penalty": "none", "make_some_noise": "none",
 }
 #: Milliseconds the outro (fade + restore) takes; the program carries it so

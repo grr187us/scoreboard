@@ -1997,6 +1997,43 @@ for the new `GameState` shape (halftime is `quarter='HALF'` with the game clock
 at the halftime length) but not re-run here — the pywebview and Playwright
 rehearsal of the Setup drawer on the operator window is still owed.
 
+### 14. Turnover — defensive breakthrough, September 9, 2026
+
+Owner direction: a defensive impact breaking through the screen; eliminate
+flat, clip-art artwork; equal aggression to touchdown in a shorter sequence;
+show **TURNOVER** and **TIGER'S BALL**. The built-in is now five seconds
+including the 600 ms exit, with no separate claw intro. Twelve textured
+concrete fragments break outward, with 32 chips, a brief shake, shockwave
+and dust; dimensional metal lettering lands in the aperture, followed by
+the gold possession line and crest. The old arrows, flat panels and cartoon
+football are removed. The score/clock bar remains live and retains the active
+layout's widget styles through the existing shared builder.
+
+Texture generation is bounded, local and cached; CSS drives the motion with
+no drawing loop or new dependency. Failed canvas drawing retains CSS stone
+and text. Late joins and OS reduced-motion mode show the settled composition.
+Explicit custom-pack duration and intro settings remain honoured; omitted
+turnover settings now default to five seconds and no separate intro.
+
+**Verification:** baseline 1288 tests; final full discovery **1289 tests,
+0 failures, 0 errors, 3 expected A-1 skips**, 98.145 seconds. New actual-player
+Edge test at 1920x1080, 1366x768 and 640x360 checks text fit and clearance,
+live clock pushes, natural end, cancellation at three beats, replacement,
+late join, reduced motion and canvas failure. The refined fracture geometry
+also passed a separate targeted browser rerun. Impact and hold screenshots
+were inspected under ignored `captures/turnover/`. Runtime: Blender CPython
+3.11.11 with pinned `.venv/Lib/site-packages`, installed Node and Edge.
+
+**Package:** rebuilt `dist/Scoreboard`, version 0.1.0, 830 files, 31.6 MB.
+Required assets and frozen `--check` passed with isolated test data. Initial
+verification encountered the protected operator log folder; rerunning
+`--verify-only` with an isolated `SCOREBOARD_DATA_DIR` passed. No permission
+change or edit to that operator folder was needed. Transfer ZIP not refreshed.
+
+**Next:** owner playback using **O / TURNOVER** with **Built-in turnover**
+selected, then target-laptop and LED-wall rehearsal. No real WebView2 run
+was repeated for this change. Phase 0 HDMI evidence and Task 12 remain open.
+
 ## Next Action
 
 **On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed. Item 12 (Broadcast Welcome default screens and motion) is built and awaiting the lead's suite run, browser-suite captures, and a real `pywebview` run before its evidence lines above can be filled in; Fifty Yard Line's full-bleed edges are the first thing to re-check once the HDMI test happens.

@@ -342,9 +342,9 @@ class LibraryResolveTests(TemporaryDataDirectoryTest):
         # Nothing said about the intro, so the event's own default stands.
         self.assertEqual(pack["intro"], "none")
 
-    def test_a_turnover_pack_scans_and_resolves_with_the_claw_default(self) -> None:
+    def test_a_turnover_pack_scans_and_resolves_with_the_immediate_impact_default(self) -> None:
         # Cutscenes v3: `turnover` is a home-team event whose omitted `intro`
-        # means the claw strike, and whose default run is 7 s.
+        # means no separate intro, and whose default run is 5 s.
         _write_manifest(
             self.paths.cutscenes / "takeaway",
             {
@@ -360,8 +360,8 @@ class LibraryResolveTests(TemporaryDataDirectoryTest):
         self.assertEqual(pack["id"], "takeaway")
         self.assertEqual(pack["event"], "turnover")
         self.assertFalse(fell_back)
-        self.assertEqual(pack["intro"], "claw_scratch")
-        self.assertEqual(pack["duration_seconds"], 7.0)
+        self.assertEqual(pack["intro"], "none")
+        self.assertEqual(pack["duration_seconds"], 5.0)
         builtin, _ = packs.library(self.paths).resolve("first_down")
         self.assertEqual(builtin["event"], "first_down")
 

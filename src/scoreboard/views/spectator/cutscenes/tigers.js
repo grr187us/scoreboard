@@ -3,9 +3,7 @@
  * First down uses stadium materials: seeded turf/chalk, a steel chain and
  * an orange padded marker. Touchdown is the tiger itself: a striped hide
  * torn open by four glowing claw tears with a quake, then gold metal type,
- * roar rings and embers. Turnover retains the TMSA
- * broadcast package (diagonal slabs, kinetic type, a burst and a readable
- * hold). All three show the existing TMSA crest and Python's event copy.
+ * roar rings and embers. Turnover breaks a textured concrete barrier with a defensive impact. All three show the existing TMSA crest and Python's event copy.
  *
  * It loads after `cutscenes/builtin.js` (which owns the registry, the intro,
  * and the penalty scene) and before `cutscene.js`, and it keeps every house
@@ -24,7 +22,7 @@
  * - Every node is created with `createElement` (or `createElementNS` for
  *   the touchdown's generated SVG), so operator words cannot reach a
  *   parser. The markup strings in this file are the touchdown's claw tear
- *   and hide container, and the turnover's football: static SVG constants
+ *   and hide container: static SVG constants
  *   named `*_MARKUP` that carry no text at all; the contract test lets only
  *   `*_MARKUP` identifiers be parsed as markup.
  *
@@ -496,138 +494,89 @@
   }));
 
   /* ------------------------------------------------------------------ */
-  /* turnover -- 7 s, "possession flips"                                 */
-  /* ------------------------------------------------------------------ */
-
-  /* The claw intro (1600 ms, builtin.js) has already hit the board; this
-   * scene then gets 5400 ms on the stage, the last 600 of them the player's
-   * fade. The one image that says "turnover" on a broadcast is the
-   * possession arrow reversing, so that is the whole opening beat:
-   *
-   *   0-450     a train of big blue chevrons pointing right rushes in from
-   *             the left over a navy-to-ink ground
-   *   450       the FLIP: the row mirrors and turns red -- one step, no
-   *             tween -- a white flash line crosses it and decays in 120 ms,
-   *             and the root takes one heavy 1 % shake. From here the
-   *             chevrons march steadily left and settle to ~20 % behind
-   *             everything else
-   *   350-800   an ink shadow slab and then a red slab slam in from the
-   *             RIGHT (the mirror of the first down's entry) across the
-   *             upper 55 %; a thin blue slab slides under them from the left
-   *   300-950   a football tumbles in from off-stage right along a shallow
-   *             arc, spinning two full turns, with two red ghost copies
-   *             trailing it, and lands in the left third with a small
-   *             bounce; eight gold sparks fly out once and are gone by 1500
-   *   700-1300  TURNOVER wipes in right-to-left under a moving clip-path --
-   *             the reverse of the other scenes, to match the flip -- white,
-   *             ink extrude, red stroke; one light sweep at 1400
-   *   1100-1700 the crest drops in beside the ball; TIGERS BALL slides in on
-   *             an ink tag to its right, in gold (the one accent use)
-   *   1700-4800 hold: the chevrons drift left, the ball rocks two degrees,
-   *             the slabs drift 1 % apart. The word never moves again.
-   *
-   * Everything above is CSS (tigers.css); this builder names the parts, puts
-   * the two words on the stage, and deals the sparks' directions. */
-
-  /** The football: a prolate ball in ink with a mist edge, a lighter
-   * highlight along the top, a white lace line with its cross stitches, and
-   * two end stripes. Static markup, no text, no ids (it is stamped three
-   * times: the ball and its two ghosts). */
-  var FOOTBALL_MARKUP = [
-    '<svg class="cs-to-ball-svg" viewBox="0 0 200 120" aria-hidden="true" focusable="false">',
-    '<path class="cs-to-ball-body" d="M 4 60 Q 100 -12 196 60 Q 100 132 4 60 Z"/>',
-    '<path class="cs-to-ball-sheen" d="M 22 48 Q 100 2 178 48 Q 100 26 22 48 Z"/>',
-    '<path class="cs-to-ball-stripe" d="M 42 39 Q 35 60 42 81"/>',
-    '<path class="cs-to-ball-stripe" d="M 158 39 Q 165 60 158 81"/>',
-    '<path class="cs-to-ball-lace" d="M 68 60 L 132 60"/>',
-    '<path class="cs-to-ball-stitch" d="M 78 52 L 78 68 M 89 52 L 89 68 M 100 52 L 100 68',
-    ' M 111 52 L 111 68 M 122 52 L 122 68"/>',
-    '</svg>'
-  ].join('');
-
-  /** Chevrons visible across the stage at once. Six big ones read as a
-   * possession arrow from the bleachers; a dozen small ones read as a
-   * loading bar. */
-  var TURNOVER_CHEVRONS = 6;
-  /** One chevron's pitch, as a fraction of the stage width. Six pitches
-   * centred on the stage put the row's centre exactly at 50 %, so mirroring
-   * the row at the flip lands every chevron on a chevron. */
-  var CHEVRON_PITCH = 0.155;
-  /** Extra chevrons dealt off both ends of the row so the leftward march
-   * during the hold never shows an empty gap entering from the right. */
-  var CHEVRON_OVERRUN = 1;
-  /** Gold sparks at the landing. Eight, flung once, fading by 1500 ms. */
-  var TURNOVER_SPARKS = 8;
-
-  /** The chevron train: a mirrorable row holding a marching belt of
-   * chevrons. Each chevron is a clip-path polygon painted by tigers.css; the
-   * `left` set here is geometry, not a displayed value. */
-  function addChevronTrain(parent) {
-    var train = addBox(parent, 'cs-to-train');
-    var row = addBox(train, 'cs-to-row');
-    var belt = addBox(row, 'cs-to-belt');
-    var margin = (1 - TURNOVER_CHEVRONS * CHEVRON_PITCH) / 2;
-    for (var index = -CHEVRON_OVERRUN; index < TURNOVER_CHEVRONS + CHEVRON_OVERRUN; index += 1) {
-      var chevron = addBox(belt, 'cs-to-chev');
-      chevron.style.left = ((margin + index * CHEVRON_PITCH) * 100).toFixed(3) + '%';
+  /* turnover -- a five-second defensive breakthrough. The wall is twelve
+   * concrete wedges, all sampling one cached texture. CSS throws them toward
+   * the lens, leaving a jagged aperture around the copy. No runtime loop. */
+  var impactTexture = null;
+  function concreteTexture() {
+    if (impactTexture) { return impactTexture; }
+    var canvas = doc.createElement('canvas');
+    canvas.width = 800; canvas.height = 400;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) { return null; }
+    var random = sequence(0xDEF2026);
+    var pixels = ctx.createImageData(800, 400);
+    for (var i = 0; i < pixels.data.length; i += 4) {
+      var value = 46 + random() * 33;
+      pixels.data[i] = value * 0.81;
+      pixels.data[i + 1] = value * 0.89;
+      pixels.data[i + 2] = value;
+      pixels.data[i + 3] = 255;
     }
-    return train;
-  }
-
-  /** The ball in flight: the path wrapper carries the arc, the rock wrapper
-   * the slow tilt of the hold, and the spin wrapper the tumble. Three
-   * elements because each one animates `transform` on its own. */
-  function addFootball(parent, className) {
-    var path = addBox(parent, 'cs-to-ball ' + className);
-    var rock = addBox(path, 'cs-to-ball-rock');
-    var spin = addBox(rock, 'cs-to-ball-spin');
-    spin.innerHTML = FOOTBALL_MARKUP;
-    return path;
-  }
-
-  /** The sparks: eight short gold streaks from the landing point, each with
-   * its own direction and reach as custom properties that one keyframe set
-   * in tigers.css reads. They fan over the upper half-circle -- the ball
-   * landed on something, so the sparks go up and out, never down. */
-  function addSparks(parent) {
-    var burst = addBox(parent, 'cs-to-sparks');
-    var next = sequence(0x54F1A9);
-    for (var index = 0; index < TURNOVER_SPARKS; index += 1) {
-      var spark = addBox(burst, 'cs-to-spark');
-      // Evenly spaced around the top half, jittered so it is not a fan of
-      // spokes, with a different reach for each.
-      var angle = -Math.PI * ((index + 0.5) / TURNOVER_SPARKS) + spread(next, -0.18, 0.18);
-      var reach = spread(next, 0.07, 0.15);
-      setStageLength(spark, '--cs-sx', 'w', Math.cos(angle) * reach);
-      setStageLength(spark, '--cs-sy', 'w', Math.sin(angle) * reach);
-      spark.style.setProperty('--cs-sa', (angle * 180 / Math.PI).toFixed(1) + 'deg');
-      spark.style.animationDelay = Math.round(spread(next, 930, 1010)) + 'ms';
+    ctx.putImageData(pixels, 0, 0);
+    for (var stain = 0; stain < 140; stain += 1) {
+      var sx = random() * 800, sy = random() * 400, radius = 10 + random() * 65;
+      var wash = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+      wash.addColorStop(0, stain % 2 ? 'rgba(0,0,0,.2)' : 'rgba(190,194,201,.08)');
+      wash.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = wash; ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
     }
-    return burst;
+    for (var p = 0; p < 2300; p += 1) {
+      var x = random() * 800, y = random() * 400;
+      ctx.fillStyle = p % 2 ? 'rgba(0,0,0,.3)' : 'rgba(255,255,255,.12)';
+      ctx.fillRect(x, y, 1 + random() * 3, 1);
+    }
+    impactTexture = canvas;
+    return canvas;
   }
-
-  register('turnover', h.simpleScene('turnover', 'cs-turnover', function (root, program) {
-    addBox(root, 'cs-to-ground');
-
-    addBox(root, 'cs-to-slab-shadow');
-    addBox(root, 'cs-to-slab-blue');
-    addBox(root, 'cs-to-slab-red');
-
-    addChevronTrain(root);
-    addBox(root, 'cs-to-flash');
-    addBox(root, 'cs-to-hatch');
-    addBox(root, 'cs-to-vignette');
-
-    h.addText(root, 'cs-to-headline', h.textOf(program, 'headline'));
-
-    addBox(root, 'cs-to-ball-shadow');
-    addFootball(root, 'cs-to-ball-ghost cs-to-ball-ghost-b');
-    addFootball(root, 'cs-to-ball-ghost cs-to-ball-ghost-a');
-    addFootball(root, 'cs-to-ball-real');
-    addSparks(root);
-
-    addBox(root, 'cs-to-rule');
-    addCrest(root, 'cs-to-crest', 0.26);
-    h.addText(root, 'cs-to-subline', h.textOf(program, 'subline'));
+  register('turnover', h.simpleScene('turnover', 'cs-turnover cs-impact', function (root, program) {
+    if (program.elapsed_ms > 0) { root.classList.add('cs-impact-resumed'); }
+    addBox(root, 'cs-impact-depth');
+    addBox(root, 'cs-impact-light');
+    var wall = addBox(root, 'cs-impact-wall');
+    var edge = [[0,0],[25,0],[50,0],[75,0],[100,0],[100,50],
+      [100,100],[75,100],[50,100],[25,100],[0,100],[0,50]];
+    var texture = null;
+    try { texture = concreteTexture(); } catch (_error) { /* CSS stone remains. */ }
+    var random = sequence(0xB411);
+    var cracks = edge.map(function (point) {
+      return [[50,46], [.66 * 50 + .34 * point[0] + (random() - .5) * 9,
+        .66 * 46 + .34 * point[1]], [.32 * 50 + .68 * point[0],
+        .32 * 46 + .68 * point[1] + (random() - .5) * 10], point];
+    });
+    for (var s = 0; s < edge.length; s += 1) {
+      var a = edge[s], b = edge[(s + 1) % edge.length];
+      var mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      var shard = addBox(wall, 'cs-impact-shard');
+      // Adjacent faces share the same crooked fracture before they separate.
+      var outline = cracks[s].concat(cracks[(s + 1) % edge.length].slice(1).reverse());
+      shard.style.clipPath = 'polygon(' + outline.map(function (point) {
+        return point[0].toFixed(2) + '% ' + point[1].toFixed(2) + '%';
+      }).join(',') + ')';
+      shard.style.setProperty('--dx', ((mx - 50) * 0.64).toFixed(3) + '%');
+      shard.style.setProperty('--dy', ((my - 46) * 0.66).toFixed(3) + '%');
+      shard.style.setProperty('--spin', ((random() - 0.5) * 12).toFixed(2) + 'deg');
+      shard.style.setProperty('--delay', (180 + random() * 70).toFixed(0) + 'ms');
+      if (texture) {
+        var face = doc.createElement('canvas');
+        face.width = 800; face.height = 400;
+        var ink = face.getContext('2d');
+        if (ink) { ink.drawImage(texture, 0, 0); shard.appendChild(face); }
+      }
+    }
+    addBox(root, 'cs-impact-shock');
+    var debris = addBox(root, 'cs-impact-debris');
+    for (var d = 0; d < 32; d += 1) {
+      var chip = addBox(debris, 'cs-impact-chip');
+      var angle = random() * Math.PI * 2;
+      chip.style.setProperty('--dx', (Math.cos(angle) * (0.3 + random() * 0.3)).toFixed(4));
+      chip.style.setProperty('--dy', (Math.sin(angle) * (0.3 + random() * 0.3)).toFixed(4));
+      chip.style.setProperty('--spin', (random() * 540).toFixed(2) + 'deg');
+      chip.style.setProperty('--size', (0.004 + random() * 0.009).toFixed(4));
+    }
+    addBox(root, 'cs-impact-dust');
+    h.addText(root, 'cs-impact-headline', h.textOf(program, 'headline'));
+    h.addText(root, 'cs-impact-subline', h.textOf(program, 'subline'));
+    addCrest(root, 'cs-impact-crest', 0.13);
   }));
 })(window);
