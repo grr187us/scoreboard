@@ -1,9 +1,12 @@
 # Windows packaging and offline launch
 
-**Latest local build:** September 10, 2026, from commit `f5d3ad6` on
+**Latest local build:** September 10, 2026, from commit `e5dec11` on
 `improvements`: halftime on the game clock, the Setup drawer for timing rules,
-the turnover cutscene rebuild, and the button box hot key remap (F15-F22, with
-F13/F14 unbound). Built with the repository `.venv` (python.org CPython 3.11.9,
+the turnover cutscene rebuild, and the final button box hot keys (F15 Quick 25,
+F16 Quick 40, F17 load 40, F18 load 25, F19 clear, F20 play clock start, F21/F22
+rocker game clock start/stop, F13/F14 unbound). It replaces an earlier build
+the same evening from `f5d3ad6`, which had F15/F16 and F19/F20 the other way
+round. Built with the repository `.venv` (python.org CPython 3.11.9,
 PyInstaller 6.22.2) using `tools/build_package.py`, whose required-asset,
 no-remote-resource, and frozen `--check` verification passed.
 `dist/Scoreboard` contains version 0.1.0, 787 files, 28.4 MB, and
