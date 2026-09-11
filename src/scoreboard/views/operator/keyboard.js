@@ -11,12 +11,14 @@
     // D4-D9 play clock buttons, and a D10 rocker that sends F21 when flipped
     // on and F22 when flipped off. F13/F14 (the old game clock paddle) are
     // deliberately unbound: the rocker is the only hardware game clock control.
-    {key: 'f15', label: 'F15', action: 'Load play clock 40 and start (Quick 40)', command: 'play_clock_preset_start', args: {seconds: 40}},
-    {key: 'f16', label: 'F16', action: 'Load play clock 25 and start (Quick 25)', command: 'play_clock_preset_start', args: {seconds: 25}},
+    // D5 F15 Quick 25, D4 F16 Quick 40, D6 F17 40, D7 F18 25, D9 F19 Clear,
+    // D8 F20 Play clock start.
+    {key: 'f15', label: 'F15', action: 'Load play clock 25 and start (Quick 25)', command: 'play_clock_preset_start', args: {seconds: 25}},
+    {key: 'f16', label: 'F16', action: 'Load play clock 40 and start (Quick 40)', command: 'play_clock_preset_start', args: {seconds: 40}},
     {key: 'f17', label: 'F17', action: 'Load play clock 40 (stopped)', command: 'play_clock_preset', args: {seconds: 40}},
     {key: 'f18', label: 'F18', action: 'Load play clock 25 (stopped)', command: 'play_clock_preset', args: {seconds: 25}},
-    {key: 'f19', label: 'F19', action: 'Start play clock', command: 'play_clock_start'},
-    {key: 'f20', label: 'F20', action: 'Clear play clock', command: 'play_clock_clear'},
+    {key: 'f19', label: 'F19', action: 'Clear play clock', command: 'play_clock_clear'},
+    {key: 'f20', label: 'F20', action: 'Start play clock', command: 'play_clock_start'},
     {key: 'f21', label: 'F21', action: 'Start game clock (rocker on)', command: 'game_clock_start'},
     {key: 'f22', label: 'F22', action: 'Stop game clock (rocker off)', command: 'game_clock_stop'},
     {key: 'q', label: 'Q', action: 'Quarter forward', command: 'quarter_forward'},
