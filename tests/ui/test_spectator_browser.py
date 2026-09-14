@@ -14,6 +14,7 @@ import unittest
 
 from scoreboard.domain.state import BallSpot, ClockValue, GameState
 from scoreboard.host.bridge import spectator_view_model
+from scoreboard.presentation.layout import preset_descriptors
 from tests.ui.browser_support import run_browser
 
 
@@ -36,11 +37,17 @@ class SpectatorBrowserTests(unittest.TestCase):
         populated = spectator_view_model(replace(
             play, home_score=21, away_score=17, down=4, distance=0, possession='home',
             ball_on=BallSpot('away', 35), home_timeouts=3, away_timeouts=2))
+        # PL-4: the FINAL board keeps the score and the quarter word and
+        # drops both clocks and their captions.
+        final = spectator_view_model(replace(play, quarter='FINAL', lifecycle='FINAL',
+                                             home_score=21, away_score=17))
         result = run_browser('spectator.cjs', {'games': games, 'events': events,
                              'pregame': spectator_view_model(GameState()), 'zero': zero, 'blank': blank,
                              'runningGame': running_game, 'runningPlay': running_play,
-                             'populated': populated})
-        self.assertEqual(result['cases'], 36)
+                             'populated': populated, 'final': final,
+                             'gridLayout': next(p for p in preset_descriptors() if p['id'] == 'grid')['layout']})
+        # 36 matrix/edge cases plus the PL-4 FINAL case.
+        self.assertEqual(result['cases'], 37)
 
     def test_renderer_contains_no_authoritative_computation_or_controls(self):
         root = Path(__file__).resolve().parents[2] / 'src/scoreboard/views'

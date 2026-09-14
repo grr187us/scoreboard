@@ -111,7 +111,11 @@ from scoreboard.host.teams import TeamPresets
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import describe_resolution
 from scoreboard.infrastructure.persistence import GameStore, PersistenceStatus
-from scoreboard.presentation.layout import default_layout
+from scoreboard.presentation.layout import (
+    FINAL_HIDDEN_ELEMENT_PREFIXES,
+    FINAL_HIDDEN_WIDGET_IDS,
+    default_layout,
+)
 
 #: The two local input adapters share every command and retain their source.
 OPERATOR_MOUSE_SOURCE: Final[str] = "operator-mouse"
@@ -652,6 +656,11 @@ def spectator_view_model(
         state.play_clock.seconds,
         blank_at_zero=state.play_clock_cleared,
     )
+    # PL-4 (September 14, 2026): on FINAL the wall shows no clock digits and
+    # no clock captions. The clock fields themselves stay populated because
+    # the operator page reads them and must still see what would come back
+    # if FINAL is stepped back; the wall is told which widgets to skip.
+    final = state.quarter == "FINAL" or state.lifecycle == "FINAL"
     return {
         "schema_version": SCHEMA_VERSION,
         "revision": state.revision,
@@ -718,6 +727,14 @@ def spectator_view_model(
         # dotted paths hide themselves on empty text (OPTIONAL_WIDGET_IDS),
         # which is how they stay off the wall until the operator raises one.
         "status": _status_view(state),
+        # PL-4: game-board widget ids the wall must not draw in this state.
+        # Empty except on FINAL (presentation/layout.py FINAL_HIDDEN_WIDGET_IDS).
+        "board": {
+            "hidden_widgets": list(FINAL_HIDDEN_WIDGET_IDS) if final else [],
+            # Free elements named after a clock (a framing box, a hairline)
+            # leave the wall with it.
+            "hidden_element_prefixes": list(FINAL_HIDDEN_ELEMENT_PREFIXES) if final else [],
+        },
     }
 
 

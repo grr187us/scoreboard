@@ -198,6 +198,39 @@ def _resolve_dotted_path(model: dict, path: str):
     return node
 
 
+class FinalHiddenWidgetsContractTests(unittest.TestCase):
+    """PL-4: the FINAL hide list names real game-board widgets, and the
+    renderer reads it from the one dotted path the view model publishes."""
+
+    def test_the_final_list_is_the_four_clock_widgets_and_the_renderer_reads_it(self):
+        self.assertEqual(
+            layout.FINAL_HIDDEN_WIDGET_IDS,
+            ("game_clock_label", "game_clock_value", "play_clock_label", "play_clock_value"),
+        )
+        self.assertTrue(set(layout.FINAL_HIDDEN_WIDGET_IDS).issubset(layout.WIDGET_IDS))
+        source = (VIEWS_ROOT / "shared" / "board.js").read_text(encoding="utf-8")
+        self.assertIn("read(model, 'board.hidden_widgets')", source)
+        self.assertIn("hiddenByModel.indexOf(id) >= 0 ? '0'", source)
+        # Framing elements named after a clock follow it off the wall.
+        self.assertEqual(layout.FINAL_HIDDEN_ELEMENT_PREFIXES, ("game_clock_", "play_clock_"))
+        self.assertIn("read(model, 'board.hidden_element_prefixes')", source)
+        grid = next(p for p in layout.preset_descriptors() if p["id"] == "grid")["layout"]
+        framed = [e["id"] for e in grid["elements"] if e["id"].startswith(layout.FINAL_HIDDEN_ELEMENT_PREFIXES)]
+        self.assertEqual(framed, ["play_clock_panel", "play_clock_rule_l", "play_clock_rule_r"])
+        # The registries are untouched: captions stay static text.
+        self.assertIsNone(layout.WIDGET_FIELDS["game_clock_label"])
+        self.assertIsNone(layout.WIDGET_FIELDS["play_clock_label"])
+
+    def test_the_view_model_lists_them_only_on_final(self):
+        live = spectator_view_model(GameState(lifecycle="IN_PROGRESS", quarter="4th"))
+        self.assertEqual(live["board"], {"hidden_widgets": [], "hidden_element_prefixes": []})
+        by_label = spectator_view_model(GameState(lifecycle="IN_PROGRESS", quarter="FINAL"))
+        self.assertEqual(by_label["board"]["hidden_widgets"], list(layout.FINAL_HIDDEN_WIDGET_IDS))
+        by_lifecycle = spectator_view_model(GameState(lifecycle="FINAL", quarter="4th"))
+        self.assertEqual(by_lifecycle["board"]["hidden_widgets"], list(layout.FINAL_HIDDEN_WIDGET_IDS))
+        self.assertEqual(by_lifecycle["board"]["hidden_element_prefixes"], list(layout.FINAL_HIDDEN_ELEMENT_PREFIXES))
+
+
 class WidgetFieldsResolveInARealViewModelTests(unittest.TestCase):
     """Every data-driven WIDGET_FIELDS path must resolve to real data.
 

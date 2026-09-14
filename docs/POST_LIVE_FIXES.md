@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 6 tickets open, 2 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 5 tickets open, 3 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -158,7 +158,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-4 — Hide the clocks on FINAL (issue 3)
 
-**Priority:** P1 · **Status:** open · **Type:** defect
+**Priority:** P1 · **Status:** resolved (September 14, 2026) · **Type:** defect
 
 **Symptom:** After switching to FINAL the board still showed a clock value (12:00 or whatever was loaded).
 
@@ -182,6 +182,8 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - On FINAL, no clock digits or clock labels are visible on any preset.
 - Leaving FINAL (quarter back) restores the clocks.
 - Operator control panel still shows the clocks so the operator can see what would come back.
+
+**Resolution (September 14, 2026):** Implemented as a spectator-only hide list rather than by blanking the clock fields, because the operator page reads the same `clocks.game.display` and must keep showing them (acceptance criterion 3), and because the layout schema pins the clock captions as application-owned static text (`WIDGET_FIELDS[label] is None`, `WIDGET_TEXTS`), so rebinding them would have broken those contracts. `spectator_view_model` now adds `board.hidden_widgets` (the four ids in `presentation/layout.py::FINAL_HIDDEN_WIDGET_IDS`) and `board.hidden_element_prefixes` (`FINAL_HIDDEN_ELEMENT_PREFIXES = ("game_clock_", "play_clock_")`) when `state.quarter == "FINAL"` or `state.lifecycle == "FINAL"`, and empty lists otherwise. `board.js::applyModel` hides the listed widgets through the existing `hasValue`/`refreshHidden` path (a layout's own `visible` flag still wins) and hides any free element whose id starts with a listed prefix, so the Grid preset's gold play-clock panel and its two hairlines (`play_clock_panel`, `play_clock_rule_l/_r`) leave with the clock, including on the owner's already-saved Grid layout, which needed no re-apply. The registries are untouched, so every saved layout keeps its wording. Preset check: all six (Classic, Broadcast bar, Big score, Tigers navy, Tigers Stadium, Scoreboard Grid) rendered on FINAL at 1920×1080 with no stray box or hairline; the Grid frame was the only one that looked wrong and is now hidden. Verified: `tests/integration/test_spectator.py` (FINAL by label and by End Game, 1st/2nd/3rd/HALF/OT untouched, operator fields intact), `FinalHiddenWidgetsContractTests` in `tests/integration/test_spectator_layout_render.py`, a FINAL case in `tests/ui/spectator.cjs` (widgets, Grid frame elements, legacy snapshot without `board`), `.scratch/post-live-fixes/final_shots.py` (6/6 presets, 4th and FINAL screenshots in `evidence/pl4-<preset>-{4th,final}.png`), and a real pywebview run (`.scratch/post-live-fixes/realrun_pl4.py`, 49/49) pushing each preset through the layout library to the practice spectator window: FINAL hides the four widgets and the framing elements, the operator window still reads 1:23 / 40, stepping back to the 4th restores everything, End Game alone hides them too (`evidence/pl4-realrun-<preset>-final.png`).
 
 ---
 

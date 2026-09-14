@@ -336,6 +336,27 @@ OPTIONAL_WIDGET_IDS: Final[frozenset[str]] = frozenset({
     "status_message", "status_clock",
 })
 
+#: PL-4 (September 14, 2026): the game-board widgets the wall must not draw
+#: once the game is FINAL (quarter label ``FINAL`` or lifecycle ``FINAL``).
+#: The spectator view model lists them under ``board.hidden_widgets`` and
+#: ``board.js`` hides exactly the ids it is sent through the same
+#: ``hasValue``/``refreshHidden`` path an empty optional widget uses -- the
+#: registries (WIDGET_FIELDS/WIDGET_TEXTS/OPTIONAL_WIDGET_IDS) are untouched,
+#: so the clock captions stay application-owned static text and every saved
+#: layout keeps its wording. The operator page never reads this list.
+FINAL_HIDDEN_WIDGET_IDS: Final[tuple[str, ...]] = (
+    "game_clock_label", "game_clock_value", "play_clock_label", "play_clock_value",
+)
+
+#: PL-4: free elements that frame a clock leave the wall with it. A preset
+#: (or an operator) names such an element after the clock it decorates --
+#: the Grid preset's ``play_clock_panel`` and ``play_clock_rule_l``/``_r`` --
+#: and the view model lists these prefixes under
+#: ``board.hidden_element_prefixes`` on FINAL, so an already-saved Grid
+#: layout picks the behaviour up without being re-applied. Any element whose
+#: id starts with a listed prefix is hidden for as long as the list says so.
+FINAL_HIDDEN_ELEMENT_PREFIXES: Final[tuple[str, ...]] = ("game_clock_", "play_clock_")
+
 #: Which rail group each widget belongs to in the editor (spec section 1.3).
 WIDGET_GROUPS: Final[dict[str, str]] = {
     "home_name": "Teams", "home_score": "Teams", "possession": "Teams",
@@ -4395,6 +4416,8 @@ def supported_widget_ids(view_model: Mapping[str, Any], kind: str = "game") -> t
 __all__ = [
     "ANIMATION_MIN_SECONDS",
     "ANIMATION_PRESETS",
+    "FINAL_HIDDEN_ELEMENT_PREFIXES",
+    "FINAL_HIDDEN_WIDGET_IDS",
     "BLEED_MAX",
     "BLEED_MAX_SIZE",
     "BLEED_MIN",

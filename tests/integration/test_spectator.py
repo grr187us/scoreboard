@@ -122,6 +122,45 @@ class SpectatorFoundationTests(ApplicationTestCase):
         bridge.command('new_game', {'confirmed': True})
         self.assertEqual(app.service.state.lifecycle, 'PRE_GAME')
 
+    def test_final_hides_the_board_clocks_but_not_the_operator_readout(self):
+        # PL-4: on FINAL the wall shows no clock digits and no captions. The
+        # clock fields stay populated so the operator page still shows what
+        # would come back if the quarter is stepped back.
+        clocks = ['game_clock_label', 'game_clock_value', 'play_clock_label', 'play_clock_value']
+        app = self.make_application()
+        bridge = app.start_new()
+        bridge.command('set_quarter', {'label': '4th', 'confirmed': True})
+        bridge.command('play_clock_preset', {'seconds': 40})
+        fourth = bridge.spectator_snapshot()
+        self.assertEqual(fourth['board']['hidden_widgets'], [])
+        for quarter in ('1st', '2nd', '3rd', 'HALF', 'OT'):
+            bridge.command('set_quarter', {'label': quarter, 'confirmed': True})
+            self.assertEqual(bridge.spectator_snapshot()['board']['hidden_widgets'], [], quarter)
+        bridge.command('set_quarter', {'label': '4th', 'confirmed': True})
+
+        bridge.command('set_quarter', {'label': 'FINAL', 'confirmed': True})
+        final = bridge.spectator_snapshot()
+        self.assertEqual(final['board']['hidden_widgets'], clocks)
+        # The clock fields are untouched on both views.
+        self.assertEqual(final['clocks']['game']['display'], fourth['clocks']['game']['display'])
+        self.assertEqual(final['clocks']['play']['display'], '40')
+        operator = bridge.get_snapshot()
+        self.assertEqual(operator['clocks']['game']['display'], fourth['clocks']['game']['display'])
+        self.assertEqual(operator['clocks']['play']['display'], '40')
+        self.assertEqual(operator['clocks']['game']['label'], 'GAME CLOCK')
+        # Quarter and scores stay on the wall.
+        self.assertEqual(final['quarter_display'], 'FINAL')
+        self.assertIn('teams', final)
+
+        # Leaving FINAL restores the clocks.
+        bridge.command('set_quarter', {'label': '4th', 'confirmed': True})
+        self.assertEqual(bridge.spectator_snapshot()['board']['hidden_widgets'], [])
+
+        # End Game alone (lifecycle FINAL, quarter label unchanged) hides them too.
+        bridge.command('end_game')
+        self.assertEqual(app.service.state.lifecycle, 'FINAL')
+        self.assertEqual(bridge.spectator_snapshot()['board']['hidden_widgets'], clocks)
+
     def test_legacy_snapshot_zero_keeps_previous_blank_behavior(self):
         app = self.make_application()
         app.start_new()

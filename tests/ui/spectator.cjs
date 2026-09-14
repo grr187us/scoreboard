@@ -158,6 +158,51 @@ async function main(data) {
     assert.equal(await page.locator('[data-widget="play_clock_value"]').evaluate(el => el.classList.contains('running-play')), true);
     assert.equal(await widgetText(page, 'quarter'), '4th Quarter');
 
+    // PL-4: FINAL takes both clocks and both captions off the wall; the
+    // quarter and the scores stay; stepping back out of FINAL restores them.
+    const clockWidgets = ['game_clock_value', 'game_clock_label', 'play_clock_value', 'play_clock_label'];
+    const hasValue = id => page.evaluate(w => document.querySelector('[data-widget="' + w + '"]').dataset.hasValue, id);
+    await page.evaluate(model => window.applyView(model), data.final);
+    for (const id of clockWidgets) {
+      assert.equal(await widgetHidden(page, id), true, id + ' must be hidden on FINAL');
+      assert.equal(await hasValue(id), '0', id + ' must carry no value on FINAL');
+    }
+    assert.equal(await widgetText(page, 'quarter'), 'FINAL');
+    assert.equal(await widgetText(page, 'home_score'), String(data.final.teams.home.score));
+    await page.evaluate(model => window.applyView(model), data.populated);
+    for (const id of clockWidgets) assert.equal(await hasValue(id), '1', id + ' must carry a value again after FINAL');
+    // The default layout keeps the game clock caption switched off (its own
+    // `visible` flag); the other three return to the wall.
+    for (const id of ['game_clock_value', 'play_clock_value', 'play_clock_label']) {
+      assert.equal(await widgetHidden(page, id), false, id + ' must return after FINAL');
+    }
+    assert.equal(await widgetText(page, 'play_clock_label'), 'PLAY CLOCK');
+    // A framing element named after a clock (the Grid preset's gold play
+    // clock panel and hairlines) leaves the wall with the clock and comes back.
+    await page.evaluate(layout => window.applyLayout(layout), data.gridLayout);
+    const elementHidden = id => page.evaluate(e => { const n = document.querySelector('[data-element="' + e + '"]'); return n ? n.hidden : null; }, id);
+    await page.evaluate(model => window.applyView(model), data.final);
+    for (const id of ['play_clock_panel', 'play_clock_rule_l', 'play_clock_rule_r']) assert.equal(await elementHidden(id), true, id + ' must leave with the play clock');
+    assert.equal(await elementHidden('home_panel'), false);
+    await page.evaluate(model => window.applyView(model), data.populated);
+    for (const id of ['play_clock_panel', 'play_clock_rule_l', 'play_clock_rule_r']) assert.equal(await elementHidden(id), false, id + ' must return');
+    // A layout re-push while FINAL keeps the frame off the wall.
+    await page.evaluate(model => window.applyView(model), data.final);
+    await page.evaluate(layout => window.applyLayout(layout), data.gridLayout);
+    await page.evaluate(model => window.applyView(model), data.final);
+    assert.equal(await elementHidden('play_clock_panel'), true);
+    await page.evaluate(() => window.applyLayout(window.ScoreboardBoard.DEFAULT_LAYOUT));
+    // A snapshot that predates board.hidden_widgets hides nothing extra.
+    await page.evaluate(model => {
+      const legacy = JSON.parse(JSON.stringify(model));
+      delete legacy.board;
+      window.applyView(legacy);
+    }, data.populated);
+    assert.equal(await widgetHidden(page, 'game_clock_value'), false);
+    assert.equal(await widgetHidden(page, 'play_clock_label'), false);
+    await page.evaluate(model => window.applyView(model), data.populated);
+    cases++;
+
     // An injected failure in the widget-text pipeline must not take down the
     // whole page: window.applyView's own try/catch keeps the last usable
     // board on screen and swallows the error.

@@ -2418,6 +2418,15 @@
     element.hidden = !(visible && hasValue);
   }
 
+  /** A free element is drawn only when its layout says visible AND Python
+   * has not listed its id prefix under `board.hidden_element_prefixes`
+   * (PL-4: a box or hairline named after a clock leaves the wall with it). */
+  function refreshElementHidden(node) {
+    var visible = node.dataset.layoutVisible !== '0';
+    var modelHidden = node.dataset.modelHidden === '1';
+    node.hidden = !visible || modelHidden;
+  }
+
   /** Set the fill/border/corner-radius custom properties shared by every
    * widget and every free element (`--bg --bc --bw --br`). `source` is the
    * layout entry being applied; `fallback` supplies a value for any property
@@ -2708,7 +2717,11 @@
     node.style.setProperty('--h', height);
     node.style.setProperty('--op', opacity);
     node.style.zIndex = zIndex;
-    node.hidden = !visible;
+    // The layout's own flag; applyModel() may additionally hide the node
+    // while Python says its clock is off the wall (PL-4), so the two are
+    // combined in one place.
+    node.dataset.layoutVisible = visible ? '1' : '0';
+    refreshElementHidden(node);
 
     applyPaint(node, entry, defaults);
 
@@ -3141,6 +3154,27 @@
     var read = window.ScoreboardRender.read;
     boardRoot._lastModel = model;
     if (boardRoot._elementFitPending) fitElementText(boardRoot);
+    // PL-4: Python lists game-board widgets the wall must not draw in this
+    // state (both clocks and their captions on FINAL). They take the same
+    // hasValue/refreshHidden path an empty optional widget takes, so a
+    // layout's own `visible` flag still wins when it says hidden.
+    var hiddenByModel = boardRoot.dataset.boardKind === 'game' ? read(model, 'board.hidden_widgets') : null;
+    if (!Array.isArray(hiddenByModel)) hiddenByModel = [];
+    var hiddenPrefixes = boardRoot.dataset.boardKind === 'game' ? read(model, 'board.hidden_element_prefixes') : null;
+    if (!Array.isArray(hiddenPrefixes)) hiddenPrefixes = [];
+    var elementNodes = boardRoot.querySelectorAll('[data-element]');
+    for (var elementIndex = 0; elementIndex < elementNodes.length; elementIndex += 1) {
+      var elementNode = elementNodes[elementIndex];
+      var elementId = String(elementNode.getAttribute('data-element') || '');
+      var prefixed = false;
+      for (var prefixIndex = 0; prefixIndex < hiddenPrefixes.length; prefixIndex += 1) {
+        if (typeof hiddenPrefixes[prefixIndex] === 'string' && hiddenPrefixes[prefixIndex] && elementId.indexOf(hiddenPrefixes[prefixIndex]) === 0) {
+          prefixed = true;
+        }
+      }
+      elementNode.dataset.modelHidden = prefixed ? '1' : '0';
+      refreshElementHidden(elementNode);
+    }
     for (var index = 0; index < registry.ids.length; index += 1) {
       var id = registry.ids[index];
       var element = boardRoot.querySelector('[data-widget="' + id + '"]');
@@ -3168,7 +3202,8 @@
         if (textElement && textElement.textContent !== text) {
           setWidgetText(textElement, text);
         }
-        element.dataset.hasValue = (!isOptionalIn(registry, id) || text !== '') ? '1' : '0';
+        element.dataset.hasValue = hiddenByModel.indexOf(id) >= 0 ? '0'
+          : (!isOptionalIn(registry, id) || text !== '') ? '1' : '0';
         refreshHidden(element);
         fitWidgetText(element, textElement);
       } catch (error) {
