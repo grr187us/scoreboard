@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 3 tickets open, 5 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 2 tickets open, 6 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -220,7 +220,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-6 — Touchdown clears field status, adds 6, then offers the try (issue 6)
 
-**Priority:** P1 · **Status:** open · **Type:** verify, then feature
+**Priority:** P1 · **Status:** resolved (September 14, 2026) · **Type:** verify, then feature
 
 **Symptom (owner's words):** Tapping Touchdown on the field assistant should clear the down and yards to go, add 6 points, and move straight to a screen offering PAT kick (1), 2-point conversion (2), or no good (0). The penalty option must remain available on that screen. Owner is not sure exactly what happened during the game.
 
@@ -243,6 +243,14 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - One tap on Touchdown plus Confirm yields +6, blank down/distance/ball on, and the try screen.
 - Penalty is reachable from the try screen.
 - A +6 on the control panel also blanks the field status and hints that a try is pending.
+
+**Resolution (September 14, 2026):**
+
+*Step 1, verified in the real app after PL-2* (`.scratch/post-live-fixes/realrun_pl6.py`, 34/34, operator window + Field Assistant + practice board): one tap on TOUCHDOWN plus Confirm gave HOME +6, cleared down/distance/ball on/possession in Python, blanked the assistant readouts and the operator strip, hid the down/distance widgets on the board, and opened the TRY panel for HOME; KICK +1 previewed with "Set up the kickoff.", committed to 7, and left the start panel (kickoff) up. The game-day "dead tap" is explained by PL-2's stale gate, now gone.
+
+*Step 2, gaps found and fixed:* (a) the try screen had no PENALTY… — the score panel now carries PENALTY… and FIX MANUALLY…, and the penalty panel no longer closes itself when nobody has the ball; it shows a note (`#penalty-no-series`) saying a penalty on the try or kickoff is applied by placing the ball and pressing HOME/AWAY BALL HERE, because yardage enforcement needs an offense (Python still refuses, and Confirm shows that sentence). **Owner to confirm** whether a penalty during the try should do anything on the scoreboard beyond this; today it has no board effect. (b) The board kept a "—" for a cleared ball on: `ball_on_display`/`ball_on_value_display` are now blank when the spot is cleared, so the optional widget hides like down/distance. (c) Two defects surfaced by the real run and fixed with regression tests: the first control-panel **Ball on → Set** after a touchdown raised in `_ball_spot_snapshot(None)` and came back as INTERNAL_ERROR (`tests/unit/test_commands.py::test_ball_on_can_be_set_again_after_a_touchdown_cleared_it`); and, after PL-2, the commit's own render re-previewed the just-committed touchdown so a late preview answer re-armed Confirm with a second +6 — `preview()` now drops an answer for a press that is no longer selected (`test_a_late_preview_for_a_press_that_is_gone_is_dropped`).
+
+*Step 3, control-panel coupling (default taken: clear only, no modal):* `_handle_add_score` with 6 points also clears down, distance, ball on, possession, and the assistant's line to gain (possession too, beyond the three named, because nobody has the ball between a score and the kickoff and leaving it made the assistant show a phantom series); one Undo restores score and field status together through the composite `old_values` path, reported as the score reversal. The service keeps a runtime `try_pending` team (set by a +6 or a finalized touchdown, cleared by any accepted command that changes the field status, a score, the quarter, or the lifecycle), and the operator strip shows Python's `try_pending_display` ("TRY PENDING · <team>") after the timeouts; the Field drawer explains it. Verified: `TouchdownCouplingTests` (unit), `TryPendingViewTests` (bridge, both the panel and the assistant paths), the multi-quarter rehearsal extended with TD → try → kickoff assertions, page contracts for both windows, the full suite (see build note) with 3 A-1 skips, and the real run above: control-panel AWAY +6 blanked 2nd & 3 at HOME 3 on strip, board, and assistant (start panel, no reload), showed TRY PENDING · AWAY, and one Undo restored AWAY 2nd & 3 at HOME 3 with the hint gone. Screenshots: `.scratch/post-live-fixes/evidence/pl6-0{1..6}-*.png`.
 
 ---
 

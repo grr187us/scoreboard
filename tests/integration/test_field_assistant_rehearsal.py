@@ -87,8 +87,9 @@ class AtomicCompositeTests(FieldAssistantRehearsalCase):
         self.assertEqual(published["revision"], before_revision + 1)
         self.assertEqual(published["teams"]["home"]["score"], 6)
         football = self.football(published)
-        # The bridge's established display convention (BLANK_DISPLAY, and its
-        # own "—" for a cleared ball_on) is not this test's to change; assert
+        # The bridge's established display convention (BLANK_DISPLAY; since
+        # PL-6 a cleared ball_on is blank too, so the wall hides it) is not
+        # this test's to change; assert
         # the raw cleared values and the same formatters/literal it emits.
         self.assertEqual(football["down"], None)
         self.assertEqual(football["distance"], None)
@@ -100,7 +101,7 @@ class AtomicCompositeTests(FieldAssistantRehearsalCase):
             football["down_distance_display"], format_down_and_distance(None, None)
         )
         self.assertEqual(football["possession_display"], format_possession(None))
-        self.assertEqual(football["ball_on_display"], "—")
+        self.assertEqual(football["ball_on_display"], "")
         self.assertEqual(football["timeouts"], {"home": 3, "away": 3})
         self.assertEqual(football["home_timeouts_display"], format_timeouts(3))
         self.assertEqual(football["away_timeouts_display"], format_timeouts(3))
@@ -289,7 +290,15 @@ class MultiQuarterRehearsalTests(FieldAssistantRehearsalCase):
         self.assertEqual(second_quarter["view"]["assistant"]["home_goal_side"], "right")
         touchdown = self.finalize("touchdown", {"scoring_team": "away", "add_score": True})
         self.assertEqual(touchdown["view"]["teams"]["away"]["score"], 6)
-        self.finalize("try", {"scoring_team": "away", "points": 1})
+        # PL-6: one tap plus Confirm yields +6, blank field status, and a
+        # pending try for the scoring team; the try clears the hint and the
+        # kickoff starts the next series.
+        self.assertEqual(self.football(touchdown["view"])["down_distance_display"], "")
+        self.assertEqual(self.football(touchdown["view"])["ball_on_display"], "")
+        self.assertEqual(touchdown["view"]["try_pending"], "away")
+        tried = self.finalize("try", {"scoring_team": "away", "points": 1})
+        self.assertIsNone(tried["view"]["try_pending"])
+        self.assertEqual(tried["view"]["teams"]["away"]["score"], 7)
         kickoff = self.finalize("kickoff", {"receiving_team": "home", "final_absolute": 25})
         self.assertEqual(self.football(kickoff["view"])["down_distance_display"], "1st & 10")
         self.assertEqual(kickoff["view"]["assistant"]["ball_absolute"], 25)

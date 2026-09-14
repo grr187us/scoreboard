@@ -115,6 +115,17 @@ class FieldAssistantDraftOwnershipTests(unittest.TestCase):
         self.assertIn("ballTouched = false;", resync)
         self.assertIn("Discard draft &amp; reload", self.html)
 
+    def test_penalty_is_reachable_from_the_try_screen(self) -> None:
+        # PL-6: the score panel (which stays open on the try after a touchdown)
+        # offers PENALTY… and FIX MANUALLY…, and the penalty panel no longer
+        # closes itself when nobody has the ball -- it explains instead.
+        score_panel = self.html.split('data-panel="score"', 1)[1].split('data-panel="manual"', 1)[0]
+        self.assertIn('data-open="penalty"', score_panel)
+        self.assertIn('data-open="manual"', score_panel)
+        self.assertIn('id="penalty-no-series"', self.html)
+        self.assertNotIn("if (openPanel === 'penalty' && !f.possession) openPanel = null;", self.source)
+        self.assertIn("document.getElementById('penalty-no-series').hidden = Boolean(f.possession);", self.source)
+
     def test_sides_can_be_swapped_after_the_direction_is_saved(self) -> None:
         # PL-7: the early return that froze the direction buttons is gone; a
         # different side after the save is a swap, with a press-again confirm,
@@ -127,6 +138,16 @@ class FieldAssistantDraftOwnershipTests(unittest.TestCase):
         self.assertIn("swapButton.hidden = establishedDirection() === null;", self.source)
         # The page derives no direction of its own for the swap.
         self.assertNotIn("-establishedDirection()", self.source)
+
+    def test_a_late_preview_for_a_press_that_is_gone_is_dropped(self) -> None:
+        # PL-6 real run: a commit's own render re-previewed the just-committed
+        # touchdown a moment before clearDraft cleared it, and the late answer
+        # re-armed Confirm with a second +6. A preview answer is adopted only
+        # while the press it describes is still the selected one.
+        preview = self.source.split("function preview()", 1)[1].split("function resync()", 1)[0]
+        self.assertIn("var pressed = selected;", preview)
+        self.assertIn("if (selected !== pressed) return;", preview)
+        self.assertLess(preview.index("if (selected !== pressed) return;"), preview.index("draft = request;"))
 
     def test_a_refused_race_is_a_toast_and_one_more_confirm(self) -> None:
         self.assertIn('id="conflict"', self.html)

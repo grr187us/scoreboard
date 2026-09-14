@@ -601,12 +601,14 @@ def _football_view(
         "possession": state.possession,
         "possession_display": format_possession(state.possession),
         "ball_on": None if ball_on is None else {"team": ball_on.team, "yard_line": ball_on.yard_line},
+        # PL-6: a cleared spot is blank text, like a cleared down/distance, so
+        # the wall's optional ball-on widget hides instead of showing a dash.
         "ball_on_display": (
-            "—" if ball_on is None
+            "" if ball_on is None
             else format_ball_on(ball_on.team, ball_on.yard_line, str(team_name))
         ),
         "timeouts": {"home": state.home_timeouts, "away": state.away_timeouts},
-        "ball_on_value_display": "—" if ball_on is None else str(ball_on.yard_line),
+        "ball_on_value_display": "" if ball_on is None else str(ball_on.yard_line),
         "home_timeouts_dots": format_timeout_dots(state.home_timeouts, total=timeouts_per_half),
         "away_timeouts_dots": format_timeout_dots(state.away_timeouts, total=timeouts_per_half),
         "home_timeouts_display": format_timeouts(state.home_timeouts),
@@ -851,6 +853,12 @@ def operator_view_model(
     # PL-5: the end-of-4th prompt. Python decides when it is pending; the page
     # only shows the three choices and sends the ordinary commands.
     model["period_decision"] = service.period_decision
+    # PL-6: the strip's "try pending" hint after a +6, in Python's words.
+    model["try_pending"] = service.try_pending
+    model["try_pending_display"] = (
+        "" if service.try_pending is None
+        else f"TRY PENDING · {state.home_name if service.try_pending == 'home' else state.away_name}"
+    )
     # I4: the whole reversible stack, newest first, each row already rendered
     # through the same _last_action_view the "LAST: ..." strip uses -- the
     # operator page copies these labels into its history drawer rather than

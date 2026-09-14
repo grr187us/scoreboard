@@ -217,8 +217,10 @@
   function updatePanels() {
     var f = (model && model.football) || {};
     var direction = effectiveDirection();
-    // Sub-panels that need a live series fall back when the series is gone.
-    if (openPanel === 'penalty' && !f.possession) openPanel = null;
+    // The penalty panel stays reachable without a series (PL-6: from the try
+    // screen) and says what to do instead; Python still refuses to enforce
+    // yards with no offense, and Confirm shows that sentence.
+    document.getElementById('penalty-no-series').hidden = Boolean(f.possession);
     if (direction === null) openPanel = null;
     showPanel(openPanel || topPanel());
     setPressed(document.querySelectorAll('#home-direction button'), function (b) { return Number(b.getAttribute('data-direction')) === direction; });
@@ -367,7 +369,14 @@
   function preview() {
     if (!api || !model || !selected) return;
     var request = buildAction();
+    var pressed = selected;
     Promise.resolve(api.preview_field_action(request)).then(function (result) {
+      // The press this answer describes may be gone (Cancel, a commit, or a
+      // different button) by the time Python answers. Adopting it anyway
+      // re-armed Confirm with an already-committed touchdown (seen in the
+      // PL-6 real run: the commit's own render re-previewed the press a
+      // moment before clearDraft cleared it). Drop it.
+      if (selected !== pressed) return;
       if (result.view) render(result.view);
       if (!result.accepted) {
         text('proposed-status', result.error ? result.error.message : 'That cannot be done from here.');

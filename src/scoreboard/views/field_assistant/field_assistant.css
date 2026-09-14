@@ -9,6 +9,7 @@ main { flex:1 1 auto; }
 .notice,.conflict { margin:0; padding:7px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:18px; }
 .notice:empty { display:none; }
 .swap-sides { min-height:36px; padding:0 10px; }
+.steps.warn { color:#fff3d6; border:1px solid #e0a323; background:#4a3712; border-radius:var(--radius); padding:6px 8px; }
 .swap-sides[aria-pressed="true"] { border-color:#e0a323; color:#fff3d6; background:#4a3712; font-weight:700; }
 /* Conflict toast: shown for a few seconds only when Python refused a Confirm
    that raced a control-panel change. There is no persistent stale banner. */

@@ -183,6 +183,9 @@
       </span>
       <span class="sep">&middot;</span>
       <span>TO <span data-field="football.timeouts.home">3</span>/<span data-field="football.timeouts.away">3</span></span>
+      <!-- PL-6: after a +6 (here or on the assistant) the try is still to be
+           recorded; Python says so until the field status or score moves. -->
+      <span class="try-pending" data-field="try_pending_display"></span>
     </span>
     <!--
       The LAST strip is also the way into the undo history (audit item I4).
@@ -494,6 +497,10 @@
       <h2>FIELD STATUS</h2>
       <p class="hint">Down, distance, possession, field position, and timeouts. None of these
         affect the clocks, score, or quarter, and none of them are set automatically.</p>
+
+      <p class="hint">A +6 on the score panel is a touchdown: it also clears the down, distance, and
+        ball on and shows <b>TRY PENDING</b> on the strip. Record the try (PAT or 2-point) on the
+        Field Assistant, or add the point here.</p>
 
       <div class="row">
         <span class="row-label">Down <span data-field="football.down_distance_display">&nbsp;</span></span>

@@ -472,6 +472,19 @@ button.is-current {
   white-space: nowrap;
 }
 
+/* PL-6: the strip's try-pending hint, empty (and so invisible) until Python
+ * fills it after a +6. */
+.try-pending {
+  color: #f5ae08;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-left: 6px;
+}
+
+.try-pending:empty {
+  display: none;
+}
+
 .possession-flag {
   color: var(--ok);
   font-size: 11px;

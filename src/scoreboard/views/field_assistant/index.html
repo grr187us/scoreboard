@@ -114,6 +114,10 @@
 
         <div class="panel sub" id="panel-penalty" data-panel="penalty" hidden>
           <div class="sub-head"><button type="button" class="back" data-back>◀ Back</button><h2>Penalty</h2></div>
+          <!-- PL-6: reachable with no series on the board (after a score,
+               before the kickoff). Yardage enforcement needs an offense, so
+               this says what to do instead rather than hiding the panel. -->
+          <p class="steps warn" id="penalty-no-series" hidden>Nobody has the ball right now, so there is no down to enforce yards against. For a penalty on the try or the kickoff, put the ball where it ends up and press <b>HOME/AWAY BALL HERE</b>, or use <b>FIX MANUALLY…</b>.</p>
           <p class="steps">Ball should be where the play <em>ended</em>. Pick the yards, then what happens to the down.</p>
           <div class="penalty-buttons" role="group" aria-label="Penalty yardage, positive benefits the offense">
             <button type="button" class="penalty-yards" data-yards="-15" aria-pressed="false">−15 <small>against offense</small></button>
@@ -167,6 +171,12 @@
             <input type="checkbox" id="score-recorded">
             Points were already added on the main scoreboard — don't add them again
           </label>
+          <!-- PL-6: the penalty and manual paths stay one press away on the
+               try screen (owner request). -->
+          <div class="row3 secondary">
+            <button type="button" data-open="penalty">PENALTY…</button>
+            <button type="button" data-open="manual">FIX MANUALLY…</button>
+          </div>
         </div>
 
         <!-- The in-assistant manual escape hatch: the operator states facts;

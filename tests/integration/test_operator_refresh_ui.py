@@ -321,6 +321,15 @@ class OperatorRefreshUiTests(unittest.TestCase):
         self.assertIn("min-height: 44px", rule)
         self.assertIn(".drawer button.nudge", self.css)
 
+    # --- PL-6: a +6 also blanks the field status; the strip says TRY PENDING ---
+
+    def test_the_strip_carries_pythons_try_pending_hint(self) -> None:
+        strip = self.html.split('id="field-status"', 1)[1].split("</span>\n    <!--\n      The LAST strip", 1)[0]
+        self.assertIn('data-field="try_pending_display"', strip)
+        # The page never decides a try is pending on its own.
+        self.assertNotIn("try_pending", self.js)
+        self.assertIn(".try-pending:empty", self.css)
+
     # --- PL-7: swap sides from the Field drawer ------------------------------
 
     def test_the_field_drawer_can_swap_sides_with_a_local_confirm(self) -> None:

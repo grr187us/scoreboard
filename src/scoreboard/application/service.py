@@ -147,6 +147,9 @@ class TickObservation:
 #: ordinary stop; the quarter never changes on its own.
 PERIOD_DECISION_QUARTERS: Final[frozenset[str]] = frozenset({"4th", "OT"})
 
+#: PL-6: the one point value that means "touchdown" on the control panel.
+TOUCHDOWN_POINTS: Final[int] = 6
+
 
 def _clock_snapshot(value: ClockValue) -> dict[str, Any]:
     """The old/new shape reported for clock commands in an event intent."""
@@ -164,7 +167,10 @@ def _ball_spot_snapshot(value: BallSpot) -> dict[str, Any]:
     the same way regardless of which path recorded it.
     """
 
-    return asdict(value)
+    # A cleared ball spot (after a score, before the kickoff) is None. The
+    # first control-panel "Ball on -> Set" after a touchdown used to raise
+    # here and surface as INTERNAL_ERROR (found by the PL-6 real run).
+    return None if value is None else asdict(value)
 
 
 def _field_assistant_values(state: GameState) -> dict[str, Any]:
@@ -254,6 +260,9 @@ class ScoreboardService:
         # operator page tell a fresh expiry from one it already dismissed.
         self._period_decision_pending = False
         self._period_decision_token = 0
+        # PL-6: which team's try (PAT / 2-point) is still to be recorded after
+        # a touchdown, or None. Runtime only, never persisted; the strip hint.
+        self._try_pending: str | None = None
         initial = initial_state(self._rules) if state is None else state
         if not isinstance(initial, GameState):
             raise TypeError("state must be a GameState")
@@ -341,6 +350,37 @@ class ScoreboardService:
             "quarter": self._state.quarter,
             "token": self._period_decision_token,
         }
+
+    @property
+    def try_pending(self) -> str | None:
+        """PL-6: the team whose try is still to be recorded, or ``None``.
+
+        Set by a +6 (the control panel's +6 or a finalized touchdown) and
+        cleared by any later accepted command that changes the field status,
+        a score, the quarter, or the lifecycle -- including Undo of the +6.
+        """
+
+        return self._try_pending
+
+    def _refresh_try_pending(self, before: GameState, command: Command, result: CommandResult) -> None:
+        if command.type is CommandType.ADD_SCORE and int(command.points) == TOUCHDOWN_POINTS:
+            self._try_pending = str(command.team)
+            return
+        if command.type is CommandType.FINALIZE_FIELD_ACTION and result.event is not None:
+            details = result.event.new_value if isinstance(result.event.new_value, Mapping) else {}
+            if details.get("classification") == "touchdown":
+                delta = details.get("score_delta") or {}
+                self._try_pending = "home" if delta.get("home") else "away" if delta.get("away") else None
+                return
+        after = self._state
+        if (
+            (after.down, after.distance, after.ball_on, after.possession)
+            != (before.down, before.distance, before.ball_on, before.possession)
+            or (after.home_score, after.away_score) != (before.home_score, before.away_score)
+            or after.quarter != before.quarter
+            or after.lifecycle != before.lifecycle
+        ):
+            self._try_pending = None
 
     def _refresh_period_decision(self, before: GameState) -> None:
         """Clear the prompt once an accepted command has moved past it."""
@@ -670,6 +710,7 @@ class ScoreboardService:
         before = self._state
         result = self._commit(command, outcome, now)
         self._refresh_period_decision(before)
+        self._refresh_try_pending(before, command, result)
         return result
 
     # --- Commit and rejection ----------------------------------------------
@@ -851,7 +892,40 @@ class ScoreboardService:
         )
 
     def _handle_add_score(self, command: Command, now: float) -> _Transition | CommandError:
-        return self._score_transition(command, int(command.points))
+        transition = self._score_transition(command, int(command.points))
+        if isinstance(transition, CommandError) or int(command.points) != TOUCHDOWN_POINTS:
+            return transition
+        # PL-6 (owner decision, September 14, 2026): a +6 from the control
+        # panel is a touchdown, so it also blanks the field status -- down,
+        # distance, ball on, and the assistant's line to gain -- the same
+        # values a touchdown finalized on the assistant blanks. Possession
+        # goes with them: nobody has the ball between a score and the kickoff,
+        # and leaving it set made the assistant show a phantom series (seen
+        # in the real run). One Undo restores the score and the field status
+        # together, through the same composite old_values path a Field
+        # Assistant Undo uses.
+        state_field = f"{command.team}_score"
+        changes = {
+            state_field: transition.changes[state_field],
+            "down": None,
+            "distance": None,
+            "ball_on": None,
+            "possession": None,
+            "assistant_line_to_gain": None,
+        }
+        return _Transition(
+            changes=changes,
+            event=transition.event,
+            undo=UndoEntry(
+                command=command.type,
+                field=state_field,
+                old_value=transition.undo.old_value,
+                new_value=transition.undo.new_value,
+                team=command.team,
+                old_values=_field_assistant_restore_values(self._state),
+                new_values=changes,
+            ),
+        )
 
     def _handle_correct_score(
         self, command: Command, now: float
@@ -895,6 +969,22 @@ class ScoreboardService:
                 )
             return CommandError(
                 NOTHING_TO_UNDO, "There is no reversible scoring or quarter command to undo."
+            )
+        if entry.old_values is not None and entry.field != "field_assistant":
+            # PL-6: a control-panel +6 that also blanked the field status. The
+            # reported event is the score reversal (the row the LAST strip and
+            # the log show); the field status comes back with it silently.
+            return _Transition(
+                changes=dict(entry.old_values),
+                event=EventIntent(
+                    command=command.type,
+                    field=entry.field,
+                    old_value=_undo_reported_value(getattr(self._state, entry.field)),
+                    new_value=_undo_reported_value(entry.old_value),
+                    team=entry.team,
+                    source=command.source,
+                ),
+                pops_undo=True,
             )
         if entry.old_values is not None:
             old_values = _field_assistant_values(self._state)

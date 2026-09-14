@@ -264,6 +264,46 @@ class FieldAssistantBridgeTests(BridgeTestCase):
         )
 
 
+class TryPendingViewTests(BridgeTestCase):
+    """PL-6: the operator strip's TRY PENDING hint, in Python's words."""
+
+    def test_a_control_panel_plus_six_blanks_the_strip_and_names_the_try(self) -> None:
+        self.send("set_team_name", {"team": "away", "name": "Eagles"})
+        self.send("set_down", {"value": 2})
+        self.send("set_distance", {"value": 8})
+        self.send("set_ball_on", {"team": "home", "value": 40})
+        view = self.send("add_score", {"team": "away", "points": 6})["view"]
+        self.assertEqual(view["teams"]["away"]["score"], 6)
+        self.assertEqual(view["football"]["down_distance_display"], "")
+        self.assertEqual(view["football"]["ball_on_display"], "")
+        self.assertIsNone(view["football"]["possession"])
+        self.assertEqual(view["try_pending"], "away")
+        self.assertEqual(view["try_pending_display"], "TRY PENDING · Eagles")
+        self.assertEqual(view["last_action"]["label"], "AWAY score 0 → 6")
+        cleared = self.send("set_down", {"value": 1})["view"]
+        self.assertEqual((cleared["try_pending"], cleared["try_pending_display"]), (None, ""))
+
+    def test_a_finalized_touchdown_names_the_try_and_the_try_clears_it(self) -> None:
+        self.send("set_quarter", {"label": "1st", "confirmed": True})
+        assistant = FieldAssistantBridge(self.bridge)
+        assistant.finalize_field_action(
+            {"kind": "start_series", "payload": {"offense": "home", "ball_absolute": 94, "first_quarter_home_direction": 1}},
+            self.service.revision,
+        )
+        touchdown = assistant.finalize_field_action(
+            {"kind": "touchdown", "payload": {"scoring_team": "home", "add_score": True}}, self.service.revision
+        )
+        self.assertTrue(touchdown["accepted"], touchdown["error"])
+        self.assertEqual(touchdown["view"]["try_pending"], "home")
+        self.assertTrue(touchdown["view"]["try_pending_display"].startswith("TRY PENDING"))
+        tried = assistant.finalize_field_action(
+            {"kind": "try", "payload": {"scoring_team": "home", "points": 1}}, self.service.revision
+        )
+        self.assertTrue(tried["accepted"], tried["error"])
+        self.assertIsNone(tried["view"]["try_pending"])
+        self.assertEqual(tried["view"]["teams"]["home"]["score"], 7)
+
+
 class AssistantDirectionBridgeTests(BridgeTestCase):
     """PL-7: Swap sides from either window is one ordinary history row."""
 

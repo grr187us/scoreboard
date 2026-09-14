@@ -111,7 +111,7 @@ class GridPresetTests(unittest.TestCase):
         missing = spectator_view_model(replace(state, down=None, distance=None, ball_on=None))
         self.assertEqual(missing['football']['down_display'], '')
         self.assertEqual(missing['football']['distance_value_display'], '')
-        self.assertEqual(missing['football']['ball_on_value_display'], '—')
+        self.assertEqual(missing['football']['ball_on_value_display'], '')  # PL-6: blank, so the wall hides it
 
     def test_save_reload_retains_formats_without_game_database(self):
         grid = next(p['layout'] for p in preset_descriptors() if p['id'] == 'grid')

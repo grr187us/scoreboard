@@ -11,7 +11,7 @@ from scoreboard.application.snapshots import state_to_snapshot
 from scoreboard.domain import commands as cmd
 from scoreboard.domain.clocks import GameClock, PlayClock
 from scoreboard.domain.field_assistant import FieldAction
-from scoreboard.domain.state import MAX_SCORE, QUARTER_LABELS, GameState, default_state
+from scoreboard.domain.state import BallSpot, MAX_SCORE, QUARTER_LABELS, GameState, default_state
 
 
 class FakeMonotonic:
@@ -1514,6 +1514,76 @@ class CrowdStatusTests(unittest.TestCase):
         # The engine itself must also be reset, not merely the reported state,
         # so a later tick cannot resume the old game's countdown.
         self.assertFalse(service.status_clock.running)
+
+
+class TouchdownCouplingTests(unittest.TestCase):
+    """PL-6: a control-panel +6 is a touchdown, so it blanks the field status."""
+
+    def setUp(self) -> None:
+        self.service = ScoreboardService(monotonic_clock=FakeMonotonic())
+        self.service.submit(cmd.set_quarter("1st", confirmed=True))
+        self.service.submit(cmd.set_possession("home"))
+        self.service.submit(cmd.set_down(3))
+        self.service.submit(cmd.set_distance(4))
+        self.service.submit(cmd.set_ball_on("away", 12))
+
+    def test_plus_six_clears_down_distance_and_ball_on_and_flags_the_try(self) -> None:
+        result = self.service.submit(cmd.add_score("home", 6))
+        self.assertTrue(result.accepted, result.error)
+        state = self.service.state
+        self.assertEqual(state.home_score, 6)
+        self.assertEqual((state.down, state.distance, state.ball_on, state.assistant_line_to_gain), (None, None, None, None))
+        # Nobody has the ball between a score and the kickoff, exactly as
+        # after a touchdown finalized on the assistant.
+        self.assertIsNone(state.possession)
+        self.assertEqual(self.service.try_pending, "home")
+        # The history event is still the score row the strip and log show.
+        self.assertEqual((result.event.field, result.event.old_value, result.event.new_value), ("home_score", 0, 6))
+
+    def test_other_point_values_leave_the_field_status_alone(self) -> None:
+        for points in (1, 2, 3):
+            with self.subTest(points=points):
+                before = self.service.state
+                self.service.submit(cmd.add_score("away", points))
+                after = self.service.state
+                self.assertEqual((after.down, after.distance, after.ball_on), (before.down, before.distance, before.ball_on))
+                self.assertIsNone(self.service.try_pending)
+
+    def test_one_undo_restores_the_score_and_the_field_status_together(self) -> None:
+        self.service.submit(cmd.add_score("home", 6))
+        undone = self.service.submit(cmd.undo())
+        self.assertTrue(undone.accepted, undone.error)
+        state = self.service.state
+        self.assertEqual(state.home_score, 0)
+        self.assertEqual((state.down, state.distance, state.ball_on, state.possession), (3, 4, BallSpot("away", 12), "home"))
+        self.assertIsNone(self.service.try_pending)
+
+    def test_ball_on_can_be_set_again_after_a_touchdown_cleared_it(self) -> None:
+        # Regression (found by the PL-6 real run): the first control-panel
+        # "Ball on -> Set" after a cleared spot raised in the old-value
+        # snapshot and surfaced as INTERNAL_ERROR.
+        self.service.submit(cmd.add_score("home", 6))
+        self.assertIsNone(self.service.state.ball_on)
+        result = self.service.submit(cmd.set_ball_on("home", 3))
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(self.service.state.ball_on, BallSpot("home", 3))
+        self.assertIsNone(result.event.old_value)
+        self.assertEqual(result.event.new_value, {"team": "home", "yard_line": 3})
+        undone = self.service.submit(cmd.undo())
+        self.assertTrue(undone.accepted, undone.error)
+        self.assertIsNone(self.service.state.ball_on)
+
+    def test_the_try_flag_clears_when_the_field_or_score_moves_again(self) -> None:
+        self.service.submit(cmd.add_score("home", 6))
+        self.assertEqual(self.service.try_pending, "home")
+        self.service.submit(cmd.game_clock_start())  # a clock press is not the try
+        self.assertEqual(self.service.try_pending, "home")
+        self.service.submit(cmd.add_score("home", 1))  # the PAT
+        self.assertIsNone(self.service.try_pending)
+        self.service.submit(cmd.add_score("away", 6))
+        self.assertEqual(self.service.try_pending, "away")
+        self.service.submit(cmd.set_down(1))  # a new series was set up instead
+        self.assertIsNone(self.service.try_pending)
 
 
 class AssistantDirectionCommandTests(unittest.TestCase):
