@@ -15,6 +15,84 @@ class FakeMonotonic:
         self.value += float(seconds)
 
 
+class PeriodDecisionTests(unittest.TestCase):
+    """PL-5: a natural expiry in the 4th or OT raises the Final/Overtime prompt.
+
+    The flag lives in the service (runtime only, never in GameState); the
+    bridge copies it onto the operator view as ``period_decision``.
+    """
+
+    def setUp(self) -> None:
+        from scoreboard.application.service import ScoreboardService
+        from tests.integration.support import FakeMonotonic
+
+        self.monotonic = FakeMonotonic()
+        self.service = ScoreboardService(monotonic_clock=self.monotonic)
+
+    def run_out(self, quarter: str) -> dict:
+        from scoreboard.domain import commands as cmd
+
+        self.service.submit(cmd.set_quarter(quarter, confirmed=True))
+        self.service.submit(cmd.game_clock_correct(2.0))
+        self.service.submit(cmd.game_clock_start())
+        self.monotonic.advance(3.0)
+        self.service.observe_tick()
+        return self.service.period_decision
+
+    def test_the_prompt_is_raised_only_by_a_fourth_quarter_or_overtime_expiry(self) -> None:
+        for quarter in ("1st", "2nd", "3rd"):
+            with self.subTest(quarter=quarter):
+                decision = self.run_out(quarter)
+                self.assertFalse(decision["pending"], decision)
+                self.assertEqual(decision["token"], 0)
+        fourth = self.run_out("4th")
+        self.assertEqual(fourth, {"pending": True, "quarter": "4th", "token": 1})
+        overtime = self.run_out("OT")
+        self.assertEqual(overtime, {"pending": True, "quarter": "OT", "token": 2})
+
+    def test_restarting_the_clock_clears_it_and_a_second_expiry_re_arms_it(self) -> None:
+        from scoreboard.domain import commands as cmd
+
+        self.run_out("4th")
+        # Putting time back on the clock (an untimed down, a correction) or
+        # restarting it withdraws the prompt without any quarter change.
+        self.service.submit(cmd.game_clock_correct(5.0))
+        self.assertFalse(self.service.period_decision["pending"])
+        self.service.submit(cmd.game_clock_start())
+        self.monotonic.advance(6.0)
+        self.service.observe_tick()
+        self.assertEqual(self.service.period_decision, {"pending": True, "quarter": "4th", "token": 2})
+        # An unrelated command (a score) leaves it pending.
+        self.service.submit(cmd.add_score("home", 6))
+        self.assertTrue(self.service.period_decision["pending"])
+
+    def test_each_choice_clears_it(self) -> None:
+        from scoreboard.domain import commands as cmd
+
+        self.run_out("4th")
+        self.service.submit(cmd.set_quarter("OT", confirmed=True))
+        self.assertFalse(self.service.period_decision["pending"])
+        self.assertEqual(self.service.state.game_clock.seconds, self.service.rules.overtime_seconds)
+
+        self.run_out("OT")
+        self.service.submit(cmd.set_quarter("FINAL", confirmed=True))
+        self.assertFalse(self.service.period_decision["pending"])
+        self.service.submit(cmd.end_game())
+        self.assertEqual(self.service.state.lifecycle, "FINAL")
+        self.assertFalse(self.service.period_decision["pending"])
+
+    def test_a_final_game_never_raises_it(self) -> None:
+        from scoreboard.domain import commands as cmd
+
+        self.service.submit(cmd.set_quarter("4th", confirmed=True))
+        self.service.submit(cmd.game_clock_correct(2.0))
+        self.service.submit(cmd.game_clock_start())
+        self.service.submit(cmd.end_game())
+        self.monotonic.advance(3.0)
+        self.service.observe_tick()
+        self.assertFalse(self.service.period_decision["pending"])
+
+
 class GameClockTests(unittest.TestCase):
     def test_initial_stopped_30_00_pregame_state(self) -> None:
         state = default_state()

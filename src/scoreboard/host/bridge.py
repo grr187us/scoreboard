@@ -830,6 +830,9 @@ def operator_view_model(
     model["status_clock_presets"] = [30, 60, 90]
     model["last_action"] = _last_action_view(service.undo_entry)
     model["can_undo"] = service.undo_entry is not None
+    # PL-5: the end-of-4th prompt. Python decides when it is pending; the page
+    # only shows the three choices and sends the ordinary commands.
+    model["period_decision"] = service.period_decision
     # I4: the whole reversible stack, newest first, each row already rendered
     # through the same _last_action_view the "LAST: ..." strip uses -- the
     # operator page copies these labels into its history drawer rather than

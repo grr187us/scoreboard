@@ -321,6 +321,29 @@ class OperatorRefreshUiTests(unittest.TestCase):
         self.assertIn("min-height: 44px", rule)
         self.assertIn(".drawer button.nudge", self.css)
 
+    # --- PL-5: end-of-4th prompt --------------------------------------------
+
+    def test_the_period_prompt_offers_exactly_final_overtime_and_keep(self) -> None:
+        dialog = self.html.split('id="period-dialog"', 1)[1].split("</div>\n  </div>", 1)[0]
+        actions = re.findall(r'data-action="(period_[a-z]+)"', dialog)
+        self.assertEqual(actions, ["period_keep", "period_overtime", "period_final"])
+        # The prompt sends no command of its own; the page maps the choices to
+        # the same commands the drawers already send, plus nothing for Keep.
+        self.assertNotIn("data-command", dialog)
+        self.assertIn("submit('set_quarter', { label: 'OT', confirmed: true }", self.js)
+        self.assertIn("submit('set_quarter', { label: 'FINAL', confirmed: true }", self.js)
+        self.assertIn("then: function () { submit('end_game', {}, { title: 'End game' }); }", self.js)
+        keep = self.js.split("if (action === 'period_keep') {", 1)[1].split("return;", 1)[0]
+        self.assertNotIn("submit(", keep)
+
+    def test_the_period_prompt_is_driven_by_python_and_dismissed_per_expiry(self) -> None:
+        self.assertIn("model.period_decision", self.js)
+        self.assertIn("decision.token !== dismissedPeriodToken", self.js)
+        self.assertIn("dismissedPeriodToken = model.period_decision.token", self.js)
+        # Every push re-evaluates it; the page never times the clock itself.
+        self.assertIn("refreshPeriodDialog();", self.js.split("function render(next)", 1)[1].split("var game = model.clocks.game;", 1)[0])
+        self.assertIn("else if (!periodDialog.hidden) dismissPeriodDialog();", self.js)
+
     def test_the_page_still_adds_no_grid_row(self) -> None:
         body_rule = self.css.split("body {", 1)[1].split("}", 1)[0]
         self.assertIn(

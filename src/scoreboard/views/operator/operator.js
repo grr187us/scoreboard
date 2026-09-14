@@ -19,6 +19,10 @@
   var api = null;
   var model = null;
   var pending = null; // the command a confirmation dialog is waiting on
+  // PL-5: the period_decision token the operator dismissed with "Keep 4th".
+  // The prompt stays down for that expiry only; a restarted clock that runs
+  // out again arrives with a new token and shows it afresh.
+  var dismissedPeriodToken = null;
   var lastDisplayLabel = null; // last rendered display health, to avoid re-reads
   var armedTeam = null; // which team's scoring is armed ('home'/'away'/null)
   var armTimer = null; // the auto-disarm timeout; see armScore()
@@ -57,6 +61,7 @@
     }
     model = next;
     R.bindFields(document, model);
+    refreshPeriodDialog();
 
     var game = model.clocks.game;
     var play = model.clocks.play;
@@ -573,6 +578,10 @@
     render(result.view);
     if (result.accepted) {
       clearAlert();
+      if (typeof options.then === 'function') {
+        // A follow-up the caller chained on acceptance (PL-5 Final).
+        options.then(result);
+      }
       if (name === 'new_game') {
         // The soft prompt (owner decision 1): a new game arrives with the
         // default names, so the drawer that fixes that opens by itself. It
@@ -605,6 +614,37 @@
   }
 
   /* --- Confirmation dialog --------------------------------------------- */
+
+  /* --- End-of-4th prompt (PL-5) ---------------------------------------- */
+
+  var periodDialog = document.getElementById('period-dialog');
+
+  /**
+   * Python says whether the end of the 4th/OT is waiting on a decision. The
+   * page shows the prompt for a token it has not dismissed and hides it the
+   * moment Python stops reporting it (the clock was restarted, the quarter
+   * changed, or the game ended).
+   */
+  function refreshPeriodDialog() {
+    var decision = model && model.period_decision;
+    var show = Boolean(decision && decision.pending && decision.token !== dismissedPeriodToken);
+    if (show && periodDialog.hidden) {
+      // Like every dialog, this one takes the operator's attention away from
+      // an armed panel (owner decision 2).
+      disarmScore();
+      R.setText(document.getElementById('period-quarter'), decision.quarter);
+      R.setText(document.getElementById('period-keep-quarter'), decision.quarter);
+      periodDialog.hidden = false;
+      document.getElementById('period-keep').focus();
+    } else if (!show && !periodDialog.hidden) {
+      periodDialog.hidden = true;
+    }
+  }
+
+  function dismissPeriodDialog() {
+    if (model && model.period_decision) dismissedPeriodToken = model.period_decision.token;
+    periodDialog.hidden = true;
+  }
 
   function openDialog(request) {
     // A dialog takes the operator's attention; an armed panel waiting behind
@@ -931,6 +971,27 @@
   }
 
   function handleAction(action, button) {
+    if (action === 'period_keep') {
+      // Sends nothing: the quarter, clocks, and revision stay as they are.
+      dismissPeriodDialog();
+      return;
+    }
+    if (action === 'period_overtime') {
+      dismissPeriodDialog();
+      submit('set_quarter', { label: 'OT', confirmed: true }, { title: 'Overtime' });
+      return;
+    }
+    if (action === 'period_final') {
+      // Two ordinary commands in sequence: the FINAL label (which PL-4 turns
+      // into a clock-free board) and then End Game for the lifecycle. The
+      // second is sent only once the first is accepted.
+      dismissPeriodDialog();
+      submit('set_quarter', { label: 'FINAL', confirmed: true }, {
+        title: 'Final',
+        then: function () { submit('end_game', {}, { title: 'End game' }); }
+      });
+      return;
+    }
     if (action === 'arm_score') {
       // No bridge call and no game value: arming only reveals the four point
       // buttons that were always the real data-command controls (K-001).
@@ -1306,6 +1367,8 @@
     },
     close: function () {
       if (!dialog.hidden) closeDialog();
+      // Escape on the end-of-4th prompt is "Keep 4th": nothing is sent.
+      else if (!periodDialog.hidden) dismissPeriodDialog();
       // Escape with nothing open and a team armed just puts the point buttons
       // away; an armed panel can never be open at the same time as a drawer.
       else if (armedTeam) disarmScore();

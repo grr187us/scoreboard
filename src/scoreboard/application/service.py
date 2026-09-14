@@ -142,6 +142,12 @@ class TickObservation:
     play_clock_from_seconds: float = 0.0
 
 
+#: Quarter labels whose natural clock expiry asks the operator what comes
+#: next (PL-5): the regulation 4th and overtime. Every other expiry is an
+#: ordinary stop; the quarter never changes on its own.
+PERIOD_DECISION_QUARTERS: Final[frozenset[str]] = frozenset({"4th", "OT"})
+
+
 def _clock_snapshot(value: ClockValue) -> dict[str, Any]:
     """The old/new shape reported for clock commands in an event intent."""
 
@@ -242,6 +248,12 @@ class ScoreboardService:
         if rules is not None and not isinstance(rules, GameRules):
             raise TypeError("rules must be a GameRules")
         self._rules = default_rules() if rules is None else rules
+        # PL-5: set by a natural 4th/OT expiry, cleared by any accepted
+        # command that restarts, refills, or replaces the period. Runtime
+        # only: not part of GameState, never persisted. The token lets the
+        # operator page tell a fresh expiry from one it already dismissed.
+        self._period_decision_pending = False
+        self._period_decision_token = 0
         initial = initial_state(self._rules) if state is None else state
         if not isinstance(initial, GameState):
             raise TypeError("state must be a GameState")
@@ -314,6 +326,37 @@ class ScoreboardService:
         return self._status_clock
 
     @property
+    def period_decision(self) -> dict[str, Any]:
+        """PL-5: whether the end of the 4th (or OT) is waiting on the operator.
+
+        ``pending`` is True from the moment the game clock runs out in the
+        4th quarter or overtime until an accepted command restarts the clock,
+        puts time back on it, changes the quarter, or ends the game. ``token``
+        counts expiries so a page that dismissed one prompt ("Keep 4th")
+        shows the next one when the clock is restarted and runs out again.
+        """
+
+        return {
+            "pending": self._period_decision_pending,
+            "quarter": self._state.quarter,
+            "token": self._period_decision_token,
+        }
+
+    def _refresh_period_decision(self, before: GameState) -> None:
+        """Clear the prompt once an accepted command has moved past it."""
+
+        if not self._period_decision_pending:
+            return
+        clock = self._game_clock.value
+        if (
+            clock.running
+            or clock.seconds > 0.0
+            or self._state.quarter != before.quarter
+            or self._state.lifecycle != before.lifecycle
+        ):
+            self._period_decision_pending = False
+
+    @property
     def monotonic_clock(self) -> Callable[[], float]:
         """The single time source shared by the service and both engines."""
 
@@ -356,6 +399,16 @@ class ScoreboardService:
 
         if game_expired:
             self._game_clock = self._game_clock.expire(now=current)
+            if (
+                self._state.quarter in PERIOD_DECISION_QUARTERS
+                and self._state.lifecycle != FINAL_LIFECYCLE
+            ):
+                # PL-5: the end of regulation (or of overtime) is a decision
+                # the operator has to make -- Final, Overtime, or keep the
+                # quarter for an untimed down -- so the prompt is raised here
+                # and re-armed on every later expiry.
+                self._period_decision_pending = True
+                self._period_decision_token += 1
             # PRE and HALF are interval countdowns, not football game time.
             # Their natural expiry intentionally stays in that quarter and
             # never invokes the normal game/play-clock stop coupling.
@@ -614,7 +667,10 @@ class ScoreboardService:
             ):
                 confirmation = self._quarter_confirmation(command, now)
             return self._reject(outcome, confirmation=confirmation)
-        return self._commit(command, outcome, now)
+        before = self._state
+        result = self._commit(command, outcome, now)
+        self._refresh_period_decision(before)
+        return result
 
     # --- Commit and rejection ----------------------------------------------
 

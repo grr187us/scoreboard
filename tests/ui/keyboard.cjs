@@ -304,6 +304,45 @@ async function main(data) {
     assert.deepEqual(await startup.evaluate(()=>window.startupChoices),['resume']);
     await startup.close();
 
+    // PL-5: the end-of-4th prompt. Python raises it (period_decision.pending);
+    // the page shows it once per token and maps the three choices to plain
+    // commands against the real bridge.
+    const fourth=await reset();
+    await rpc({op:'command',args:['set_quarter',{label:'4th',confirmed:true},fourth.revision]});
+    const pendingView=v=>({...v,period_decision:{pending:true,quarter:'4th',token:1}});
+    let live=await rpc({op:'snapshot'});
+    await render(pendingView(live));
+    assert.equal(await page.locator('#period-dialog').isVisible(),true);
+    assert.equal(await page.locator('#period-keep').textContent(),'Keep 4th');
+    calls.length=0;results.length=0;
+    await page.locator('#period-keep').click();
+    assert.equal(await page.locator('#period-dialog').isVisible(),false);
+    assert.equal(calls.length,0,'Keep 4th must send nothing');
+    await render(pendingView(live));
+    assert.equal(await page.locator('#period-dialog').isVisible(),false,'a dismissed token stays dismissed');
+    await render({...live,period_decision:{pending:true,quarter:'4th',token:2}});
+    assert.equal(await page.locator('#period-dialog').isVisible(),true,'a new expiry shows the prompt again');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#period-dialog').isVisible(),false,'Escape is Keep 4th');
+    assert.equal(calls.length,0);
+    await render({...live,period_decision:{pending:true,quarter:'4th',token:3}});
+    await page.locator('#period-overtime').click(); await expectResult(0); await settled();
+    assert.deepEqual(calls,[['set_quarter',{label:'OT',confirmed:true,source:'operator-mouse'},live.revision]]);
+    assert.equal(results[0].accepted,true); assert.equal(results[0].view.quarter,'OT');
+    assert.equal(results[0].view.clocks.game.display,results[0].view.clocks.game.full_display,'overtime loads its configured length');
+    assert.equal(await page.locator('#period-dialog').isVisible(),false);
+    live=await rpc({op:'snapshot'}); calls.length=0;results.length=0;
+    await render({...live,period_decision:{pending:true,quarter:'OT',token:4}});
+    assert.equal(await page.locator('#period-keep').textContent(),'Keep OT');
+    await page.locator('#period-final').click(); await expectResult(0); await expectResult(1); await settled();
+    assert.deepEqual(calls.map(c=>c[0]),['set_quarter','end_game']);
+    assert.deepEqual(calls[0][1],{label:'FINAL',confirmed:true,source:'operator-mouse'});
+    assert.equal(results[0].accepted,true); assert.equal(results[1].accepted,true);
+    assert.equal(results[1].view.lifecycle,'FINAL'); assert.equal(results[1].view.quarter,'FINAL');
+    assert.deepEqual(results[1].view.board.hidden_widgets,['game_clock_label','game_clock_value','play_clock_label','play_clock_value']);
+    assert.equal(await page.locator('#period-dialog').isVisible(),false);
+    await reset();
+
     const history=await rpc({op:'history'});
     assert.ok(history.some(row=>row.command==='add_score'&&row.source==='operator-keyboard'&&row.result==='ACCEPTED'));
     assert.ok(history.some(row=>row.command==='quarter_forward'&&row.source==='operator-keyboard'));

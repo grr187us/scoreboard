@@ -1033,6 +1033,59 @@ class SpectatorBridgeTests(BridgeTestCase):
         self.assertIsNone(event["warmup_display"])
 
 
+class PeriodDecisionViewTests(BridgeTestCase):
+    """PL-5: the operator view carries Python's end-of-4th prompt state."""
+
+    def test_the_view_raises_the_prompt_at_zero_in_the_fourth_and_clears_it_on_a_choice(self) -> None:
+        self.send("set_quarter", {"label": "4th", "confirmed": True})
+        self.send("game_clock_correct", {"seconds": 2})
+        self.send("game_clock_start")
+        self.assertEqual(self.bridge.get_snapshot()["period_decision"], {"pending": False, "quarter": "4th", "token": 0})
+        self.monotonic.advance(3.0)
+        view = self.bridge.tick()
+        self.assertEqual(view["period_decision"], {"pending": True, "quarter": "4th", "token": 1})
+        self.assertEqual(view["clocks"]["game"]["display"], "0:00")
+        # No revision moved and no command was recorded by the expiry itself.
+        self.assertEqual(self.service.revision, 3)
+
+        final = self.send("set_quarter", {"label": "FINAL", "confirmed": True})
+        self.assertFalse(final["view"]["period_decision"]["pending"])
+        ended = self.send("end_game")
+        self.assertEqual(ended["view"]["lifecycle"], "FINAL")
+        self.assertEqual(ended["view"]["board"]["hidden_widgets"][:2], ["game_clock_label", "game_clock_value"])
+
+    def test_overtime_loads_the_configured_length_and_keep_fourth_changes_nothing(self) -> None:
+        self.send("set_quarter", {"label": "4th", "confirmed": True})
+        self.send("game_clock_correct", {"seconds": 1})
+        self.send("game_clock_start")
+        self.monotonic.advance(2.0)
+        self.assertTrue(self.bridge.tick()["period_decision"]["pending"])
+        revision = self.service.revision
+        # "Keep 4th" is page-local: nothing is sent, so nothing changes and
+        # the prompt state stays pending for that token.
+        self.assertEqual(self.service.revision, revision)
+        self.assertTrue(self.bridge.get_snapshot()["period_decision"]["pending"])
+
+        overtime = self.send("set_quarter", {"label": "OT", "confirmed": True})
+        self.assertTrue(overtime["accepted"], overtime["error"])
+        self.assertFalse(overtime["view"]["period_decision"]["pending"])
+        # The configured overtime length is loaded, stopped, as the maximum.
+        self.assertEqual(overtime["view"]["clocks"]["game"]["maximum_seconds"], self.service.rules.overtime_seconds)
+        self.assertEqual(overtime["view"]["clocks"]["game"]["display"], overtime["view"]["clocks"]["game"]["full_display"])
+        self.assertFalse(overtime["view"]["clocks"]["game"]["running"])
+        self.assertEqual(overtime["view"]["quarter"], "OT")
+
+    def test_expiry_in_the_first_three_quarters_asks_nothing(self) -> None:
+        for quarter in ("1st", "2nd", "3rd"):
+            self.send("set_quarter", {"label": quarter, "confirmed": True})
+            self.send("game_clock_correct", {"seconds": 1})
+            self.send("game_clock_start")
+            self.monotonic.advance(2.0)
+            view = self.bridge.tick()
+            self.assertFalse(view["period_decision"]["pending"], quarter)
+            self.assertEqual(view["clocks"]["game"]["display"], "0:00", quarter)
+
+
 class TickTests(BridgeTestCase):
     """The refresh loop displays and checkpoints; it never commands."""
 

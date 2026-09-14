@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 5 tickets open, 3 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 4 tickets open, 4 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -189,7 +189,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-5 — End of 4th: ask Final or Overtime (issue 4)
 
-**Priority:** P1 · **Status:** open · **Type:** feature
+**Priority:** P1 · **Status:** resolved (September 14, 2026) · **Type:** feature
 
 **Symptom:** When the 4th quarter ended, the app gave no guidance; the operator had to know to step the quarter forward or press End Game.
 
@@ -213,6 +213,8 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - The prompt appears on the control panel at 0:00 in the 4th without any other action.
 - Final produces the FINAL board with hidden clocks; Overtime loads the configured OT length; Keep 4th leaves the state untouched.
 - The prompt does not appear on expiry in the 1st, 2nd, or 3rd.
+
+**Resolution (September 14, 2026):** `ScoreboardService.observe_tick` raises a runtime-only `period_decision` (`{"pending", "quarter", "token"}`; never in `GameState`, never persisted) when the game clock runs out naturally in the 4th or OT with the lifecycle not yet FINAL (`PERIOD_DECISION_QUARTERS`), and `_refresh_period_decision` clears it after any accepted command that restarts the clock, puts time back on it, changes the quarter, or changes the lifecycle. The token counts expiries so a dismissed prompt returns when the clock is restarted and runs out again. `operator_view_model` copies it as `period_decision`; the operator page renders `#period-dialog` on every push (`refreshPeriodDialog`) with **Keep 4th** (page-local dismiss of that token, also Escape; sends nothing), **Overtime** (`set_quarter OT` confirmed, which loads `GameRules.overtime_seconds` through the existing quarter-clock plan), and **Final** (`set_quarter FINAL` confirmed, then `end_game` once the first is accepted, so PL-4 blanks the clocks at once). Multiple OT periods remain out of scope (follow-up if the owner wants OT2). Verified: service unit tests in `tests/unit/test_game_clock.py::PeriodDecisionTests` (1st–3rd never raise it, 4th and OT do, re-arm after restart, each choice clears it, a FINAL game never raises it), bridge view tests (`PeriodDecisionViewTests`), operator source-contract tests, a modal section in `tests/ui/keyboard.cjs` against the real bridge (Keep sends nothing and stays dismissed per token, Escape is Keep, Overtime sends `set_quarter OT`, Final sends `set_quarter FINAL` then `end_game` and the board hide list follows), the full suite 1316/0/0 with 3 A-1 skips, and a real pywebview run (`.scratch/post-live-fixes/realrun_pl5.py`, 27/27) that ran the clock out in the 1st and 3rd (no prompt), then in the 4th (prompt appeared at 0:00 on its own), took Keep 4th (nothing sent, re-armed by the next expiry), Overtime (OT loaded stopped at its full length), and Final from an OT expiry (FINAL label, lifecycle FINAL, `set_quarter` then `end_game` in the history, PL-4 hide list on the spectator snapshot). Screenshots: `.scratch/post-live-fixes/evidence/pl5-0{1,2,3}-*.png`.
 
 ---
 

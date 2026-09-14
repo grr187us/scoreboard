@@ -722,6 +722,12 @@ button.danger:hover:not(:disabled) {
   min-width: 128px;
 }
 
+/* PL-5: the end-of-4th prompt's three choices, Keep first so the safe,
+ * no-command choice is the one Escape and autofocus land on. */
+.period-buttons {
+  justify-content: space-between;
+}
+
 /* Cancel is the safe default and is presented first. */
 #confirm-cancel {
   border-color: var(--accent);

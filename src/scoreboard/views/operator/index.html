@@ -683,6 +683,25 @@
     </div>
   </div>
 
+  <!-- PL-5 (September 14, 2026): raised by Python (period_decision.pending)
+       when the game clock runs out in the 4th quarter or overtime. Final
+       sends set_quarter FINAL then end_game; Overtime sends set_quarter OT
+       (which loads the configured overtime length); Keep 4th sends nothing
+       and only hides this prompt until the clock is restarted and runs out
+       again. The command names are the same ones the Corrections and Game
+       drawers already send. -->
+  <div class="dialog-backdrop" id="period-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="period-title">
+      <h2 id="period-title">Time has run out. What comes next?</h2>
+      <p id="period-detail">The game clock is at 0:00 in the <span id="period-quarter">4th</span>. Choose Final to end the game and take the clocks off the board, Overtime to load the overtime period, or keep the quarter for an untimed down or a clock correction.</p>
+      <div class="dialog-buttons period-buttons">
+        <button type="button" data-action="period_keep" id="period-keep" autofocus>Keep <span id="period-keep-quarter">4th</span></button>
+        <button type="button" data-action="period_overtime" id="period-overtime">Overtime</button>
+        <button type="button" data-action="period_final" id="period-final" class="danger">Final</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../shared/render.js"></script>
   <script src="keyboard.js"></script>
   <script src="operator.js"></script>
