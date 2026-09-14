@@ -2034,9 +2034,24 @@ change or edit to that operator folder was needed. Transfer ZIP not refreshed.
 selected, then target-laptop and LED-wall rehearsal. No real WebView2 run
 was repeated for this change. Phase 0 HDMI evidence and Task 12 remain open.
 
+### Post-live fixes — September 14, 2026 (PL-1 to PL-7 resolved)
+
+The owner's first-game debrief ([docs/POST_LIVE_FIXES.md](docs/POST_LIVE_FIXES.md)) was worked in the order PL-2, PL-3, PL-4, PL-5, PL-7, PL-6, PL-1, one commit each on `post-live-fixes`. Each ticket's **Resolution** paragraph in that file records the exact verification performed; in brief:
+
+- **PL-2 (P0, resolved):** the field assistant adopts every push (no stale banner, Confirm never disabled by a change elsewhere, the draft ball follows the board until touched, a refused race is a toast plus one more Confirm). Real run with both windows open, 27/27.
+- **PL-3 (P1, resolved):** one-tap `−/+` for down, to go, and ball on (`−5 −1 / +1 +5`, absolute axis, crossing the 50, stopping at the goal lines) on the strip and the Field drawer; Python resolves the step. Real run at 1366×768 and 1093×614, 22/22.
+- **PL-4 (P1, resolved):** FINAL (label or End Game) takes both clocks and their captions off the wall via a Python hide list, plus any framing element named after a clock (the Grid preset's gold play-clock panel). All six presets rendered in 4th and FINAL; real run through the layout library, 49/49.
+- **PL-5 (P1, resolved):** at 0:00 in the 4th or OT the control panel asks **Final / Overtime / Keep 4th**; re-armed by a later expiry; Final also ends the game. Real run through every branch, 27/27. Multiple OT periods remain a follow-up if wanted.
+- **PL-7 (P2, resolved):** `set_assistant_direction` (undoable) and **⇄ Swap sides** on the assistant (press-again confirm) and in the Field drawer; only the end-zone labels mirror. Real run in the 2nd quarter from both windows, 26/26.
+- **PL-6 (P1, resolved):** the assistant's TD → +6 → TRY flow verified in the real app; PENALTY… now on the try screen (explains itself with no series); a control-panel +6 also blanks the field status (possession included) and the strip shows **TRY PENDING**. Two defects found by the real run and fixed: Ball on → Set after a touchdown raised `INTERNAL_ERROR`; a late preview answer could re-arm Confirm with a second +6. Real run with all three windows, 34/34. **Owner question:** should a penalty during the try do anything on the board?
+- **PL-1 (P0, resolved in software):** global Win32 `RegisterHotKey` hook (`host/hotkeys.py`, ctypes, no new dependency) for F15–F22, dispatching through the bridge with source `button-box`; health-strip warning for a key another program owns; Cutscenes no longer always-on-top. Real run injecting the keys with the Field Assistant, Cutscenes, the layout editor, and Notepad focused, plus operator-focused double-fire, hold, and stop/fallback checks, 48/48. **The physical Pro Micro box test is still owed** (PL-8 owner action items).
+- **PL-8 (P0):** open, blocked on the owner copying the flashed sketch into `hardware/`.
+
+Suite after the seven tickets: **1348 tests, 0 failures, 0 errors, 3 skipped** (the A-1 skips), browser suites included (Node on PATH in the session). Evidence harnesses and screenshots live under `.scratch/post-live-fixes/` (`realrun_pl*.py`, `final_shots.py`, `evidence/`). Package rebuilt and `dist\Scoreboard-0.1.0.zip` refreshed; see [docs/PACKAGING.md](docs/PACKAGING.md).
+
 ## Next Action
 
-**September 14, 2026: the first official game was run on the app.** The owner's debrief is captured as eight ordered tickets in [docs/POST_LIVE_FIXES.md](docs/POST_LIVE_FIXES.md). Two are P0: the button box only works while the control panel window has focus (PL-1), and the field assistant demanded a manual reload after every control-panel change (PL-2). PL-8 is blocked on the owner copying the flashed Pro Micro sketch into `hardware/`. Work that file top to bottom before anything below.
+**September 14, 2026: the first official game was run on the app.** The owner's debrief is captured as eight ordered tickets in [docs/POST_LIVE_FIXES.md](docs/POST_LIVE_FIXES.md). PL-1 through PL-7 are resolved (see the section above); **PL-8 is blocked on the owner copying the flashed Pro Micro sketch into `hardware/`**, and PL-1's physical box test waits on the same thing. Owner questions from this pass: whether a penalty during the try should change anything on the board (PL-6), and whether OT2 is wanted (PL-5).
 
 **On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed. Item 12 (Broadcast Welcome default screens and motion) is built and awaiting the lead's suite run, browser-suite captures, and a real `pywebview` run before its evidence lines above can be filled in; Fifty Yard Line's full-bleed edges are the first thing to re-check once the HDMI test happens.
 

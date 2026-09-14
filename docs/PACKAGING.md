@@ -1,6 +1,26 @@
 # Windows packaging and offline launch
 
-**Latest local build:** September 10, 2026, from commit `e5dec11` on
+**Latest local build:** September 14, 2026, from commit `9c596cb` on
+`post-live-fixes`: the first-game fixes PL-1 to PL-7 from
+`docs/POST_LIVE_FIXES.md` — the global Win32 button-box hook (F15–F22 work on
+every screen and with other programs in front), the live-syncing field
+assistant, one-tap `−/+` field corrections, clocks hidden on FINAL, the
+Final / Overtime / Keep 4th prompt at 0:00 in the 4th, swap sides, and the
+touchdown coupling (+6 clears the field status, TRY PENDING on the strip).
+Built with `.venv\Scripts\python.exe toolsuild_package.py`: 787 files,
+28.4 MB, version 0.1.0, the script's own verification passed (every page and
+script present, no remote references, the frozen executable running
+`--check` end to end). The frozen build was then run for eight seconds
+against an isolated data folder (`--new-game --auto-close-after-seconds 8`):
+exit 0, and its log shows `BUTTON_BOX_HOOK_STARTED registered=[F15..F22]
+failed=[]` at start and `BUTTON_BOX_HOOK_STOPPED` before `SHUTDOWN reason=clean`,
+so the packaged program registers and releases the eight keys. Suite at the
+time: 1348 tests, 0 failures, 0 errors, 3 A-1 skips. `dist\Scoreboard-0.1.0.zip`
+was refreshed from this build (14.1 MB, `Compress-Archive -Force`). Still
+owed: the physical Pro Micro box test and PL-8 (blocked on the owner's flashed
+sketch).
+
+**Previous build:** September 10, 2026, from commit `e5dec11` on
 `improvements`: halftime on the game clock, the Setup drawer for timing rules,
 the turnover cutscene rebuild, and the final button box hot keys (F15 Quick 25,
 F16 Quick 40, F17 load 40, F18 load 25, F19 clear, F20 play clock start, F21/F22
