@@ -426,15 +426,50 @@ button.is-current {
 }
 
 .field-status {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .field-status .sep {
   margin: 0 4px;
+}
+
+/* One-tap +/- corrections (PL-3). Every nudge meets the 44px touch floor,
+ * including inside the quarter bar whose other buttons sit at 36px; the bar
+ * is an auto-sized grid row, so it grows by the difference and the board
+ * row above absorbs it (U-001: nothing scrolls). */
+.nudge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nudge-value {
+  min-width: 34px;
+  text-align: center;
+  color: var(--ink);
+  font-weight: 600;
+  padding: 0 2px;
+}
+
+.quarter-bar button.nudge,
+.drawer button.nudge {
+  min-height: 44px;
+  min-width: 36px;
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.last-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .possession-flag {

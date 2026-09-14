@@ -481,6 +481,11 @@
     } else if (button.dataset.value !== undefined) {
       args.value = Number(button.dataset.value);
     }
+    if (button.dataset.nudge !== undefined) {
+      // A one-tap +/- correction (PL-3). Only the step travels; Python reads
+      // the current down / distance / ball spot and does the arithmetic.
+      args.nudge = Number(button.dataset.nudge);
+    }
     if (button.dataset.name !== undefined) {
       // A generated "Use for HOME/AWAY" preset button (F4): the name is a
       // literal from the saved-team library, never computed from anything

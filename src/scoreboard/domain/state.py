@@ -258,6 +258,29 @@ class ClockValue:
             object.__setattr__(self, field_name, result)
 
 
+def nudge_down(down: int | None, step: int) -> int:
+    """One-tap down correction (PL-3): step and clamp to 1..4.
+
+    A blank down steps to 1st either way, so the first tap after a score or
+    a clear always yields a usable value.
+    """
+
+    base = 0 if down is None else int(down)
+    return max(MIN_DOWN, min(MAX_DOWN, base + int(step)))
+
+
+def nudge_distance(distance: int, step: int) -> int:
+    """One-tap yards-to-go correction (PL-3): step and clamp to 1..99.
+
+    Goal (``0``) is deliberately not reachable by a nudge and not a valid
+    starting point: Goal stays Goal until the operator presses Set.
+    """
+
+    if distance is None or int(distance) < 1:
+        raise StateValidationError("only a numeric distance of 1..99 can be nudged")
+    return max(1, min(MAX_DISTANCE, int(distance) + int(step)))
+
+
 @dataclass(frozen=True, slots=True)
 class BallSpot:
     """Field position: which team's side of the field, and how far onto it.

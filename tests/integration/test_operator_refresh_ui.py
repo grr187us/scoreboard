@@ -293,6 +293,34 @@ class OperatorRefreshUiTests(unittest.TestCase):
 
     # --- what must not change --------------------------------------------
 
+    # --- PL-3: one-tap +/- corrections ----------------------------------
+
+    def test_the_strip_offers_the_six_nudges_and_the_drawer_repeats_them(self) -> None:
+        strip = self.html.split('id="field-status"', 1)[1].split("</span>\n    <!--", 1)[0]
+        drawer = self.html.split('id="field-drawer"', 1)[1].split('<div class="row end">', 1)[0]
+        expected = [
+            ("set_down", "-1"), ("set_down", "1"),
+            ("set_distance", "-1"), ("set_distance", "1"),
+            ("set_ball_on", "-5"), ("set_ball_on", "-1"), ("set_ball_on", "1"), ("set_ball_on", "5"),
+        ]
+        for region_name, region in (("strip", strip), ("drawer", drawer)):
+            with self.subTest(region=region_name):
+                found = re.findall(r'data-command="(set_down|set_distance|set_ball_on)" data-nudge="(-?\d+)"', region)
+                self.assertEqual(found, expected)
+        # Only the step travels; the value is Python's to compute.
+        self.assertEqual(self.html.count('data-nudge="'), 16)
+        self.assertNotRegex(self.html, r'data-nudge="-?\d+"[^>]*data-value=')
+
+    def test_a_nudge_sends_only_its_step(self) -> None:
+        self.assertIn("args.nudge = Number(button.dataset.nudge);", self.js)
+        # No arithmetic on the current down, distance, or yard line in JS.
+        self.assertNotRegex(self.js, r"football\.(down|distance|ball_on)[^;]*[-+]\s*\d")
+
+    def test_the_nudges_meet_the_touch_floor_inside_the_36px_quarter_bar(self) -> None:
+        rule = self.css.split(".quarter-bar button.nudge", 1)[1].split("}", 1)[0]
+        self.assertIn("min-height: 44px", rule)
+        self.assertIn(".drawer button.nudge", self.css)
+
     def test_the_page_still_adds_no_grid_row(self) -> None:
         body_rule = self.css.split("body {", 1)[1].split("}", 1)[0]
         self.assertIn(

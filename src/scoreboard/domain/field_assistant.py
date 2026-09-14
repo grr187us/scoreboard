@@ -83,6 +83,21 @@ def ball_spot_from_absolute(absolute_spot: int) -> BallSpot:
     return BallSpot(HOME, spot) if spot <= 50 else BallSpot(AWAY, 100 - spot)
 
 
+def nudge_ball_spot(spot: BallSpot, yards: int) -> BallSpot:
+    """Move a persisted spot by ``yards`` on the private 0..100 scale (PL-3).
+
+    Positive yards move toward the AWAY goal line (the direction HOME
+    drives), negative toward the HOME goal line -- the same absolute-axis
+    math the assistant's nudge buttons use, so a ``+5`` on the control panel
+    and a ``5 yd`` press on the assistant agree. Crossing midfield flips the
+    team the yard line is counted from; either goal line (``0``) is a hard
+    stop.
+    """
+
+    absolute = absolute_from_ball_spot(spot) + int(yards)
+    return ball_spot_from_absolute(max(0, min(100, absolute)))
+
+
 def direction_for(first_quarter_home_direction: int, quarter: str, offense: str) -> int:
     """Return the offense's fixed rules direction on the label coordinate.
 

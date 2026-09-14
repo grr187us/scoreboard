@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 7 tickets open, 1 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 6 tickets open, 2 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -127,7 +127,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-3 — Quick +/- adjustments for down, yards to go, and ball on (issue 1)
 
-**Priority:** P1 · **Status:** open · **Type:** feature
+**Priority:** P1 · **Status:** resolved (September 14, 2026) · **Type:** feature
 
 **Symptom:** Small corrections (one down, a few yards, ball moved a yard) are constant in a real game and the control panel only offers presets and typed inputs.
 
@@ -151,6 +151,8 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - Each of the six adjustments is one tap from the main screen.
 - Ball on crosses the 50 correctly in both directions and never goes past a goal line.
 - Every nudge appears in the action history and is undoable like any other command.
+
+**Resolution (September 14, 2026):** The quarter-bar strip now carries `−`/`+` beside Down and To Go and `−5 −1 / +1 +5` beside Ball On (eight 44 px buttons), and the Field Status drawer repeats them beside its existing controls. Each button sends the existing `set_down` / `set_distance` / `set_ball_on` command with only a `nudge` step; `ScoreboardBridge._resolve_nudge` turns the step into the explicit value under the command lock using the new pure helpers `nudge_down` and `nudge_distance` (`domain/state.py`) and `nudge_ball_spot` (`domain/field_assistant.py`, reusing the assistant's absolute-axis conversions: `+` is toward the AWAY goal line, `−` toward the HOME goal line, flipping sides across the 50 and stopping at 0). The history row is therefore an ordinary `set_*` command and Undo reverses it as usual. A nudge that would change nothing (already 4th, on the goal line), a blank distance, or Goal is refused with a sentence the operator sees; Goal stays Goal until Set. Verified: helper unit tests across the 50 and at both goal lines (`tests/unit/test_state.py`), bridge translation/refusal/undo tests (`tests/integration/test_bridge.py::NudgeTests`), source-contract tests for the strip, drawer, and touch floor (`tests/integration/test_operator_refresh_ui.py`), the keyboard browser suite's U-001 overflow check at both viewports, and a real pywebview run (`.scratch/post-live-fixes/realrun_pl3.py`, 22/22) at a 1366×768 and a 1093×614 CSS viewport: one tap each from the strip, cross-50 in both directions, four history rows, Undo, the Goal refusal, no overflow, all 16 buttons measured at 44 px. Screenshots: `.scratch/post-live-fixes/evidence/pl3-01-strip-1366.png`, `pl3-02-field-drawer-1366.png`, `pl3-03-strip-1093.png`.
 
 ---
 

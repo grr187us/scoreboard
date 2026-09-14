@@ -155,10 +155,32 @@
     <button type="button" data-command="quarter_back" aria-label="Previous quarter">&#9664;</button>
     <span class="quarter" data-field="quarter">PRE</span>
     <button type="button" data-command="quarter_forward" aria-label="Next quarter">&#9654;</button>
+    <!-- PL-3 (September 14, 2026): one-tap +/- corrections on the main
+         screen. Each button sends the existing set_down / set_distance /
+         set_ball_on command with a `nudge` step; Python turns the step into
+         the explicit value from the current state (domain nudge_* helpers),
+         so nothing here computes a down, a distance, or a yard line. Ball
+         nudges run on the assistant's absolute axis: + toward the AWAY goal
+         line, - toward the HOME goal line, flipping sides across the 50. -->
     <span class="field-status" id="field-status" aria-label="Down, distance, field position, and timeouts">
-      <span data-field="football.down_distance_display">&nbsp;</span>
+      <span class="nudge-group" role="group" aria-label="Down">
+        <button type="button" class="nudge" data-command="set_down" data-nudge="-1" aria-label="Previous down" title="Previous down">&minus;</button>
+        <span class="nudge-value" data-field="football.down_display">&nbsp;</span>
+        <button type="button" class="nudge" data-command="set_down" data-nudge="1" aria-label="Next down" title="Next down">+</button>
+      </span>
+      <span class="nudge-group" role="group" aria-label="Yards to go">
+        <button type="button" class="nudge" data-command="set_distance" data-nudge="-1" aria-label="One yard less to go" title="One yard less to go">&minus;</button>
+        <span class="nudge-value" data-field="football.distance_display">&nbsp;</span>
+        <button type="button" class="nudge" data-command="set_distance" data-nudge="1" aria-label="One yard more to go" title="One yard more to go">+</button>
+      </span>
       <span class="sep">&middot;</span>
-      <span data-field="football.ball_on_display">&nbsp;</span>
+      <span class="nudge-group" role="group" aria-label="Ball on">
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="-5" aria-label="Ball back 5 yards toward the HOME goal line" title="5 yards toward the HOME goal line">&minus;5</button>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="-1" aria-label="Ball back 1 yard toward the HOME goal line" title="1 yard toward the HOME goal line">&minus;1</button>
+        <span class="nudge-value" data-field="football.ball_on_display">&nbsp;</span>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="1" aria-label="Ball 1 yard toward the AWAY goal line" title="1 yard toward the AWAY goal line">+1</button>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="5" aria-label="Ball 5 yards toward the AWAY goal line" title="5 yards toward the AWAY goal line">+5</button>
+      </span>
       <span class="sep">&middot;</span>
       <span>TO <span data-field="football.timeouts.home">3</span>/<span data-field="football.timeouts.away">3</span></span>
     </span>
@@ -475,6 +497,8 @@
 
       <div class="row">
         <span class="row-label">Down <span data-field="football.down_distance_display">&nbsp;</span></span>
+        <button type="button" class="nudge" data-command="set_down" data-nudge="-1" aria-label="Previous down">&minus;</button>
+        <button type="button" class="nudge" data-command="set_down" data-nudge="1" aria-label="Next down">+</button>
         <button type="button" data-command="set_down" data-value="1">1st</button>
         <button type="button" data-command="set_down" data-value="2">2nd</button>
         <button type="button" data-command="set_down" data-value="3">3rd</button>
@@ -483,7 +507,9 @@
       </div>
 
       <div class="row">
-        <span class="row-label">Distance to go</span>
+        <span class="row-label">Distance to go <span data-field="football.distance_value_display">&nbsp;</span></span>
+        <button type="button" class="nudge" data-command="set_distance" data-nudge="-1" aria-label="One yard less to go">&minus;</button>
+        <button type="button" class="nudge" data-command="set_distance" data-nudge="1" aria-label="One yard more to go">+</button>
         <input type="number" id="distance-input" min="0" max="99" step="1" data-draft="true"
                aria-label="Yards to go">
         <button type="button" data-command="set_distance" data-arg-source="#distance-input"
@@ -501,6 +527,10 @@
 
       <div class="row">
         <span class="row-label">Ball on <span data-field="football.ball_on_display">&nbsp;</span></span>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="-5" aria-label="Ball back 5 yards toward the HOME goal line" title="5 yards toward the HOME goal line">&minus;5</button>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="-1" aria-label="Ball back 1 yard toward the HOME goal line" title="1 yard toward the HOME goal line">&minus;1</button>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="1" aria-label="Ball 1 yard toward the AWAY goal line" title="1 yard toward the AWAY goal line">+1</button>
+        <button type="button" class="nudge" data-command="set_ball_on" data-nudge="5" aria-label="Ball 5 yards toward the AWAY goal line" title="5 yards toward the AWAY goal line">+5</button>
         <span class="side-toggle" id="ball-on-side" data-selected="home">
           <button type="button" class="toggle is-current" data-side="home">HOME</button>
           <button type="button" class="toggle" data-side="away">AWAY</button>

@@ -23,7 +23,10 @@ from scoreboard.domain.state import (
     GameState,
     StateValidationError,
     default_state,
+    nudge_distance,
+    nudge_down,
 )
+from scoreboard.domain.field_assistant import nudge_ball_spot
 
 
 class StateTests(unittest.TestCase):
@@ -218,6 +221,48 @@ class StateTests(unittest.TestCase):
             BallSpot("home", -1)
         with self.assertRaises(StateValidationError):
             BallSpot("home", MAX_YARD_LINE + 1)
+
+    # --- PL-3: one-tap +/- helpers -----------------------------------------
+
+    def test_nudge_down_steps_and_clamps_within_one_to_four(self) -> None:
+        self.assertEqual(nudge_down(1, 1), 2)
+        self.assertEqual(nudge_down(3, -1), 2)
+        self.assertEqual(nudge_down(4, 1), 4)
+        self.assertEqual(nudge_down(1, -1), 1)
+        # A blank down steps to 1st either way: the first tap after a score
+        # or a clear yields a usable value.
+        self.assertEqual(nudge_down(None, 1), 1)
+        self.assertEqual(nudge_down(None, -1), 1)
+
+    def test_nudge_distance_steps_and_clamps_and_never_makes_or_leaves_goal(self) -> None:
+        self.assertEqual(nudge_distance(10, 1), 11)
+        self.assertEqual(nudge_distance(10, -1), 9)
+        self.assertEqual(nudge_distance(1, -1), 1)
+        self.assertEqual(nudge_distance(MAX_DISTANCE, 1), MAX_DISTANCE)
+        # Goal stays Goal until Set, and a blank distance has nothing to step.
+        with self.assertRaises(StateValidationError):
+            nudge_distance(0, 1)
+        with self.assertRaises(StateValidationError):
+            nudge_distance(None, 1)
+
+    def test_nudge_ball_spot_crosses_midfield_both_ways_and_stops_at_each_goal_line(self) -> None:
+        # + moves toward the AWAY goal line, - toward the HOME goal line, on
+        # the assistant's absolute axis (HOME goal 0 .. AWAY goal 100).
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 35), 5), BallSpot("home", 40))
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 35), -1), BallSpot("home", 34))
+        self.assertEqual(nudge_ball_spot(BallSpot("away", 35), 5), BallSpot("away", 30))
+        self.assertEqual(nudge_ball_spot(BallSpot("away", 35), -1), BallSpot("away", 36))
+        # Across the 50 in both directions; midfield is always HOME 50.
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 48), 5), BallSpot("away", 47))
+        self.assertEqual(nudge_ball_spot(BallSpot("away", 48), -5), BallSpot("home", 47))
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 49), 1), BallSpot("home", 50))
+        self.assertEqual(nudge_ball_spot(BallSpot("away", 49), -1), BallSpot("home", 50))
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 50), 1), BallSpot("away", 49))
+        # Never past a goal line.
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 2), -5), BallSpot("home", 0))
+        self.assertEqual(nudge_ball_spot(BallSpot("home", 0), -1), BallSpot("home", 0))
+        self.assertEqual(nudge_ball_spot(BallSpot("away", 3), 5), BallSpot("away", 0))
+        self.assertEqual(nudge_ball_spot(BallSpot("away", 0), 1), BallSpot("away", 0))
 
     def test_football_snapshot_round_trips(self) -> None:
         state = default_state().evolve(

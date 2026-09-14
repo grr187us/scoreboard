@@ -63,7 +63,11 @@ from scoreboard.domain.commands import (
     finalize_field_action,
     validate_command,
 )
-from scoreboard.domain.field_assistant import absolute_from_ball_spot, home_goal_side
+from scoreboard.domain.field_assistant import (
+    absolute_from_ball_spot,
+    home_goal_side,
+    nudge_ball_spot,
+)
 from scoreboard.domain.rules import RULE_FIELDS, GameRules, RulesError, default_rules
 from scoreboard.domain.formatting import (
     BLANK_DISPLAY,
@@ -92,6 +96,8 @@ from scoreboard.domain.state import (
     GameState,
     QUARTER_LABELS,
     SCHEMA_VERSION,
+    nudge_distance,
+    nudge_down,
     setup_prompt_detail,
 )
 from scoreboard.host.cutscenes import CutsceneDirector
@@ -1071,7 +1077,14 @@ class ScoreboardBridge:
 
         accepted_view: dict[str, Any] | None = None
         with self._lock:
-            built = build_command(name, args, expected_revision)
+            if isinstance(args, dict) and "nudge" in args:
+                # A one-tap +/- control (PL-3). The step is turned into the
+                # explicit value the existing command already takes, from the
+                # current state and under the same lock, so the arithmetic
+                # lives in the domain layer and the history row is an ordinary
+                # set_down / set_distance / set_ball_on.
+                args = self._resolve_nudge(name, args)
+            built = args if isinstance(args, CommandError) else build_command(name, args, expected_revision)
             if isinstance(built, CommandError):
                 # Refused before the service saw it: nothing changed, and there
                 # is no accepted command to persist.
@@ -1106,6 +1119,50 @@ class ScoreboardBridge:
         if accepted_view is not None and self._on_accepted is not None:
             self._on_accepted(accepted_view)
         return payload
+
+    def _resolve_nudge(self, name: Any, args: dict[str, Any]) -> dict[str, Any] | CommandError:
+        """Translate ``{"nudge": step}`` into the command's explicit arguments.
+
+        Only ``set_down``, ``set_distance``, and ``set_ball_on`` take a nudge.
+        A nudge that would change nothing (already 4th, already on the goal
+        line) is refused rather than recorded as an empty history row, and a
+        blank distance or Goal is refused because Goal stays Goal until Set.
+        """
+
+        step = args.get("nudge")
+        if isinstance(step, bool) or not isinstance(step, (int, float)) or step != step or step != int(step) or int(step) == 0:
+            return CommandError(INVALID_ARGUMENTS, "nudge must be a whole number of steps.")
+        step = int(step)
+        rest = {key: value for key, value in args.items() if key != "nudge"}
+        if any(key not in ("source", "confirmed") for key in rest):
+            return CommandError(INVALID_ARGUMENTS, f"{name} takes either nudge or an explicit value, not both.")
+        state = self._service.state
+        if name == "set_down":
+            new_down = nudge_down(state.down, step)
+            if new_down == state.down:
+                return CommandError(INVALID_ARGUMENTS, f"The down is already {format_down(state.down)}.")
+            rest["value"] = new_down
+            return rest
+        if name == "set_distance":
+            if state.distance is None:
+                return CommandError(INVALID_ARGUMENTS, "No distance is set; use Set first.")
+            if state.distance == 0:
+                return CommandError(INVALID_ARGUMENTS, "Distance is Goal; use Set to change it.")
+            new_distance = nudge_distance(state.distance, step)
+            if new_distance == state.distance:
+                return CommandError(INVALID_ARGUMENTS, f"The distance is already {state.distance}.")
+            rest["value"] = new_distance
+            return rest
+        if name == "set_ball_on":
+            if state.ball_on is None:
+                return CommandError(INVALID_ARGUMENTS, "No ball spot is set; use Set first.")
+            spot = nudge_ball_spot(state.ball_on, step)
+            if spot == state.ball_on:
+                return CommandError(INVALID_ARGUMENTS, "The ball is already on the goal line.")
+            rest["team"] = spot.team
+            rest["value"] = spot.yard_line
+            return rest
+        return CommandError(INVALID_ARGUMENTS, f"{name} does not take nudge.")
 
     def preview_field_action(self, action: Any) -> dict[str, Any]:
         """Calculate one uncommitted assistant draft in Python.

@@ -807,6 +807,76 @@ class FootballStateViewTests(BridgeTestCase):
         self.assertEqual(result["error"]["code"], "INVALID_ARGUMENTS")
 
 
+class NudgeTests(BridgeTestCase):
+    """PL-3: a +/- control sends only a step; Python resolves it from state.
+
+    The resolved command is an ordinary set_down / set_distance / set_ball_on
+    row in the history, so each nudge is undoable like any other command.
+    """
+
+    def test_a_down_nudge_becomes_a_plain_set_down_row(self) -> None:
+        self.send("set_down", {"value": 2})
+        result = self.send("set_down", {"nudge": 1})
+        self.assertTrue(result["accepted"], result["error"])
+        self.assertEqual(result["view"]["football"]["down"], 3)
+        rows = read_action_history(self.paths.database)
+        self.assertEqual(rows[-1]["command"], "set_down")
+        self.assertEqual(decode(rows[-1]["new_value"]), 3)
+        undone = self.send("undo")
+        self.assertEqual(undone["view"]["football"]["down"], 2)
+
+    def test_a_blank_down_nudges_to_first_and_fourth_will_not_step_past(self) -> None:
+        self.assertEqual(self.send("set_down", {"nudge": 1})["view"]["football"]["down"], 1)
+        self.send("set_down", {"value": 4})
+        refused = self.send("set_down", {"nudge": 1})
+        self.assertFalse(refused["accepted"])
+        self.assertEqual(refused["error"]["code"], "INVALID_ARGUMENTS")
+        self.assertIn("already 4th", refused["error"]["message"])
+
+    def test_a_distance_nudge_steps_but_goal_and_blank_are_refused(self) -> None:
+        blank = self.send("set_distance", {"nudge": 1})
+        self.assertFalse(blank["accepted"])
+        self.send("set_distance", {"value": 10})
+        self.assertEqual(self.send("set_distance", {"nudge": -1})["view"]["football"]["distance"], 9)
+        self.send("set_distance", {"value": 0})
+        goal = self.send("set_distance", {"nudge": 1})
+        self.assertFalse(goal["accepted"])
+        self.assertIn("Goal", goal["error"]["message"])
+        self.assertEqual(self.bridge.get_snapshot()["football"]["distance"], 0)
+
+    def test_a_ball_nudge_crosses_the_fifty_and_stops_at_the_goal_line(self) -> None:
+        self.send("set_ball_on", {"team": "home", "value": 48})
+        crossed = self.send("set_ball_on", {"nudge": 5})
+        self.assertEqual(crossed["view"]["football"]["ball_on"], {"team": "away", "yard_line": 47})
+        rows = read_action_history(self.paths.database)
+        self.assertEqual(rows[-1]["command"], "set_ball_on")
+        back = self.send("set_ball_on", {"nudge": -5})
+        self.assertEqual(back["view"]["football"]["ball_on"], {"team": "home", "yard_line": 48})
+        self.send("set_ball_on", {"team": "away", "value": 2})
+        goal = self.send("set_ball_on", {"nudge": 5})
+        self.assertEqual(goal["view"]["football"]["ball_on"], {"team": "away", "yard_line": 0})
+        stuck = self.send("set_ball_on", {"nudge": 1})
+        self.assertFalse(stuck["accepted"])
+        self.assertIn("goal line", stuck["error"]["message"])
+        undone = self.send("undo")
+        self.assertEqual(undone["view"]["football"]["ball_on"], {"team": "away", "yard_line": 2})
+
+    def test_a_bad_step_is_refused_before_the_service(self) -> None:
+        revision = self.service.revision
+        for name, args in (
+            ("set_down", {"nudge": 0}),
+            ("set_down", {"nudge": 1.5}),
+            ("set_down", {"nudge": "1"}),
+            ("set_down", {"nudge": 1, "value": 2}),
+            ("set_possession", {"nudge": 1}),
+        ):
+            with self.subTest(name=name, args=args):
+                refused = self.send(name, args)
+                self.assertFalse(refused["accepted"])
+                self.assertEqual(refused["error"]["code"], "INVALID_ARGUMENTS")
+        self.assertEqual(self.service.revision, revision)
+
+
 class StatusViewModelTests(BridgeTestCase):
     """F3: the crowd-facing status block reaches both view models correctly."""
 
