@@ -2,7 +2,7 @@
 
 > **Document purpose:** This is the living command-center document for the scoreboard project. It records the current plan, phase status, major decisions, unanswered questions, and the next concrete action.
 >
-> **Last updated:** September 9, 2026
+> **Last updated:** September 14, 2026
 
 ## How to Use This Document
 
@@ -2035,6 +2035,8 @@ selected, then target-laptop and LED-wall rehearsal. No real WebView2 run
 was repeated for this change. Phase 0 HDMI evidence and Task 12 remain open.
 
 ## Next Action
+
+**September 14, 2026: the first official game was run on the app.** The owner's debrief is captured as eight ordered tickets in [docs/POST_LIVE_FIXES.md](docs/POST_LIVE_FIXES.md). Two are P0: the button box only works while the control panel window has focus (PL-1), and the field assistant demanded a manual reload after every control-panel change (PL-2). PL-8 is blocked on the owner copying the flashed Pro Micro sketch into `hardware/`. Work that file top to bottom before anything below.
 
 **On Tuesday, September 8, 2026, perform the personal-laptop HDMI test and capture the minimum Phase 0 evidence.** That test is on a fixed date, it is the only remaining Phase 0 gate, and the stadium half of Task 10's acceptance depends on it. Nothing else on this list is time-boxed. Item 12 (Broadcast Welcome default screens and motion) is built and awaiting the lead's suite run, browser-suite captures, and a real `pywebview` run before its evidence lines above can be filled in; Fifty Yard Line's full-bleed edges are the first thing to re-check once the HDMI test happens.
 
