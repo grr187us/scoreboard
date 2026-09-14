@@ -34,16 +34,22 @@
   // After a confirmed touchdown, the score panel opens on the try for the
   // scoring team so the next press is obvious.
   var lastCommittedTouchdownTeam = null;
-  // The draft ball belongs to the operator while they are aiming it. It is
-  // re-seeded from the authoritative spot ONLY when the window opens, when
-  // Re-sync is pressed, and after a committed action -- never by the host's
-  // 10 Hz refresh push, which used to drag the ball back to the persisted
-  // spot (HOME 50 at the start of a game) between a click and the next
+  // The draft ball belongs to the operator once they have moved it. Until
+  // then it follows the scoreboard on every push, so a spot set from the
+  // control panel shows up here without a reload. `ballTouched` is set by a
+  // click, drag, arrow key, nudge button, or the typed yard line, and it is
+  // cleared only by a committed action and by the explicit "Discard draft &
+  // reload" button -- never by the host's 10 Hz refresh push, which used to
+  // drag the ball back to the persisted spot between a click and the next
   // frame, so no nudge, drag, or yard selection could ever stick.
-  var pendingReseed = true, lastMirrored = null, autoPreviewTimer = null;
+  var ballTouched = false, lastMirrored = null, autoPreviewTimer = null;
+  // Revision of the last snapshot rendered. Every push is adopted as the new
+  // base revision (live sync, September 14, 2026); this only tells render()
+  // whether a pending selection needs a fresh preview against the new state.
+  var lastRenderedRevision = null, conflictTimer = null;
 
   var field = document.getElementById('field'), ball = document.getElementById('ball');
-  var stale = document.getElementById('stale'), notice = document.getElementById('notice');
+  var conflict = document.getElementById('conflict'), notice = document.getElementById('notice');
   var confirmButton = document.getElementById('confirm'), lineToGain = document.getElementById('line-to-gain');
 
   // Yard numbers are placed at the same percentages as the painted lines, so
@@ -156,8 +162,13 @@
   // sees; the absolute change flips sign when the drawing is mirrored.
   function nudgeScreen(deltaScreenYards) {
     var deltaAbsolute = isMirrored() ? -deltaScreenYards : deltaScreenYards;
+    touchBall();
     setDraftAbsolute(draftAbsolute + deltaAbsolute);
   }
+
+  // The operator has taken the ball: pushes stop re-seeding it until a
+  // commit or an explicit discard.
+  function touchBall() { ballTouched = true; }
 
   function updateLineToGain(absoluteValue) {
     if (absoluteValue === null || absoluteValue === undefined) { lineToGain.hidden = true; return; }
@@ -291,7 +302,11 @@
   function render(next) {
     if (!next) return;
     model = next;
-    if (baseRevision === null) baseRevision = model.revision;
+    // Live sync: whatever the scoreboard shows now is the base for the next
+    // confirm. Python still rejects a genuine race at finalize time.
+    baseRevision = model.revision;
+    var revisionChanged = lastRenderedRevision !== null && lastRenderedRevision !== model.revision;
+    lastRenderedRevision = model.revision;
     text('revision', 'REV ' + model.revision);
     text('clocks', 'GAME ' + model.clocks.game.display + ' ' + model.clocks.game.status + ' · PLAY ' + (model.clocks.play.display || '—') + ' ' + model.clocks.play.status);
     var f = model.football || {};
@@ -304,12 +319,11 @@
     updateEndzones();
     updateDirection(f);
     updateLineToGain(assistant.line_to_gain);
-    if (pendingReseed) {
-      pendingReseed = false;
-      setDraftAbsolute(
-        assistant.ball_absolute !== null && assistant.ball_absolute !== undefined ? assistant.ball_absolute : 50,
-        { silent: true }
-      );
+    var live = assistant.ball_absolute !== null && assistant.ball_absolute !== undefined ? assistant.ball_absolute : 50;
+    if (!ballTouched && live !== draftAbsolute) {
+      // An untouched ball follows the scoreboard, so a spot set from the
+      // control panel arrives here without a reload.
+      setDraftAbsolute(live, { silent: true });
     } else if (isMirrored() !== lastMirrored) {
       // A quarter boundary mirrored the drawing. Keep the operator's spot and
       // redraw it on the side they now see; never move the spot itself.
@@ -318,12 +332,24 @@
     lastMirrored = isMirrored();
     updateDraftReadout();
     updatePanels();
-    if (model.revision !== baseRevision) markStale();
+    // Something changed elsewhere while a press is pending: re-ask Python so
+    // the Confirm label describes the new state. Confirm stays enabled with
+    // its previous label until the answer arrives; Python recalculates the
+    // raw draft against the current state at finalize time regardless.
+    if (revisionChanged && selected && api && autoPreviewTimer === null) preview();
   }
 
-  function markStale() { stale.hidden = false; confirmButton.disabled = true; text('notice', 'The scoreboard changed while you were working. Press "Reload from scoreboard" and try again.'); }
+  // A genuine race: the scoreboard changed between the last push and the
+  // Confirm press, and Python refused the stale revision. Show a short
+  // toast, re-seed from the board, and re-preview so one more Confirm does it.
+  function showConflict() {
+    conflict.hidden = false;
+    if (conflictTimer !== null) clearTimeout(conflictTimer);
+    conflictTimer = setTimeout(function () { conflictTimer = null; conflict.hidden = true; }, 5000);
+  }
+  function isStale(result) { return Boolean(result && result.error && result.error.code === 'STALE_REVISION'); }
   function clearDraft(message) {
-    draft = null; selected = null; openPanel = null; tryPoints = null; baseRevision = model.revision; stale.hidden = true; confirmButton.disabled = true;
+    draft = null; selected = null; openPanel = null; tryPoints = null; confirmButton.disabled = true;
     if (autoPreviewTimer !== null) { clearTimeout(autoPreviewTimer); autoPreviewTimer = null; }
     confirmButton.textContent = 'CONFIRM';
     text('proposed-status', 'Press what happened.');
@@ -335,7 +361,6 @@
 
   function preview() {
     if (!api || !model || !selected) return;
-    if (model.revision !== baseRevision) { markStale(); return; }
     var request = buildAction();
     Promise.resolve(api.preview_field_action(request)).then(function (result) {
       if (result.view) render(result.view);
@@ -365,12 +390,14 @@
     }).catch(function (error) { text('notice', 'Preview failed: ' + error); });
   }
 
+  // The explicit "throw away my draft" path. The board arrives on its own;
+  // this only gives the ball back to it and clears whatever was pressed.
   function resync() {
     if (!api) return;
     Promise.resolve(api.get_snapshot()).then(function (next) {
-      pendingReseed = true;
+      ballTouched = false;
       render(next);
-      clearDraft('Reloaded from the scoreboard.');
+      clearDraft('Draft discarded. The ball follows the scoreboard again.');
     }).catch(function (error) { text('notice', 'Could not reload: ' + error); });
   }
 
@@ -381,7 +408,7 @@
   }
 
   // ---- input wiring -----------------------------------------------------
-  field.addEventListener('pointerdown', function (e) { dragging = true; field.setPointerCapture(e.pointerId); setDraftAbsolute(screenToAbsolute(pointerScreenPct(e)), { silent: true }); });
+  field.addEventListener('pointerdown', function (e) { dragging = true; touchBall(); field.setPointerCapture(e.pointerId); setDraftAbsolute(screenToAbsolute(pointerScreenPct(e)), { silent: true }); });
   field.addEventListener('pointermove', function (e) { if (dragging) setDraftAbsolute(screenToAbsolute(pointerScreenPct(e)), { silent: true }); });
   field.addEventListener('pointerup', function (e) {
     dragging = false;
@@ -403,6 +430,7 @@
   function syncDraftFromSelects() {
     var team = document.getElementById('spot-team').value;
     var yard = Number(document.getElementById('spot-yard').value);
+    touchBall();
     setDraftAbsolute(team === 'home' ? yard : 100 - yard);
   }
   document.getElementById('spot-team').addEventListener('change', syncDraftFromSelects);
@@ -468,19 +496,19 @@
   document.getElementById('resync').addEventListener('click', resync);
   document.getElementById('discard').addEventListener('click', function () { clearDraft('Cancelled. Nothing was changed.'); });
   confirmButton.addEventListener('click', function () {
-    if (!draft || confirmButton.disabled || model.revision !== baseRevision) { markStale(); return; }
+    if (!draft || confirmButton.disabled) return;
     var committed = draft;
     Promise.resolve(api.finalize_field_action(committed, baseRevision)).then(function (result) {
       // A committed action makes the authoritative spot the right next
-      // starting point, so this is one of the three re-seed moments.
-      if (result.accepted) pendingReseed = true;
+      // starting point; a refused race re-seeds too, so the operator aims
+      // from what the board now shows.
+      if (result.accepted || isStale(result)) ballTouched = false;
       if (result.view) render(result.view);
       if (!result.accepted) {
         text('notice', result.error ? result.error.message : 'The scoreboard did not accept that.');
-        if (result.error && result.error.code === 'STALE_REVISION') markStale();
+        if (isStale(result)) { showConflict(); preview(); }
         return;
       }
-      baseRevision = result.view.revision;
       clearDraft('Done — the scoreboard now shows: ' + fieldText(model.football));
       if (committed.kind === 'touchdown') {
         // Lead straight into the try so the next press is obvious.
@@ -509,7 +537,6 @@
   function attachBridge() {
     api = window.pywebview.api;
     Promise.resolve(api.get_snapshot()).then(function (next) {
-      pendingReseed = true;
       render(next);
     }).catch(function (error) { text('notice', 'Could not read the field status: ' + error); });
   }

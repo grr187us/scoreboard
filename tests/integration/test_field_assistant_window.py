@@ -58,11 +58,13 @@ class _Window:
 class FieldAssistantDraftOwnershipTests(unittest.TestCase):
     """The helper is pushed a complete snapshot ten times a second.
 
-    A source-level contract, in the style of the layout-editor contract test:
-    the draft ball must be re-seeded only when the window opens, when Re-sync
-    is pressed, and after a committed action. Re-seeding it on an ordinary
-    refresh push pulled the ball back to the persisted spot -- HOME 50 at the
-    start of a game -- between an operator's click and the next frame, so no
+    A source-level contract, in the style of the layout-editor contract test.
+    Live sync (PL-2, September 14, 2026): every push is adopted as the new
+    base revision and Confirm is never disabled by a change made elsewhere.
+    The draft ball follows the board until the operator moves it; from then
+    on only a committed action or the explicit discard button gives it back.
+    Re-seeding a touched ball on an ordinary refresh push pulled it back to
+    the persisted spot between an operator's click and the next frame, so no
     nudge, drag, or yard selection could ever be finalized.
     """
 
@@ -74,20 +76,49 @@ class FieldAssistantDraftOwnershipTests(unittest.TestCase):
         self.source = path.read_text(encoding="utf-8")
         self.html = (path.parent / "index.html").read_text(encoding="utf-8")
 
-    def test_a_refresh_push_never_reseeds_the_draft_ball(self) -> None:
-        # The old gate: any push with no accepted preview and no pointer held
-        # down re-seeded the ball. It must not come back.
-        self.assertNotIn("!dragging && !draft", self.source)
-        self.assertIn("pendingReseed", self.source)
-        # Exactly one place re-seeds, and it consumes the flag.
-        self.assertEqual(self.source.count("if (pendingReseed) {"), 1)
-        self.assertEqual(self.source.count("pendingReseed = false;"), 1)
+    def test_every_push_is_adopted_and_never_disables_confirm(self) -> None:
+        # The old gate: a push whose revision differed from the one captured
+        # on open showed the red banner and disabled Confirm. It must not
+        # come back in any of its four forms (render, preview, confirm, and
+        # the STALE_REVISION rejection handler).
+        self.assertNotIn("markStale", self.source)
+        self.assertNotIn("model.revision !== baseRevision", self.source)
+        self.assertNotIn("if (baseRevision === null) baseRevision = model.revision;", self.source)
+        self.assertIn("baseRevision = model.revision;", self.source)
+        self.assertNotIn('id="stale"', self.html)
+        self.assertNotIn("RE-SYNC REQUIRED", self.html)
+        # A pending press is re-previewed against the new state without
+        # disabling Confirm (scheduleAutoPreview disables; preview() does not).
+        self.assertIn("if (revisionChanged && selected && api && autoPreviewTimer === null) preview();", self.source)
 
-    def test_only_open_resync_and_a_commit_arm_a_reseed(self) -> None:
-        # Four arming sites, and no fifth: the declaration, the bridge-ready
-        # first snapshot, Re-sync, and an accepted commit.
-        self.assertEqual(self.source.count("pendingReseed = true"), 4)
-        self.assertIn("if (result.accepted) pendingReseed = true;", self.source)
+    def test_a_refresh_push_reseeds_the_ball_only_while_it_is_untouched(self) -> None:
+        self.assertNotIn("!dragging && !draft", self.source)
+        self.assertNotIn("pendingReseed", self.source)
+        self.assertIn("if (!ballTouched && live !== draftAbsolute) {", self.source)
+        # Every operator way of moving the ball marks it touched: click/drag,
+        # arrow keys and the nudge buttons (both through nudgeScreen), and
+        # the typed yard line.
+        self.assertEqual(self.source.count("touchBall();"), 3)
+        self.assertIn("field.addEventListener('pointerdown', function (e) { dragging = true; touchBall();", self.source)
+        nudge = self.source.split("function nudgeScreen")[1].split("}")[0]
+        self.assertIn("touchBall();", nudge)
+        selects = self.source.split("function syncDraftFromSelects")[1].split("}")[0]
+        self.assertIn("touchBall();", selects)
+        self.assertIn("nudgeScreen(e.key === 'ArrowRight' ? 1 : -1);", self.source)
+
+    def test_only_a_commit_a_refused_race_and_discard_give_the_ball_back(self) -> None:
+        # Three release sites and no fourth: an accepted commit or a refused
+        # STALE_REVISION race, and the explicit "Discard draft & reload".
+        self.assertEqual(self.source.count("ballTouched = false;"), 2)
+        self.assertIn("if (result.accepted || isStale(result)) ballTouched = false;", self.source)
+        resync = self.source.split("function resync()")[1].split("function select(")[0]
+        self.assertIn("ballTouched = false;", resync)
+        self.assertIn("Discard draft &amp; reload", self.html)
+
+    def test_a_refused_race_is_a_toast_and_one_more_confirm(self) -> None:
+        self.assertIn('id="conflict"', self.html)
+        self.assertIn("if (isStale(result)) { showConflict(); preview(); }", self.source)
+        self.assertIn("conflict.hidden = true; }, 5000);", self.source)
 
     def test_operator_changes_ask_python_for_a_fresh_preview(self) -> None:
         # Auto-preview keeps the Proposed panel describing the ball on screen,

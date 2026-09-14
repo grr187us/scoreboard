@@ -202,6 +202,50 @@ class IsolationAndRecoveryTests(FieldAssistantRehearsalCase):
         )
 
 
+class LiveSyncRehearsalTests(FieldAssistantRehearsalCase):
+    """PL-2: the helper adopts every push; Python still refuses a real race."""
+
+    def test_a_control_panel_change_between_plays_needs_no_reload(self) -> None:
+        # The helper receives the control-panel command's published view and
+        # adopts its revision as the base for the next Confirm.
+        self.start_home_series(25)
+        interleaved = self.send("set_down", {"value": 3})
+        pushed_revision = interleaved["view"]["revision"]
+        self.assertEqual(self.published[-1]["revision"], pushed_revision)
+
+        result = self.finalize("normal_play", {"final_absolute": 31}, revision=pushed_revision)
+
+        football = self.football(result["view"])
+        self.assertEqual(football["down"], 4)
+        self.assertEqual(football["distance"], 4)
+        self.assertEqual(football["ball_on"], {"team": "home", "yard_line": 31})
+
+    def test_a_genuine_race_is_refused_once_and_resolves_with_one_more_confirm(self) -> None:
+        self.start_home_series(25)
+        base = self.service.revision
+        # The control panel wins the race: a score lands after the helper's
+        # last push and before its Confirm reaches Python.
+        self.send("add_score", {"team": "away", "points": 3})
+
+        refused = self.bridge.finalize_field_action(
+            {"kind": "normal_play", "payload": {"final_absolute": 31}}, base
+        )
+        self.assertFalse(refused["accepted"])
+        self.assertEqual(refused["error"]["code"], "STALE_REVISION")
+        # The rejection carries the current view, which is what the helper
+        # renders (adopting its revision and re-seeding the ball) before it
+        # re-previews and lets the operator press Confirm again.
+        self.assertEqual(refused["view"]["revision"], self.service.revision)
+        self.assertEqual(refused["view"]["teams"]["away"]["score"], 3)
+        self.assertEqual(self.football(refused["view"])["down"], 1)
+
+        retried = self.finalize(
+            "normal_play", {"final_absolute": 31}, revision=refused["view"]["revision"]
+        )
+        self.assertEqual(self.football(retried["view"])["down"], 2)
+        self.assertEqual(retried["view"]["teams"]["away"]["score"], 3)
+
+
 class MultiQuarterRehearsalTests(FieldAssistantRehearsalCase):
     """FA-28: one compact offline sequence across the supported workflows."""
 
@@ -229,7 +273,12 @@ class MultiQuarterRehearsalTests(FieldAssistantRehearsalCase):
         third_quarter_play = self.finalize("normal_play", {"final_absolute": 34})
         self.assertEqual(third_quarter_play["view"]["assistant"]["ball_absolute"], 34)
         self.send("set_quarter", {"label": "4th", "confirmed": True})
-        final_play = self.finalize("incomplete_pass", {})
+        # Live sync (PL-2): a control-panel correction between plays is
+        # adopted from the push; the next finalize uses that revision.
+        corrected = self.send("set_down", {"value": 2})
+        final_play = self.finalize(
+            "incomplete_pass", {}, revision=corrected["view"]["revision"]
+        )
 
         view = final_play["view"]
         self.assertEqual(view["quarter"], "4th")

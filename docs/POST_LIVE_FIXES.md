@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 8 tickets open, 0 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 7 tickets open, 1 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -85,7 +85,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-2 — Field assistant refreshes on its own (issue 5)
 
-**Priority:** P0 · **Status:** open · **Type:** defect
+**Priority:** P0 · **Status:** resolved (September 14, 2026) · **Type:** defect
 
 **Symptom:** Any change made on the control panel forced a manual "Reload from scoreboard" on the field assistant. The owner "had to refresh the field assistant ALLLLL the time."
 
@@ -120,6 +120,8 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - Confirm is never disabled because of a change made elsewhere.
 - An in-progress ball spot survives unrelated changes; an untouched ball follows the board.
 - A genuine conflict is surfaced without blocking and resolves in one extra tap.
+
+**Resolution (September 14, 2026):** `field_assistant.js` adopts `model.revision` on every push and response; `markStale` and all four revision gates are gone, and a pending press is re-previewed (without disabling Confirm) when the revision changes. The draft ball follows the board until touched (`ballTouched` set by pointerdown, arrow keys and nudges via `nudgeScreen`, and the typed yard line; cleared by an accepted commit, a refused `STALE_REVISION` race, and the button now labelled **Discard draft & reload**). A refused race shows a five-second `#conflict` toast, re-seeds, re-previews, and completes on the next Confirm. The stale banner and its CSS are replaced by the toast. Verified: source-contract tests in `tests/integration/test_field_assistant_window.py` (4 rewritten), `LiveSyncRehearsalTests` plus an interleaved `set_down` in the multi-quarter rehearsal in `tests/integration/test_field_assistant_rehearsal.py`, and a real pywebview run (`.scratch/post-live-fixes/realrun_pl2.py`, 27/27) with both windows open: control-panel 3rd down adopted within a push with Confirm sampled every 50 ms and never disabled, a nudged ball unmoved by a control-panel +6, an untouched ball following a control-panel Ball On change, and an injected race refused once, toasted, and committed on the second Confirm. Screenshots: `.scratch/post-live-fixes/evidence/pl2-0{1,2,3}-*.png`.
 
 ---
 

@@ -11,13 +11,15 @@
     <strong>FIELD ASSISTANT</strong>
     <span id="revision">REV —</span>
     <span id="clocks" aria-label="Read-only clock context">GAME — · PLAY —</span>
-    <button type="button" id="resync" title="Throw away what is on this screen and reload the scoreboard's current field status">Reload from scoreboard</button>
+    <button type="button" id="resync" title="Throw away what is on this screen: the ball follows the scoreboard again and nothing is pressed. The scoreboard itself updates here on its own.">Discard draft &amp; reload</button>
   </header>
 
-  <!-- This exact wording is the stale-draft safety boundary in the approved
-       workflow. It remains visible until the operator explicitly re-syncs or
-       discards the draft; no draft is silently merged. -->
-  <p id="stale" class="stale" role="alert" hidden>FIELD STATUS CHANGED ELSEWHERE — RE-SYNC REQUIRED</p>
+  <!-- Live sync (September 14, 2026): every push from the scoreboard is
+       adopted here, so there is no stale banner and Confirm is never
+       disabled by a change made elsewhere. This toast appears only when
+       Python refuses a Confirm that raced a control-panel change; the ball
+       is re-seeded and one more Confirm finishes the play. -->
+  <p id="conflict" class="conflict" role="alert" hidden>THE SCOREBOARD CHANGED AS YOU CONFIRMED — CHECK THE RESULT AND PRESS CONFIRM AGAIN</p>
   <p id="notice" class="notice" role="status" aria-live="polite"></p>
 
   <main>

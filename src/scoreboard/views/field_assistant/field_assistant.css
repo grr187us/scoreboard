@@ -1,4 +1,4 @@
-/* Flex column, not a fixed-row grid: the stale banner and notice are often
+/* Flex column, not a fixed-row grid: the conflict toast and notice are often
  * hidden, and a row-per-element grid would then drop <main> into a short
  * auto row instead of the remaining height. */
 body { display:flex; flex-direction:column; gap:8px; padding:10px; overflow:hidden; }
@@ -6,8 +6,11 @@ main { flex:1 1 auto; }
 .topbar { display:flex; align-items:center; gap:10px; padding:7px 10px; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); }
 .topbar strong { letter-spacing:.08em; margin-right:auto; }
 .topbar span { font-variant-numeric:tabular-nums; color:var(--ink-dim); }
-.notice,.stale { margin:0; padding:7px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:18px; }
-.notice:empty { display:none; }.stale { color:#ffe1e1; border-color:var(--danger); background:#40201f; font-weight:700; }
+.notice,.conflict { margin:0; padding:7px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:18px; }
+.notice:empty { display:none; }
+/* Conflict toast: shown for a few seconds only when Python refused a Confirm
+   that raced a control-panel change. There is no persistent stale banner. */
+.conflict { color:#fff3d6; border-color:#e0a323; background:#4a3712; font-weight:700; }
 main { min-height:0; display:grid; grid-template-columns:minmax(460px,1.22fr) minmax(400px,1fr); gap:10px; }
 .field-panel,.workflow { min-height:0; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); padding:10px; }
 .field-panel { display:grid; grid-template-columns:64px minmax(0,1fr) 64px; grid-template-rows:auto minmax(0,1fr) auto; gap:0; }
