@@ -80,6 +80,12 @@ class CommandType(str, Enum):
     #: One atomic Field Assistant result.  It is intentionally not composed
     #: from the manual football commands, so observers never see a half-play.
     FINALIZE_FIELD_ACTION = "finalize_field_action"
+    #: PL-7 (September 14, 2026): which end zone HOME scores in during the
+    #: 1st quarter (+1 right, -1 left on the assistant's drawing), changeable
+    #: at any time as its own undoable history entry. Only the end-zone
+    #: labels mirror; the ball, line to gain, down, and distance are absolute
+    #: yard lines and do not move.
+    SET_ASSISTANT_DIRECTION = "set_assistant_direction"
     #: F3: the crowd-facing status word and its stoppage countdown. Neither
     #: undoable nor a barrier -- see neither UNDOABLE_COMMANDS nor
     #: NON_UNDOABLE_COMMANDS below -- exactly like the clock commands, because
@@ -96,6 +102,7 @@ class CommandType(str, Enum):
 # operator. Expected validation failures are returned, never raised (U-007).
 
 INVALID_COMMAND: Final[str] = "INVALID_COMMAND"
+INVALID_ASSISTANT_DIRECTION: Final[str] = "INVALID_ASSISTANT_DIRECTION"
 INVALID_TEAM: Final[str] = "INVALID_TEAM"
 INVALID_TEAM_NAME: Final[str] = "INVALID_TEAM_NAME"
 TEAM_NAME_NOT_ALLOWED: Final[str] = "TEAM_NAME_NOT_ALLOWED"
@@ -155,6 +162,7 @@ UNDOABLE_COMMANDS: Final[frozenset[CommandType]] = frozenset(
         CommandType.TIMEOUT_CORRECT,
         CommandType.SET_TIMEOUTS,
         CommandType.FINALIZE_FIELD_ACTION,
+        CommandType.SET_ASSISTANT_DIRECTION,
     }
 )
 
@@ -400,6 +408,13 @@ def validate_command(command: Command) -> CommandError | None:
                 f"Choose the home team, the away team, or clear possession; got {command.team!r}.",
             )
 
+    if command.type is CommandType.SET_ASSISTANT_DIRECTION:
+        if not _is_int(command.value) or command.value not in (1, -1):
+            return CommandError(
+                INVALID_ASSISTANT_DIRECTION,
+                "The first-quarter direction is +1 (HOME scores to the right) or -1 (to the left).",
+            )
+
     if command.type is CommandType.SET_BALL_ON:
         if not _is_int(command.value) or not 0 <= command.value <= MAX_YARD_LINE:
             return CommandError(
@@ -559,6 +574,16 @@ def set_possession(team: str | None, *, source: str = "operator") -> Command:
     return Command(CommandType.SET_POSSESSION, team=team, source=source)
 
 
+def set_assistant_direction(direction: int, *, source: str = "operator") -> Command:
+    """Set (or swap) which end zone HOME scores in during the 1st quarter.
+
+    ``+1`` means the RIGHT end zone on the assistant's drawing, ``-1`` the
+    LEFT. Its own undoable history entry (PL-7); it moves no yard line.
+    """
+
+    return Command(CommandType.SET_ASSISTANT_DIRECTION, value=direction, source=source)
+
+
 def set_ball_on(team: str, yard_line: int, *, source: str = "operator") -> Command:
     """Set field position: ``yard_line`` yards from ``team``'s own goal line."""
 
@@ -628,6 +653,7 @@ def finalize_field_action(
 
 __all__ = [
     "CONFIRMATION_REQUIRED",
+    "INVALID_ASSISTANT_DIRECTION",
     "INVALID_BALL_ON",
     "INVALID_CLOCK_TIME",
     "INVALID_COMMAND",

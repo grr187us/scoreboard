@@ -1516,6 +1516,50 @@ class CrowdStatusTests(unittest.TestCase):
         self.assertFalse(service.status_clock.running)
 
 
+class AssistantDirectionCommandTests(unittest.TestCase):
+    """PL-7: set_assistant_direction is its own undoable history entry."""
+
+    def setUp(self) -> None:
+        self.service = ScoreboardService(monotonic_clock=FakeMonotonic())
+
+    def test_it_sets_and_swaps_the_direction_and_moves_no_yard_line(self) -> None:
+        self.service.submit(cmd.set_quarter("2nd", confirmed=True))
+        self.service.submit(cmd.set_down(2))
+        self.service.submit(cmd.set_distance(7))
+        self.service.submit(cmd.set_ball_on("away", 33))
+        before = self.service.state
+        result = self.service.submit(cmd.set_assistant_direction(1))
+        self.assertTrue(result.accepted, result.error)
+        self.assertEqual(self.service.state.assistant_first_quarter_home_direction, 1)
+
+        swapped = self.service.submit(cmd.set_assistant_direction(-1))
+        self.assertTrue(swapped.accepted, swapped.error)
+        after = self.service.state
+        self.assertEqual(after.assistant_first_quarter_home_direction, -1)
+        self.assertEqual(after.revision, before.revision + 2)
+        self.assertEqual(
+            (after.ball_on, after.down, after.distance, after.assistant_line_to_gain, after.quarter),
+            (before.ball_on, before.down, before.distance, before.assistant_line_to_gain, before.quarter),
+        )
+        self.assertEqual(swapped.event.field, "assistant_first_quarter_home_direction")
+        self.assertEqual((swapped.event.old_value, swapped.event.new_value), (1, -1))
+
+    def test_undo_restores_the_previous_direction_as_one_action(self) -> None:
+        self.service.submit(cmd.set_assistant_direction(1))
+        self.service.submit(cmd.set_assistant_direction(-1))
+        undone = self.service.submit(cmd.undo())
+        self.assertTrue(undone.accepted, undone.error)
+        self.assertEqual(self.service.state.assistant_first_quarter_home_direction, 1)
+        self.assertIn(cmd.CommandType.SET_ASSISTANT_DIRECTION, cmd.UNDOABLE_COMMANDS)
+
+    def test_only_plus_or_minus_one_is_accepted(self) -> None:
+        for bad in (0, 2, -2, None, True):
+            with self.subTest(value=bad):
+                result = self.service.submit(cmd.Command(cmd.CommandType.SET_ASSISTANT_DIRECTION, value=bad))
+                self.assertFalse(result.accepted)
+                self.assertEqual(result.error.code, cmd.INVALID_ASSISTANT_DIRECTION)
+
+
 class FieldAssistantCompositeCommandTests(unittest.TestCase):
     def _service_in_first(self):
         fake = FakeMonotonic()

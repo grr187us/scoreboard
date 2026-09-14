@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 4 tickets open, 4 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 3 tickets open, 5 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -248,7 +248,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-7 — Swap which direction each team drives (issue 7)
 
-**Priority:** P2 · **Status:** open · **Type:** feature
+**Priority:** P2 · **Status:** resolved (September 14, 2026) · **Type:** feature
 
 **Symptom:** If the direction was picked wrong at kickoff there is no way to correct it for the rest of the game.
 
@@ -272,6 +272,8 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - Direction can be swapped at any time from the assistant.
 - The swap is in the action history and undoable.
 - Nothing about the ball, line to gain, down, or distance changes when swapping.
+
+**Resolution (September 14, 2026):** New command `set_assistant_direction` (`domain/commands.py`: `CommandType.SET_ASSISTANT_DIRECTION`, value `+1`/`-1` validated as `INVALID_ASSISTANT_DIRECTION`, in `UNDOABLE_COMMANDS`; handler `_handle_set_assistant_direction` in `service.py` changes only `assistant_first_quarter_home_direction` with an ordinary single-field `UndoEntry`). The bridge airlock accepts `{"value": ±1}` or `{"swap": true}`; `_resolve_swap` flips the saved direction under the command lock and refuses with a sentence when none is saved yet. `FieldAssistantBridge.set_assistant_direction(args, expected_revision)` is the assistant's one named extra entry (tagged `field-assistant`, now an accepted airlock source); the bridge still has no generic command endpoint. The assistant shows **⇄ Swap sides** under the field once a direction is saved, with a press-again confirm (5 s arm); the direction buttons' early return is gone, so pressing the other side after the save is the same armed swap. The operator Field drawer has a **Swap sides** button with a local confirm. The LAST strip reads "Sides: HOME scores to the right → left in the 1st". Ball spot, line to gain, down, and distance are absolute and untouched; the assistant's existing mirror path redraws the same spot on the other side. Verified: `tests/unit/test_field_assistant.py` (the flip mirrors `home_goal_side` in PRE and every quarter with no rules-direction change), `tests/unit/test_commands.py::AssistantDirectionCommandTests` (set, swap, nothing else moves, undo, ±1 only), `tests/integration/test_bridge.py::AssistantDirectionBridgeTests` (swap resolution, refusal before a save, history row and source, stale check, LAST label), `SwapSidesRehearsalTests` (2nd-quarter swap keeps ball/line-to-gain/down/distance, next play still calculates, undo), page contracts for both windows, full suite 1325/0/0 with 3 A-1 skips, and a real pywebview run (`.scratch/post-live-fixes/realrun_pl7.py`, 26/26) with both windows open: 2nd-quarter swap from the assistant (arm, then send), labels mirrored, ball still HOME 30 drawn on the other side, line to gain 35 mirrored, Undo from the operator window reversed it, and the Field drawer swap was picked up by the assistant without a reload (PL-2). Screenshots: `.scratch/post-live-fixes/evidence/pl7-0{1,2,3}-*.png`.
 
 ---
 

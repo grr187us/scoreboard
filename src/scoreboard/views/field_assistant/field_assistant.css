@@ -8,6 +8,8 @@ main { flex:1 1 auto; }
 .topbar span { font-variant-numeric:tabular-nums; color:var(--ink-dim); }
 .notice,.conflict { margin:0; padding:7px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:18px; }
 .notice:empty { display:none; }
+.swap-sides { min-height:36px; padding:0 10px; }
+.swap-sides[aria-pressed="true"] { border-color:#e0a323; color:#fff3d6; background:#4a3712; font-weight:700; }
 /* Conflict toast: shown for a few seconds only when Python refused a Confirm
    that raced a control-panel change. There is no persistent stale banner. */
 .conflict { color:#fff3d6; border-color:#e0a323; background:#4a3712; font-weight:700; }

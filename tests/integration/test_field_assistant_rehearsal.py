@@ -246,6 +246,32 @@ class LiveSyncRehearsalTests(FieldAssistantRehearsalCase):
         self.assertEqual(retried["view"]["teams"]["away"]["score"], 3)
 
 
+class SwapSidesRehearsalTests(FieldAssistantRehearsalCase):
+    """PL-7: a mid-game swap mirrors the labels and leaves the field alone."""
+
+    def test_a_second_quarter_swap_keeps_the_ball_line_to_gain_down_and_distance(self) -> None:
+        self.start_home_series(25)
+        self.finalize("normal_play", {"final_absolute": 31})
+        self.send("set_quarter", {"label": "2nd", "confirmed": True})
+        before = self.bridge.get_snapshot()
+        self.assertEqual(before["assistant"]["home_goal_side"], "right")
+
+        swapped = self.send("set_assistant_direction", {"swap": True})
+
+        after = swapped["view"]
+        self.assertEqual(after["assistant"]["first_quarter_home_direction"], -1)
+        self.assertEqual(after["assistant"]["home_goal_side"], "left")
+        self.assertEqual(after["assistant"]["ball_absolute"], before["assistant"]["ball_absolute"])
+        self.assertEqual(after["assistant"]["line_to_gain"], before["assistant"]["line_to_gain"])
+        self.assertEqual(self.football(after), self.football(before))
+        # The next play still calculates from the same absolute spot.
+        played = self.finalize("normal_play", {"final_absolute": 36})
+        self.assertEqual(self.football(played["view"])["down_distance_display"], "1st & 10")
+        self.assertEqual(played["view"]["assistant"]["ball_absolute"], 36)
+        undone = self.send("undo")
+        self.assertEqual(undone["view"]["assistant"]["ball_absolute"], 31)
+
+
 class MultiQuarterRehearsalTests(FieldAssistantRehearsalCase):
     """FA-28: one compact offline sequence across the supported workflows."""
 

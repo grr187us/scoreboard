@@ -486,6 +486,10 @@
     } else if (button.dataset.value !== undefined) {
       args.value = Number(button.dataset.value);
     }
+    if (button.dataset.swap === 'true') {
+      // PL-7: Swap sides sends no direction; Python flips the saved one.
+      args.swap = true;
+    }
     if (button.dataset.nudge !== undefined) {
       // A one-tap +/- correction (PL-3). Only the step travels; Python reads
       // the current down / distance / ball spot and does the arithmetic.

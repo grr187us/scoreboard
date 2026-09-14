@@ -1446,6 +1446,35 @@ class ScoreboardService:
             ),
         )
 
+    def _handle_set_assistant_direction(
+        self, command: Command, now: float
+    ) -> _Transition | CommandError:
+        """PL-7: flip which end zone HOME scores in, as its own history row.
+
+        Ball spot, line to gain, down, and distance are absolute yard lines
+        (0 = HOME goal line), so nothing but the persisted direction changes;
+        the assistant's drawing mirrors on the next push.
+        """
+
+        old_value = self._state.assistant_first_quarter_home_direction
+        new_value = int(command.value)
+        return _Transition(
+            changes={"assistant_first_quarter_home_direction": new_value},
+            event=EventIntent(
+                command=command.type,
+                field="assistant_first_quarter_home_direction",
+                old_value=old_value,
+                new_value=new_value,
+                source=command.source,
+            ),
+            undo=UndoEntry(
+                command=command.type,
+                field="assistant_first_quarter_home_direction",
+                old_value=old_value,
+                new_value=new_value,
+            ),
+        )
+
     def _handle_set_ball_on(self, command: Command, now: float) -> _Transition | CommandError:
         old_spot = self._state.ball_on
         new_spot = BallSpot(team=str(command.team), yard_line=int(command.value))
@@ -1641,6 +1670,7 @@ class ScoreboardService:
         CommandType.SET_DISTANCE: _handle_set_distance,
         CommandType.SET_POSSESSION: _handle_set_possession,
         CommandType.SET_BALL_ON: _handle_set_ball_on,
+        CommandType.SET_ASSISTANT_DIRECTION: _handle_set_assistant_direction,
         CommandType.TIMEOUT_USED: _handle_timeout_used,
         CommandType.TIMEOUT_CORRECT: _handle_timeout_correct,
         CommandType.SET_TIMEOUTS: _handle_set_timeouts,

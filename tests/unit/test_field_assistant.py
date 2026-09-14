@@ -72,6 +72,16 @@ class FieldAssistantRuleTests(unittest.TestCase):
         with self.assertRaises(FieldAssistantValidationError):
             direction_for(1, "OT", "home")
 
+    def test_pl7_flipping_the_direction_mirrors_home_goal_side_in_every_quarter(self) -> None:
+        # Swapping sides at any point of the game mirrors the drawing in every
+        # quarter (PRE included) and changes no rules direction.
+        mirror = {"left": "right", "right": "left"}
+        for quarter in ("PRE", "1st", "2nd", "3rd", "4th"):
+            with self.subTest(quarter=quarter):
+                self.assertEqual(home_goal_side(-1, quarter), mirror[home_goal_side(1, quarter)])
+                self.assertEqual(direction_for(1, quarter, "home"), direction_for(-1, quarter, "home"))
+                self.assertEqual(direction_for(1, quarter, "away"), direction_for(-1, quarter, "away"))
+
     def test_fa_03_series_start_sets_ten_or_goal_to_go(self) -> None:
         direction = SeriesState(1, None)
         for spot, expected_line, expected_distance in ((50, 60, 10), (25, 35, 10), (90, 100, 0), (95, 100, 0)):

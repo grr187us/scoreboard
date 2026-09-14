@@ -115,6 +115,19 @@ class FieldAssistantDraftOwnershipTests(unittest.TestCase):
         self.assertIn("ballTouched = false;", resync)
         self.assertIn("Discard draft &amp; reload", self.html)
 
+    def test_sides_can_be_swapped_after_the_direction_is_saved(self) -> None:
+        # PL-7: the early return that froze the direction buttons is gone; a
+        # different side after the save is a swap, with a press-again confirm,
+        # and the Swap sides button under the field does the same.
+        self.assertNotIn("if (establishedDirection() !== null) return; // saved for this game already", self.source)
+        self.assertIn('id="swap-sides"', self.html)
+        self.assertIn("api.set_assistant_direction(request, baseRevision)", self.source)
+        self.assertIn("requestDirectionChange({ swap: true })", self.source)
+        self.assertIn("requestDirectionChange({ value: wanted })", self.source)
+        self.assertIn("swapButton.hidden = establishedDirection() === null;", self.source)
+        # The page derives no direction of its own for the swap.
+        self.assertNotIn("-establishedDirection()", self.source)
+
     def test_a_refused_race_is_a_toast_and_one_more_confirm(self) -> None:
         self.assertIn('id="conflict"', self.html)
         self.assertIn("if (isStale(result)) { showConflict(); preview(); }", self.source)

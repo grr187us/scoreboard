@@ -120,6 +120,9 @@ from scoreboard.presentation.layout import (
 #: The two local input adapters share every command and retain their source.
 OPERATOR_MOUSE_SOURCE: Final[str] = "operator-mouse"
 OPERATOR_KEYBOARD_SOURCE: Final[str] = "operator-keyboard"
+#: PL-7: the Field Assistant's own direction command carries its window's
+#: name, the way finalize_field_action always has.
+FIELD_ASSISTANT_SOURCE: Final[str] = "field-assistant"
 
 #: Returned when JavaScript asks for something that is not a command at all.
 #: This never reaches the service: an unknown name is not a game event.
@@ -168,6 +171,7 @@ _ALLOWED_ARGUMENTS: Final[dict[CommandType, frozenset[str]]] = {
     CommandType.SET_DISTANCE: frozenset({"value"}),
     CommandType.SET_POSSESSION: frozenset({"team"}),
     CommandType.SET_BALL_ON: frozenset({"team", "value"}),
+    CommandType.SET_ASSISTANT_DIRECTION: frozenset({"value"}),
     CommandType.TIMEOUT_USED: frozenset({"team"}),
     CommandType.TIMEOUT_CORRECT: frozenset({"team", "points"}),
     CommandType.SET_TIMEOUTS: frozenset({"team", "value"}),
@@ -336,7 +340,7 @@ def build_command(
 
     allowed = _ALLOWED_ARGUMENTS[command_type]
     source = args.get("source", source)
-    if source not in (OPERATOR_MOUSE_SOURCE, OPERATOR_KEYBOARD_SOURCE):
+    if source not in (OPERATOR_MOUSE_SOURCE, OPERATOR_KEYBOARD_SOURCE, FIELD_ASSISTANT_SOURCE):
         return CommandError(INVALID_ARGUMENTS, "Unknown operator input source.")
     supplied = {key: value for key, value in args.items() if key not in ("confirmed", "source")}
     unexpected = set(supplied) - allowed
@@ -525,6 +529,20 @@ def _last_action_view(entry: UndoEntry | None) -> dict[str, Any] | None:
             "old_value": entry.old_value,
             "new_value": entry.new_value,
             "label": _field_assistant_label(entry),
+        }
+    if entry.field == "assistant_first_quarter_home_direction":
+        # PL-7: read as the operator sees it on the assistant's drawing.
+        side = {1: "right", -1: "left"}
+        return {
+            "command": entry.command.value,
+            "team": entry.team,
+            "field": entry.field,
+            "old_value": entry.old_value,
+            "new_value": entry.new_value,
+            "label": (
+                "Sides: HOME scores to the "
+                f"{side.get(entry.old_value, 'unset')} → {side.get(entry.new_value, 'unset')} in the 1st"
+            ),
         }
     if entry.field.endswith("_score"):
         subject = f"{(entry.team or '').upper()} score"
@@ -976,8 +994,10 @@ class FieldAssistantBridge:
 
     It has no generic ``command`` endpoint.  A draft can only ask Python to
     preview one raw FieldAction or to submit that same action through the one
-    composite command.  Closing this bridge/window therefore has no path to
-    the game engine; reopening simply reads a fresh complete snapshot.
+    composite command -- plus, since PL-7, the single named direction
+    command (:meth:`set_assistant_direction`).  Closing this bridge/window
+    therefore has no path to the game engine; reopening simply reads a fresh
+    complete snapshot.
     """
 
     def __init__(self, operator: "ScoreboardBridge") -> None:
@@ -993,6 +1013,27 @@ class FieldAssistantBridge:
         self, action: Any, expected_revision: Any = None
     ) -> dict[str, Any]:
         return self._operator.finalize_field_action(action, expected_revision)
+
+    def set_assistant_direction(
+        self, args: Any, expected_revision: Any = None
+    ) -> dict[str, Any]:
+        """PL-7: the one ordinary command the assistant may send.
+
+        ``args`` is ``{"value": +1 | -1}`` (a direction button) or
+        ``{"swap": true}`` (the Swap sides button; Python flips the saved
+        direction). It goes through the operator bridge's airlock like any
+        control, tagged with the ``field-assistant`` source, so it is one
+        undoable history row and nothing else on this bridge changes.
+        """
+
+        if not isinstance(args, dict):
+            return self._operator._result_payload(
+                accepted=False,
+                error=CommandError(INVALID_ARGUMENTS, "set_assistant_direction needs an object."),
+            )
+        tagged = dict(args)
+        tagged["source"] = FIELD_ASSISTANT_SOURCE
+        return self._operator.command("set_assistant_direction", tagged, expected_revision)
 
 
 def _open_in_explorer(folder: Path) -> None:
@@ -1097,6 +1138,10 @@ class ScoreboardBridge:
 
         accepted_view: dict[str, Any] | None = None
         with self._lock:
+            if isinstance(args, dict) and name == "set_assistant_direction" and args.get("swap") is True:
+                # PL-7: "Swap sides" sends no direction of its own; Python
+                # flips the saved one so the page never derives it.
+                args = self._resolve_swap(args)
             if isinstance(args, dict) and "nudge" in args:
                 # A one-tap +/- control (PL-3). The step is turned into the
                 # explicit value the existing command already takes, from the
@@ -1139,6 +1184,21 @@ class ScoreboardBridge:
         if accepted_view is not None and self._on_accepted is not None:
             self._on_accepted(accepted_view)
         return payload
+
+    def _resolve_swap(self, args: dict[str, Any]) -> dict[str, Any] | CommandError:
+        """Translate ``{"swap": True}`` into the opposite of the saved direction."""
+
+        rest = {key: value for key, value in args.items() if key != "swap"}
+        if any(key not in ("source", "confirmed") for key in rest):
+            return CommandError(INVALID_ARGUMENTS, "set_assistant_direction takes either swap or a value, not both.")
+        current = self._service.state.assistant_first_quarter_home_direction
+        if current is None:
+            return CommandError(
+                INVALID_ARGUMENTS,
+                "No direction is saved yet; pick which end zone HOME scores in on the Field Assistant first.",
+            )
+        rest["value"] = -int(current)
+        return rest
 
     def _resolve_nudge(self, name: Any, args: dict[str, Any]) -> dict[str, Any] | CommandError:
         """Translate ``{"nudge": step}`` into the command's explicit arguments.
@@ -1928,6 +1988,7 @@ __all__ = [
     "INVALID_ARGUMENTS",
     "OPERATOR_MOUSE_SOURCE",
     "OPERATOR_KEYBOARD_SOURCE",
+    "FIELD_ASSISTANT_SOURCE",
     "UNKNOWN_COMMAND",
     "DisplayLink",
     "DisplayStatus",

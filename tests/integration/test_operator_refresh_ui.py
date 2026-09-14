@@ -321,6 +321,14 @@ class OperatorRefreshUiTests(unittest.TestCase):
         self.assertIn("min-height: 44px", rule)
         self.assertIn(".drawer button.nudge", self.css)
 
+    # --- PL-7: swap sides from the Field drawer ------------------------------
+
+    def test_the_field_drawer_can_swap_sides_with_a_local_confirm(self) -> None:
+        drawer = self.html.split('id="field-drawer"', 1)[1].split('<div class="row end">', 1)[0]
+        self.assertEqual(drawer.count('data-command="set_assistant_direction"'), 1)
+        self.assertRegex(drawer, r'data-command="set_assistant_direction" data-swap="true" data-confirm="local"')
+        self.assertIn("args.swap = true;", self.js)
+
     # --- PL-5: end-of-4th prompt --------------------------------------------
 
     def test_the_period_prompt_offers_exactly_final_overtime_and_keep(self) -> None:

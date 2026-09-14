@@ -66,6 +66,7 @@ COMMAND_PAYLOADS: dict[str, dict] = {
     "set_distance": {"value": 8},
     "set_possession": {"team": "home"},
     "set_ball_on": {"team": "away", "value": 35},
+    "set_assistant_direction": {"value": 1},
     "timeout_used": {"team": "home"},
     "timeout_correct": {"team": "home", "points": -1},
     "set_timeouts": {"team": "away", "value": 1},
@@ -261,6 +262,43 @@ class FieldAssistantBridgeTests(BridgeTestCase):
                 "offense_direction": 1,
             },
         )
+
+
+class AssistantDirectionBridgeTests(BridgeTestCase):
+    """PL-7: Swap sides from either window is one ordinary history row."""
+
+    def test_swap_flips_the_saved_direction_and_is_refused_before_one_exists(self) -> None:
+        refused = self.send("set_assistant_direction", {"swap": True})
+        self.assertFalse(refused["accepted"])
+        self.assertIn("No direction is saved yet", refused["error"]["message"])
+
+        self.send("set_assistant_direction", {"value": 1})
+        swapped = self.send("set_assistant_direction", {"swap": True})
+        self.assertTrue(swapped["accepted"], swapped["error"])
+        self.assertEqual(swapped["view"]["assistant"]["first_quarter_home_direction"], -1)
+        rows = read_action_history(self.paths.database)
+        self.assertEqual(rows[-1]["command"], "set_assistant_direction")
+        self.assertEqual(decode(rows[-1]["new_value"]), -1)
+        self.assertEqual(swapped["view"]["last_action"]["label"], "Sides: HOME scores to the right → left in the 1st")
+        undone = self.send("undo")
+        self.assertEqual(undone["view"]["assistant"]["first_quarter_home_direction"], 1)
+
+    def test_the_assistant_bridge_sends_it_with_its_own_source(self) -> None:
+        self.send("set_quarter", {"label": "1st", "confirmed": True})
+        assistant = FieldAssistantBridge(self.bridge)
+        base = self.service.revision
+        result = assistant.set_assistant_direction({"value": -1}, base)
+        self.assertTrue(result["accepted"], result["error"])
+        rows = read_action_history(self.paths.database)
+        self.assertEqual((rows[-1]["command"], rows[-1]["source"]), ("set_assistant_direction", "field-assistant"))
+        # Both windows mirror on the next push; the stale check still holds.
+        self.assertEqual(result["view"]["assistant"]["home_goal_side"], "right")
+        stale = assistant.set_assistant_direction({"swap": True}, base)
+        self.assertFalse(stale["accepted"])
+        self.assertEqual(stale["error"]["code"], "STALE_REVISION")
+        for bad in ("no", {"value": 1, "swap": True}, {"value": 2}):
+            with self.subTest(bad=bad):
+                self.assertFalse(assistant.set_assistant_direction(bad, self.service.revision)["accepted"])
 
 
 class CommandTranslationTests(unittest.TestCase):

@@ -541,6 +541,15 @@
                 data-arg-source="#ball-on-yard-line" data-arg-name="value">Set</button>
       </div>
 
+      <!-- PL-7: the assistant's direction, swappable from here too. Python
+           flips the saved value (swap: true); nothing about the ball moves. -->
+      <div class="row">
+        <span class="row-label">Sides (Field Assistant)</span>
+        <button type="button" data-command="set_assistant_direction" data-swap="true" data-confirm="local"
+                data-confirm-title="Swap which end zone each team drives toward?"
+                data-confirm-detail="Only the Field Assistant's end-zone labels mirror. The ball, line to gain, down, and distance stay where they are. This is one undoable action.">Swap sides</button>
+      </div>
+
       <div class="row">
         <span class="row-label">HOME timeouts <span class="numeric" data-field="football.timeouts.home">3</span></span>
         <button type="button" data-command="timeout_used" data-team="home">Timeout used</button>

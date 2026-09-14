@@ -47,6 +47,10 @@
   // base revision (live sync, September 14, 2026); this only tells render()
   // whether a pending selection needs a fresh preview against the new state.
   var lastRenderedRevision = null, conflictTimer = null;
+  // PL-7: "Swap sides" (and a direction button pressed after the direction
+  // is saved) arms for a few seconds; the second press sends the command.
+  var swapArmTimer = null;
+  var swapButton = document.getElementById('swap-sides');
 
   var field = document.getElementById('field'), ball = document.getElementById('ball');
   var conflict = document.getElementById('conflict'), notice = document.getElementById('notice');
@@ -332,6 +336,7 @@
     lastMirrored = isMirrored();
     updateDraftReadout();
     updatePanels();
+    swapButton.hidden = establishedDirection() === null;
     // Something changed elsewhere while a press is pending: re-ask Python so
     // the Confirm label describes the new state. Confirm stays enabled with
     // its previous label until the answer arrives; Python recalculates the
@@ -407,6 +412,37 @@
     scheduleAutoPreview();
   }
 
+  // ---- swap sides (PL-7) ------------------------------------------------
+  function disarmSwap() {
+    if (swapArmTimer !== null) { clearTimeout(swapArmTimer); swapArmTimer = null; }
+    swapButton.setAttribute('aria-pressed', 'false');
+    swapButton.textContent = '⇄ Swap sides';
+  }
+  // First press arms, second press (within 5 s) sends. `request` is
+  // {swap:true} from the Swap button or {value:±1} from a direction button.
+  function requestDirectionChange(request) {
+    if (!api || establishedDirection() === null) return;
+    if (swapArmTimer === null) {
+      swapButton.setAttribute('aria-pressed', 'true');
+      swapButton.textContent = 'PRESS AGAIN TO SWAP';
+      text('notice', 'Swap which end zone each team drives toward? Press again to confirm. The ball, line to gain, down, and distance do not move.');
+      swapArmTimer = setTimeout(function () { disarmSwap(); text('notice', ''); }, 5000);
+      return;
+    }
+    disarmSwap();
+    Promise.resolve(api.set_assistant_direction(request, baseRevision)).then(function (result) {
+      if (result.view) render(result.view);
+      if (!result.accepted) {
+        text('notice', result.error ? result.error.message : 'The scoreboard did not accept that.');
+        if (isStale(result)) showConflict();
+        return;
+      }
+      text('notice', 'Sides swapped: ' + teamName('home') + ' now scores to the ' + (establishedDirection() === 1 ? 'right' : 'left') + ' in the 1st quarter. Undo on the control panel reverses it.');
+      if (selected) preview();
+    }).catch(function (error) { text('notice', 'Swap failed: ' + error); });
+  }
+  swapButton.addEventListener('click', function () { requestDirectionChange({ swap: true }); });
+
   // ---- input wiring -----------------------------------------------------
   field.addEventListener('pointerdown', function (e) { dragging = true; touchBall(); field.setPointerCapture(e.pointerId); setDraftAbsolute(screenToAbsolute(pointerScreenPct(e)), { silent: true }); });
   field.addEventListener('pointermove', function (e) { if (dragging) setDraftAbsolute(screenToAbsolute(pointerScreenPct(e)), { silent: true }); });
@@ -441,7 +477,13 @@
     var button = e.target.closest('button');
     if (!button) return;
     if (button.hasAttribute('data-direction')) {
-      if (establishedDirection() !== null) return; // saved for this game already
+      if (establishedDirection() !== null) {
+        // Saved already (PL-7): the other side is a swap, with the same
+        // press-again confirm; the same side is nothing.
+        var wanted = Number(button.getAttribute('data-direction'));
+        if (wanted !== establishedDirection()) requestDirectionChange({ value: wanted });
+        return;
+      }
       pendingDirection = Number(button.getAttribute('data-direction'));
       lastMirrored = isMirrored();
       placeDraftBall();
