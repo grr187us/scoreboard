@@ -2,7 +2,7 @@
 
 > **Document purpose:** Everything learned from the first official game run on the app (September 2026), turned into ordered, actionable tickets. Each ticket names the file and line where the current behaviour lives, the fix, and the evidence needed before it can be called done. Update `PROJECT_ROADMAP.md` when a ticket's status changes.
 
-**Status:** 2 tickets open, 6 resolved. Owner decisions recorded September 14, 2026.
+**Status:** 1 ticket open (PL-8, blocked on the owner), 7 resolved. Owner decisions recorded September 14, 2026.
 **Last updated:** September 14, 2026
 **Source:** Owner debrief after the first live game. Overall verdict was "pretty good experience"; the items below are what went wrong.
 
@@ -44,7 +44,7 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 
 ## PL-1 — Button box works on every screen (issue 2)
 
-**Priority:** P0 · **Status:** open · **Type:** defect
+**Priority:** P0 · **Status:** resolved in software (September 14, 2026); physical box test still owed · **Type:** defect
 
 **Symptom:** The game clock rocker and play clock buttons only work while the scoreboard control panel is the selected window. With Cutscenes, Field Assistant, or any other screen up, nothing on the box does anything.
 
@@ -80,6 +80,8 @@ Then refresh `dist\Scoreboard-0.1.0.zip` (the September 8 build forgot this once
 - No command fires twice when the operator window is focused.
 - Hook start and stop are logged; a failed registration produces an operator-visible warning, not a silent fallback.
 - Existing keyboard browser suite passes with its binding count deliberately updated, not loosened.
+
+**Resolution (September 14, 2026):** New `src/scoreboard/host/hotkeys.py`: `ButtonBoxHook` runs a daemon thread that calls Win32 `RegisterHotKey` (ctypes, `MOD_NOREPEAT`, VK `0x7E`–`0x85`) for the eight keys of `HOTKEY_TABLE` and a `GetMessageW` loop; each `WM_HOTKEY` dispatches the page's own command through the operator bridge with `source: "button-box"` (a new accepted airlock source, recorded in the history). `WindowHost._start_button_box` starts it in `_operator_loaded` and `_operator_closing` stops it (`PostThreadMessage WM_QUIT`, keys unregistered on the way out); start, stop, and any fallback are logged (`BUTTON_BOX_HOOK_STARTED/STOPPED`, `BUTTON_BOX_FALLBACK`). The bridge copies the hook's status onto every operator view as `button_box`; the health strip shows a red **BOX PARTIAL / BOX OFF** chip and a one-time alert naming the keys another program owns (hidden entirely when every key registered, because the strip has no room at 1093 px). Dedupe: Windows swallows a registered hotkey, so the operator page never sees it; the F15–F22 rows stay in `keyboard.js` deliberately as the focused-window fallback for a key that could not be registered, so the keyboard browser suite's binding count stays 31 and `tests/integration/test_button_box_hook.py` pins that the hook table equals those rows (the single source of the mapping). The Cutscenes window is no longer `on_top`. Multiple OT and PL-8's firmware reconciliation are untouched. Verified: `tests/unit/test_hotkeys.py` (fake `user32`: registration with `MOD_NOREPEAT`, dispatch by id, an owned key reported while the rest work, nothing registered is inactive with a reason, a failing dispatch is logged and the loop continues, stop posts `WM_QUIT` and unregisters), `tests/integration/test_button_box_hook.py` (mapping contract, airlock source, status on the view, host wiring and stop, no `on_top`), full suite 1348/0/0 with 3 A-1 skips, and a real pywebview run (`.scratch/post-live-fixes/realrun_pl1.py`, 48/48) injecting F15–F22 with `keybd_event` while the **Field Assistant**, **Cutscenes**, the **layout editor**, and **Notepad** were the foreground window (each press logged with the focused window's title; 11 presses → 11 `button-box` rows every time), then with the operator window focused: 11 presses → exactly 11 rows, all from the hook and none from the page listener (no double fire); a 1.5 s held F21 is one command; two quick F21 presses leave the clock running (absolute, not a toggle); after `hook.stop()` the keys are unregistered and F21 reaches the page listener again (fallback row `operator-keyboard`); start/stop lines present in the log. **Still owed:** the physical Pro Micro box test (real key events from the flashed firmware, rocker resync at boot) — PL-8 owner action items.
 
 ---
 

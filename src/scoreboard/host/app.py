@@ -60,6 +60,7 @@ from scoreboard.host.bridge import (
     spectator_view_model,
 )
 from scoreboard.host.cutscenes import CutsceneDirector, CutscenesBridge
+from scoreboard.host.hotkeys import BUTTON_BOX_SOURCE, ButtonBoxHook, HookStatus, HotkeyBinding
 from scoreboard.host.layout_bridge import LayoutEditorBridge, PresentationLayouts
 from scoreboard.host.publisher import WindowPublisher
 from scoreboard.host.startup import StartupBridge
@@ -720,8 +721,50 @@ class WindowHost:
         # path, right up until the moment this line ran.
         self._publisher.start()
         self.application.start_refresh()
+        self._start_button_box()
+
+    def _start_button_box(self) -> None:
+        """PL-1: register the box's F15-F22 with Windows so the rocker and the
+        play-clock buttons work whichever window (or program) has focus.
+
+        A key another program owns is reported on the health strip and keeps
+        working through the operator page's own listener while that window
+        is focused; a hook that cannot start at all is a logged, visible
+        warning, never a silent fallback.
+        """
+
+        bridge = self.application.bridge
+        if bridge is None:
+            return
+
+        def dispatch(binding: HotkeyBinding) -> None:
+            bridge.command(
+                binding.command, {**binding.args, "source": BUTTON_BOX_SOURCE}, None
+            )
+
+        def on_status(status: HookStatus) -> None:
+            bridge.set_button_box_status(status.as_dict())
+
+        hook = ButtonBoxHook(
+            dispatch, diagnostics=self.application.diagnostics, on_status=on_status
+        )
+        with self._lock:
+            self._button_box = hook
+        status = hook.start()
+        if status.fallback:
+            self.application.diagnostics.note(
+                "BUTTON_BOX_FALLBACK",
+                registered=list(status.registered),
+                failed=list(status.failed),
+                error=status.error,
+            )
 
     def _operator_closing(self) -> None:
+        hook = getattr(self, "_button_box", None)
+        if hook is not None:
+            # Unregister the keys before anything else closes; the loop exits
+            # on WM_QUIT and unregisters on its way out.
+            hook.stop()
         with self._lock:
             self.status = "SHUTTING DOWN"
             spectator = self.spectator_window
@@ -1129,7 +1172,9 @@ class WindowHost:
             width=520,
             height=640,
             min_size=(420, 520),
-            on_top=True,
+            # PL-1: no longer always-on-top. With the global hook the box
+            # works whichever window is in front, and an always-on-top
+            # Cutscenes window trapped the mouse workflow on game day.
         )
         if window is None:
             return {"message": "The Cutscenes window could not be created."}

@@ -112,7 +112,10 @@ class CutscenesWindowLifecycleTests(CutscenesWindowTestCase):
         self.assertEqual(window.kwargs["url"], view_url("cutscenes"))
         self.assertEqual((window.kwargs["width"], window.kwargs["height"]), (520, 640))
         self.assertEqual(window.kwargs["min_size"], (420, 520))
-        self.assertTrue(window.kwargs["on_top"])
+        # PL-1 (September 14, 2026): no longer always-on-top. The global
+        # button-box hook works whichever window is in front, and an
+        # always-on-top Cutscenes window trapped the mouse workflow on game day.
+        self.assertNotIn("on_top", window.kwargs)
         self.assertIsInstance(window.kwargs["js_api"], CutscenesBridge)
 
     def test_close_and_reopen_are_isolated_and_reopening_sees_a_live_bridge(self) -> None:

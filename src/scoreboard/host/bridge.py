@@ -123,6 +123,8 @@ OPERATOR_KEYBOARD_SOURCE: Final[str] = "operator-keyboard"
 #: PL-7: the Field Assistant's own direction command carries its window's
 #: name, the way finalize_field_action always has.
 FIELD_ASSISTANT_SOURCE: Final[str] = "field-assistant"
+#: PL-1: commands the global button-box hook submits (host/hotkeys.py).
+BUTTON_BOX_SOURCE: Final[str] = "button-box"
 
 #: Returned when JavaScript asks for something that is not a command at all.
 #: This never reaches the service: an unknown name is not a game event.
@@ -340,7 +342,9 @@ def build_command(
 
     allowed = _ALLOWED_ARGUMENTS[command_type]
     source = args.get("source", source)
-    if source not in (OPERATOR_MOUSE_SOURCE, OPERATOR_KEYBOARD_SOURCE, FIELD_ASSISTANT_SOURCE):
+    if source not in (
+        OPERATOR_MOUSE_SOURCE, OPERATOR_KEYBOARD_SOURCE, FIELD_ASSISTANT_SOURCE, BUTTON_BOX_SOURCE,
+    ):
         return CommandError(INVALID_ARGUMENTS, "Unknown operator input source.")
     supplied = {key: value for key, value in args.items() if key not in ("confirmed", "source")}
     unexpected = set(supplied) - allowed
@@ -1949,16 +1953,33 @@ class ScoreboardBridge:
     # --- Internals ----------------------------------------------------------
 
     def _view(self, now: float | None = None) -> dict[str, Any]:
-        return self._with_cutscenes(
-            self._with_identity(
-                operator_view_model(
-                    self._service,
-                    persistence=self._store.status,
-                    display=self._display.status,
-                    now=now,
+        return self._with_button_box(
+            self._with_cutscenes(
+                self._with_identity(
+                    operator_view_model(
+                        self._service,
+                        persistence=self._store.status,
+                        display=self._display.status,
+                        now=now,
+                    )
                 )
             )
         )
+
+    def set_button_box_status(self, status: dict[str, Any] | None) -> None:
+        """PL-1: the host reports what the global hook registered.
+
+        Copied onto every operator view as ``button_box`` so the health strip
+        can show it and a failed registration is an operator-visible warning,
+        never a silent fallback. Not a command: no revision, no history row.
+        """
+
+        with self._lock:
+            self._button_box = None if status is None else dict(status)
+
+    def _with_button_box(self, view: dict[str, Any]) -> dict[str, Any]:
+        view["button_box"] = getattr(self, "_button_box", None)
+        return view
 
     def _result_payload(
         self,
@@ -1997,6 +2018,7 @@ __all__ = [
     "OPERATOR_MOUSE_SOURCE",
     "OPERATOR_KEYBOARD_SOURCE",
     "FIELD_ASSISTANT_SOURCE",
+    "BUTTON_BOX_SOURCE",
     "UNKNOWN_COMMAND",
     "DisplayLink",
     "DisplayStatus",

@@ -19,6 +19,9 @@
   var api = null;
   var model = null;
   var pending = null; // the command a confirmation dialog is waiting on
+  // PL-1: the last button-box warning shown, so it is said once, not on
+  // every push.
+  var buttonBoxWarned = null;
   // PL-5: the period_decision token the operator dismissed with "Keep 4th".
   // The prompt stays down for that expiry only; a restarted clock that runs
   // out again arrives with a new token and shows it afresh.
@@ -62,6 +65,7 @@
     model = next;
     R.bindFields(document, model);
     refreshPeriodDialog();
+    renderButtonBox(model.button_box);
 
     var game = model.clocks.game;
     var play = model.clocks.play;
@@ -618,6 +622,45 @@
   }
 
   /* --- Confirmation dialog --------------------------------------------- */
+
+  /* --- Button box hook (PL-1) ------------------------------------------- */
+
+  /**
+   * Python reports which of the box's keys it registered with Windows. The
+   * chip says so; a key another program owns is a warning shown once, since
+   * that key then works only while this window is focused.
+   */
+  function renderButtonBox(box) {
+    var chip = document.getElementById('chip-button-box');
+    if (!chip) return;
+    if (!box) {
+      R.setText(chip, 'BOX \u2014');
+      chip.classList.remove('bad');
+      chip.hidden = true;
+      return;
+    }
+    var failed = box.failed || [];
+    var label = !box.active ? 'BOX OFF' : failed.length ? 'BOX PARTIAL' : 'BOX ON';
+    R.setText(chip, label);
+    var bad = Boolean(box.fallback) && box.error !== 'not started' && box.error !== 'stopped';
+    chip.classList.toggle('bad', bad);
+    // The strip has no room for good news at 1093px (U-001): the chip shows
+    // only when a key is missing, which is the one thing the operator must
+    // know; "BOX ON" is what the Shortcut Help table already implies.
+    chip.hidden = !bad;
+    var warning = null;
+    if (box.active && failed.length) {
+      warning = 'Button box: ' + failed.join(', ') + ' could not be registered with Windows (another program owns ' +
+        (failed.length === 1 ? 'it' : 'them') + '). ' + (failed.length === 1 ? 'That key works' : 'Those keys work') +
+        ' only while this window is focused.';
+    } else if (!box.active && box.error && box.error !== 'not started' && box.error !== 'stopped') {
+      warning = 'Button box hook is off (' + box.error + '): the box works only while this window is focused.';
+    }
+    if (warning && warning !== buttonBoxWarned) {
+      buttonBoxWarned = warning;
+      showAlert(warning);
+    }
+  }
 
   /* --- End-of-4th prompt (PL-5) ---------------------------------------- */
 
