@@ -2054,13 +2054,17 @@ regression gate proving football's own files and behaviour are untouched. Full w
 [docs/SOCCER.md](docs/SOCCER.md).
 
 **What remains:** the owner has not run a soccer game on the app — no live rehearsal, no
-target-laptop or stadium evidence, no soccer-specific Playwright/browser suite run recorded as
-complete, but a developer-driven whole game on the real `pywebview` runtime passed 61/61 checks
+target-laptop or stadium evidence, but the soccer Playwright/Edge suites (keyboard, U-001 fit at three
+viewports, spectator, editor, GOAL) run green inside the full suite (1880 tests, 0/0/3), and a developer-driven whole game on the real `pywebview` runtime passed 61/61 checks
 (`.scratch/soccer-mode/realrun_soccer.py`, screenshots under `.scratch/soccer-mode/evidence/soccer/`). The GOAL-cutscene replay keys are `1`/`2` as specified; the "Play GOAL automatically" switch lives only in the Cutscenes window (one place is enough for a default-on switch). All eight "Confirm with the AD" rules questions in `docs/SOCCER.md` section 7
 (official clock authority, NC's adoption of the late-substitution clock stop, conference-tournament
 classification, the 5-vs-10-minute overtime figure, the exact half/halftime lengths, the 2026-27
 card-signalling change, and whether the mercy rule re-triggers in overtime) are running on their
 documented default, unconfirmed by the AD or NCHSAA.
+Package rebuilt on September 15, 2026 (`tools/build_package.py`, 808 files, verified) and
+`dist\Scoreboard-0.1.0.zip` refreshed; the frozen exe launched with `--sport soccer` registers only
+F21/F22 and writes only under `<data>\soccer\` (plus empty root `cutscenes\`/`logs\` folders from the
+shared root paths).
 
 ### Control screen UI pass — September 14, 2026 (implemented, untested by the owner)
 
