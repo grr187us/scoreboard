@@ -91,6 +91,15 @@ Phase 2 uses one Python application process as the authority for state, rules, c
 | Field Assistant | `views/field_assistant/` | 1180×720, minimum 1024×600 |
 | Presentation layout editor | `views/layout/` | 1220×780, minimum 980×620 |
 
+**Soccer mode** (`feature/soccer-mode`, implemented, not yet owner-tested) adds a second sport
+beside football rather than replacing it. A bare launch shows a small sport picker first
+(`views/sport_picker/`, 520×360); choosing Soccer opens `views/soccer_startup/`,
+`views/soccer_operator/`, `views/soccer_spectator/`, `views/soccer_field_assistant/`, and
+`views/soccer_cutscenes/` at the same sizes as their football counterparts above, plus its own
+`views/soccer_layout/` editor. See [docs/SOCCER.md](docs/SOCCER.md) for the full operator and
+maintainer guide, and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) "Sport profiles and soccer
+modules" for the seam that keeps football's own files untouched.
+
 The spectator windows are read-only. The Field Assistant first calls `preview_field_action` to show a proposed down, distance, spot, and score outcome, and commits it only through `finalize_field_action` against an expected state revision — one command, one history row, one snapshot, undone as one action. The layout editor changes presentation only: it advances no state revision, submits no command, and writes no action-history row. OBS remains an optional future read-only presentation consumer, never the owner of game state.
 
 See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/PROJECT_STRUCTURE.md) for the decision and boundaries.
@@ -112,6 +121,7 @@ See [Architecture](docs/ARCHITECTURE.md) and [Proposed project structure](docs/P
 | `docs/DISPLAY_CHECKLIST.md` | The manual two-display and stadium checks that Task 10 still owes |
 | `docs/CURRENT_PROJECT_AUDIT_2026-09-06.md` | Current implementation/document deviations, release blockers, and safe local cleanup candidates |
 | `docs/FIELD_ASSISTANT_RULES_AND_WORKFLOW.md` | The Field Assistant's football rules, operator workflow, and the FA-01 to FA-31 requirement matrix |
+| `docs/SOCCER.md` | Soccer mode: launching it, its operator screen, keyboard, Setup drawer rules, spectator board, GOAL cutscene, and Field Assistant (implemented, not yet owner-tested) |
 | `docs/agents/` | Conventions the engineering skills follow in this repo: the `.scratch/` issue tracker, triage labels, and domain docs |
 | `docs/evidence/` | Captured measurements and screenshots, each claimed by a roadmap entry |
 | `docs/PHASE_2_TASK_1_RUNTIME_PROOF.md` | Environment setup, dependency pins, and the original multi-window proof |

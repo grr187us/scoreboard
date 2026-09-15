@@ -195,7 +195,8 @@ def describe_assist_preview(
         current = _team_stat(snapshot, team, stat)
         resulting_value = None if current is None else max(0, current + step)
         stat_word = _STAT_DISPLAY.get(stat, str(stat).upper())
-        resulting = f"{team_label} {stat_word}" + (f" #{resulting_value}" if resulting_value is not None else "")
+        # The count, never "#": a hash reads as a player number on this window.
+        resulting = f"{team_label} {stat_word}" + (f" {resulting_value}" if resulting_value is not None else "")
         return {"label": f"CONFIRM → {resulting}", "resulting": resulting}
 
     if kind == "card":

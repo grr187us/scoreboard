@@ -158,7 +158,7 @@ async function main(data) {
     assert.deepEqual(calls,[['undo',{source:'operator-keyboard',confirmed:true},undoRevision]]);
     assert.equal(results[0].accepted,true);
 
-    // 1 / Shift+1: replay the GOAL cutscene; a host action, no Command.
+    // 1 / 2: replay the GOAL cutscene; a host action, no Command.
     await reset();
     const hostCalls = [];
     await page.exposeFunction('testHostSeen', (...args) => hostCalls.push(args));
@@ -170,7 +170,7 @@ async function main(data) {
     await page.waitForFunction(()=>window.__hostSeenLen !== 0).catch(()=>{});
     await new Promise(resolve=>setTimeout(resolve,50));
     assert.deepEqual(hostCalls[0],['goal','home']);
-    await page.keyboard.press('Shift+1');
+    await page.keyboard.press('2');
     await new Promise(resolve=>setTimeout(resolve,50));
     assert.deepEqual(hostCalls[1],['goal','away']);
 

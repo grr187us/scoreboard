@@ -14,3 +14,10 @@ Two rules hold the design together and should be checked in review:
 
 - the service is the only component that advances a state revision, and nothing outside `domain/` re-implements clock arithmetic;
 - every displayed clock string is produced in Python by `domain/formatting.py`, so the operator readout, the spectator board, and the persisted checkpoint cannot disagree about what is on the board.
+
+Soccer mode (September 15, 2026, `feature/soccer-mode`) adds a second sport as a parallel module
+set beside football's, one `soccer_`-prefixed or `domain/soccer/`-style file per football
+counterpart, rather than a branch inside any file above. `host/app.py`'s `SportProfile` is the one
+seam that lets `WindowHost` open either sport's views/bridges/hotkey table; every football file
+listed in `docs/ARCHITECTURE.md`'s frozen list stays byte-identical. See
+`../../docs/SOCCER.md` and `../../docs/ARCHITECTURE.md` "Sport profiles and soccer modules".

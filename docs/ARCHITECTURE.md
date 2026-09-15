@@ -324,6 +324,88 @@ Startup recovery uses a separate `StartupBridge` with report/resume/new methods.
 
 This is an in-process transport, not a claim that multi-operator networking exists. A future transport implements the same command/snapshot contracts.
 
+## 8a. Sport profiles and soccer modules (added September 15, 2026)
+
+Soccer mode (`feature/soccer-mode`, spec `.scratch/soccer-mode/spec.md`) adds a second sport beside
+football in the same process, without touching football's own authoritative core. The full
+operator- and maintainer-facing write-up is [docs/SOCCER.md](SOCCER.md); this section records the
+architectural seam and boundary decisions, which apply to this document's ADR the same way every
+other addition here does.
+
+**`SportProfile`, the one branch point.** `host/app.py` gained a `SportProfile` `NamedTuple`
+(`sport`, `operator_view`, `startup_view`, `spectator_view`, `field_assistant_view`,
+`cutscenes_view`, `field_assistant_bridge`, `cutscenes_bridge`, `hotkey_table`, `layout_view`) and a
+`profile` attribute on `ScoreboardApplication`, defaulted to `FOOTBALL_PROFILE` — every attribute is
+today's exact literal, so football's behaviour is unchanged. `WindowHost` reads `profile.*` wherever
+it used to read a hardcoded view name or `HOTKEY_TABLE`. `SoccerApplication` (`host/soccer_app.py`)
+carries its own `SOCCER_PROFILE` with soccer's view names, `SoccerFieldAssistantBridge`,
+`SoccerCutscenesBridge`, and `SOCCER_HOTKEY_TABLE`. This is the *only* place either application's
+code branches on which sport it is; every other soccer capability is a new, parallel module, never a
+branch inside a football file.
+
+**The parallel-module rule.** Football's own files are frozen — spec section 2.4 names the exact
+list (`domain/state.py`, `domain/commands.py`, `domain/clocks.py`, `domain/rules.py`,
+`domain/formatting.py`, `application/service.py`, `application/snapshots.py`, `host/bridge.py`,
+`host/startup.py`, `host/hotkeys.py`, `host/cutscenes.py`, `host/teams.py`, `host/publisher.py`,
+`host/displays.py`, `presentation/cutscenes.py`, `infrastructure/config.py`,
+`infrastructure/teams.py`, `infrastructure/cutscene_packs.py`, `infrastructure/diagnostics.py`,
+every file under `views/operator/`, `views/field_assistant/`, `views/startup/`, `views/spectator/`
+including its `cutscenes/`, `views/cutscenes/`, `views/layout/`, `views/shared/board.css`,
+`views/shared/base.css`, `views/shared/render.js`, and every existing file under `tests/`) — and are
+checked mechanically at every phase boundary by a SHA-256 hash tool
+(`.scratch/soccer-mode/football_golden/frozen_hashes.py`) plus a 48-step golden football run
+(`golden_run.py`/`diff_golden.py`) replayed through the real `ScoreboardApplication`/
+`ScoreboardBridge` with injected clocks, which must diff byte-identical to a recorded baseline.
+Every soccer capability instead lives in a new module that mirrors its football counterpart's shape
+without importing or editing it: `domain/soccer/{state,commands,clocks,rules,formatting,shootout}.py`,
+`application/{soccer_service,soccer_snapshots,soccer_recovery}.py`,
+`infrastructure/{soccer_store,soccer_cutscene_packs}.py`, `presentation/{soccer_layout,
+soccer_cutscenes}.py`, `host/{soccer_app,soccer_bridge,soccer_hotkeys,soccer_cutscenes,
+soccer_field_assistant,sport_picker}.py`, and the `views/soccer_*` page set. `SoccerCommandType` is
+its own enum (not a shared `CommandType`), so an existing football test that iterates football's
+enum can never accidentally see a soccer member.
+
+**The seams: a short, explicit, additive-only list.** A handful of genuinely shared files were
+allowed to change, but only by adding an optional keyword whose default reproduces today's exact
+football behaviour — never a conditional on sport:
+
+- `infrastructure/paths.py` gained `ScoreboardPaths.for_sport(sport) -> ScoreboardPaths(self.root /
+  sport)`; `teams` stays on the parent (root) paths object so the team library is shared (below).
+- `infrastructure/persistence.py`'s `read_stored_game` and `application/recovery.py`'s
+  `inspect_recovery` gained a `decode=`/`stop_clocks=` keyword each, defaulted to football's own
+  `snapshot_to_state`/`stopped_state`, so soccer's recovery module (`application/soccer_recovery.py`)
+  can pass its own without touching either function's football-facing behaviour.
+- `infrastructure/layouts.py` and `host/layout_bridge.py`'s `PresentationLayouts` gained a
+  `schema=`/`layout_module=` keyword (an object exposing `default_layout`, `validate_layout`,
+  `clamp_layout`, `reset_widget`, and the descriptor functions), defaulted to `None` = football's own
+  `presentation.layout` module. `presentation/soccer_layout.py` supplies its own module satisfying
+  that shape (see `docs/SOCCER.md` section 8), so a soccer session's layout editor draws and saves
+  only soccer widgets, to `<root>/soccer/layouts.json`, and never touches football's registry or
+  file.
+- `views/shared/board.js` gained parallel `SOCCER_*` widget-table literals and a `registryForKind`
+  branch for `'soccer'`, additive beside the existing football literals.
+- `tools/build_package.py`'s `REQUIRED_FILES` gained one entry per new soccer view file so the
+  packaging verification step covers them; no existing entry changed.
+
+**Data layout and per-sport recovery.** Soccer's data lives under `<root>/soccer/` — its own
+`scoreboard.db`, `scoreboard.backup.db`, `scoreboard.lock`, `config.json` (rules/display/
+presentation sections), `layouts.json`, `cutscenes.json`, `cutscenes/`, and `logs/application.log`
+— exactly mirroring football's file set one level down, with one deliberate exception:
+`teams.json` is **not** duplicated. `SoccerApplication.teams` is built from the *root*
+`ScoreboardPaths` object (the same one football uses), not `self.paths` (which is already
+`root.for_sport("soccer")`), so the saved-team library is one shared file for both sports. Because
+each application inspects only its own root for a recoverable game
+(`inspect_recovery(<root>)` vs. `inspect_soccer_recovery(<root>/soccer)`), a football crash is never
+offered to a soccer launch and vice versa, and both sports may hold their respective instance locks
+at the same time — running two instances of the *same* sport concurrently remains refused, exactly
+as today.
+
+**What is explicitly out of scope for this seam.** No shared file gained a runtime `if sport ==`
+branch outside `SportProfile`'s lookups in `host/app.py` and the CLI switch in `__main__.py`.
+Nothing under `domain/`, `application/service.py`, `application/snapshots.py`, or `host/bridge.py`
+was edited. See [docs/SOCCER.md](SOCCER.md) for the operator-facing consequences of this boundary
+(section 3, "Where soccer data lives," and section 11, "What is frozen").
+
 ## 9. Configuration, state, and logs
 
 Use the Windows per-user application data location, resolved through the platform API rather than a repository-relative path. SQLite is the confirmed embedded durable store for recoverable state and action history; no database server is permitted. Proposed logical layout:

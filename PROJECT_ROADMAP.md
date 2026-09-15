@@ -2034,6 +2034,34 @@ change or edit to that operator folder was needed. Transfer ZIP not refreshed.
 selected, then target-laptop and LED-wall rehearsal. No real WebView2 run
 was repeated for this change. Phase 0 HDMI evidence and Task 12 remain open.
 
+### Soccer mode — September 15, 2026 (implemented, untested by the owner)
+
+A second, parallel sport was added beside football on `feature/soccer-mode`, cut from
+`post-live-fixes` at `0f5c93d`. The spec checkpoint (`.scratch/soccer-mode/spec.md`), the rules
+dossier (`.scratch/soccer-mode/rules_research.md`), and the six-agent phase split (domain/
+application, host/startup, operator/Field Assistant views, presentation/cutscenes, docs, plus the
+integrator running football-regression checks throughout) all landed in commit `6e99010`.
+
+**Done:** a sport picker shown on a bare launch (remembers the last sport, never auto-chooses);
+`--sport football`/`--sport soccer` CLI switches, with a bare `--resume`/`--new-game` staying
+exactly football as before; `SoccerApplication`/`SoccerBridge`/`SoccerService` mirroring football's
+own classes; soccer's own `domain/soccer/` state, commands, clocks, rules, and shootout logic;
+soccer's own operator page, keyboard table, and Setup drawer; the Soccer Grid spectator layout plus
+Broadcast bar and Classic presets, with optional stat/card/shootout widgets and clock-hiding on
+FINAL/SHOOTOUT; a team-aware GOAL cutscene; a soccer Field Assistant restricted to shots/saves/
+corners/fouls/cards/shootout-kick logging (never a goal or a clock); and the frozen-file/golden-run
+regression gate proving football's own files and behaviour are untouched. Full write-up:
+[docs/SOCCER.md](docs/SOCCER.md).
+
+**What remains:** the owner has not run a soccer game on the app — no live rehearsal, no
+target-laptop or stadium evidence, no soccer-specific Playwright/browser suite run recorded as
+complete, but a developer-driven whole game on the real `pywebview` runtime passed 61/61 checks
+(`.scratch/soccer-mode/realrun_soccer.py`, screenshots under `.scratch/soccer-mode/evidence/soccer/`). The GOAL-cutscene replay keys are `1`/`2` as specified; the "Play GOAL automatically" switch lives only in the Cutscenes window (one place is enough for a default-on switch). All eight "Confirm with the AD" rules questions in `docs/SOCCER.md` section 7
+(official clock authority, NC's adoption of the late-substitution clock stop, conference-tournament
+classification, the 5-vs-10-minute overtime figure, the exact half/halftime lengths, the 2026-27
+card-signalling change, and whether the mercy rule re-triggers in overtime) are running on their
+documented default, unconfirmed by the AD or NCHSAA.
+
 ### Control screen UI pass — September 14, 2026 (implemented, untested by the owner)
 
 Three owner requests on `post-live-fixes`, after PL-1..PL-7:

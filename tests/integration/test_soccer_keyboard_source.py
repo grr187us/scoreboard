@@ -40,7 +40,7 @@ EXPECTED_KEYS = [
     ("'x'", False, "command"),
     ("'z'", False, "confirm"),  # ctrl+z
     ("'escape'", False, "close"),
-    ("'1'", False, "host"), ("'1'", True, "host"),
+    ("'1'", False, "host"), ("'2'", False, "host"),
     ("'c'", True, "host"),
 ]
 
@@ -137,9 +137,9 @@ class SoccerKeyboardSourceTests(unittest.TestCase):
     def test_goal_cutscene_is_on_the_number_row_not_a_letter(self) -> None:
         # design_draft.md section 3: letters D/F/T/W are already claimed by
         # stat nudges/STOPPAGE-adjacent bindings, so the one built-in
-        # cutscene (spec section 7) moves to 1 / Shift+1.
+        # cutscene (spec sections 4.5 and 7) moves to 1 / 2.
         home = [l for l in self.js.splitlines() if "key: '1'" in l and "shift" not in l][0]
-        away = [l for l in self.js.splitlines() if "key: '1'" in l and "shift: true" in l][0]
+        away = [l for l in self.js.splitlines() if "key: '2'" in l and "shift" not in l][0]
         self.assertIn("host: 'trigger_cutscene'", home)
         self.assertIn("args: ['goal', 'home']", home)
         self.assertIn("args: ['goal', 'away']", away)

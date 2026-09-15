@@ -26,6 +26,7 @@ from typing import Any, Callable, Final
 
 from scoreboard.application.soccer_service import SoccerService
 from scoreboard.domain.soccer.commands import (
+    SoccerCommandType,
     SoccerCommand,
     SoccerCommandError,
     SoccerCommandResult,
@@ -321,22 +322,74 @@ _SOCCER_LAST_ACTION_SUBJECTS: Final[dict[str, str]] = {
 }
 
 
+def _card_text(card: Any) -> str:
+    number = "" if card.player_number is None else f" #{card.player_number}"
+    return f"{card.team.upper()} {card.kind}{number} · {format_period(card.period)} {card.clock_display}"
+
+
+def _kick_text(kick: Any) -> str:
+    number = "" if kick.kicker_number is None else f" #{kick.kicker_number}"
+    return f"{kick.team.upper()}{number} {'made' if kick.made else 'missed'}"
+
+
+def _last_action_label(entry: SoccerUndoEntry) -> str:
+    """The LAST strip / history wording, per spec 3.2's label column."""
+
+    team = (entry.team or "").upper()
+    command = entry.command
+    new_values = entry.new_values or {}
+    old_values = entry.old_values or {}
+    if entry.field == "cards":
+        new_cards = tuple(new_values.get("cards", ()))
+        old_cards = tuple(old_values.get("cards", ()))
+        if len(new_cards) > len(old_cards):
+            return _card_text(new_cards[-1])
+        removed = [card for card in old_cards if card not in new_cards]
+        return "Card removed: " + (_card_text(removed[0]) if removed else f"{team} card")
+    if entry.field == "shootout_kicks":
+        new_kicks = tuple(new_values.get("kicks", new_values.get("shootout_kicks", ())))
+        old_kicks = tuple(old_values.get("kicks", old_values.get("shootout_kicks", ())))
+        if command is SoccerCommandType.SHOOTOUT_KICK and new_kicks:
+            home = sum(1 for kick in new_kicks if kick.team == "home" and kick.made)
+            away = sum(1 for kick in new_kicks if kick.team == "away" and kick.made)
+            return f"Shootout: {_kick_text(new_kicks[-1])} · {home}–{away}"
+        if command is SoccerCommandType.SHOOTOUT_REMOVE_LAST:
+            return "Shootout: last kick removed"
+        if command is SoccerCommandType.SHOOTOUT_CORRECT_KICK:
+            before = "made" if entry.old_value else "missed"
+            after = "made" if entry.new_value else "missed"
+            return f"Shootout kick corrected: {before} → {after}"
+        return f"Shootout kicks {entry.old_value} → {entry.new_value}"
+    if entry.field == "shootout_first_kicker":
+        return f"Shootout: {str(entry.new_value or '').upper()} kicks first"
+    if entry.field.endswith("_score"):
+        if command is SoccerCommandType.ADD_GOAL:
+            return f"{team} goal · {entry.old_value} → {entry.new_value}"
+        if command is SoccerCommandType.CORRECT_GOAL:
+            return f"{team} goal removed · {entry.old_value} → {entry.new_value}"
+        return f"{team} score {entry.old_value} → {entry.new_value}"
+    if entry.field in _SOCCER_LAST_ACTION_SUBJECTS and entry.field != "period":
+        subject = _SOCCER_LAST_ACTION_SUBJECTS[entry.field]
+        if command is SoccerCommandType.ADD_STAT and isinstance(entry.old_value, int) and isinstance(entry.new_value, int):
+            step = entry.new_value - entry.old_value
+            return f"{subject} {'+' if step >= 0 else ''}{step} → {entry.new_value}"
+        return f"{subject} {entry.old_value} → {entry.new_value}"
+    if entry.field == "period":
+        return f"Period {entry.old_value} → {entry.new_value}"
+    subject = entry.field.replace("_", " ").capitalize()
+    return f"{subject} {entry.old_value} → {entry.new_value}"
+
+
 def _last_action_view(entry: SoccerUndoEntry | None) -> dict[str, Any] | None:
     if entry is None:
         return None
-    if entry.field.endswith("_score"):
-        subject = f"{(entry.team or '').upper()} score"
-    elif entry.field in _SOCCER_LAST_ACTION_SUBJECTS:
-        subject = _SOCCER_LAST_ACTION_SUBJECTS[entry.field]
-    else:
-        subject = entry.field.replace("_", " ").capitalize()
     return {
         "command": entry.command.value,
         "team": entry.team,
         "field": entry.field,
         "old_value": entry.old_value,
         "new_value": entry.new_value,
-        "label": f"{subject} {entry.old_value} → {entry.new_value}",
+        "label": _last_action_label(entry),
     }
 
 

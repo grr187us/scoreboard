@@ -1450,3 +1450,55 @@ layout rather than settling by default.
 The row states that the running game keeps saving where it is and that a new
 folder applies at the next start. That sentence is the whole safety story for
 this control and must not be dropped in a redesign.
+
+## 13. Soccer operator differences (added September 15, 2026)
+
+Soccer mode (`feature/soccer-mode`) ships its own operator page
+(`views/soccer_operator/`), not a themed copy of this document's football
+page. Full detail, including every keyboard binding and Setup-drawer row, is
+in [docs/SOCCER.md](SOCCER.md); this section records only what an operator
+who already knows the football page needs to unlearn or relearn, and which
+patterns were copied unchanged on purpose.
+
+### Copied unchanged
+
+- The six-row page shape: two team panels, a centre clock/period panel, a
+  crowd bar, a period/undo bar, and the bottom action row.
+- The arm-then-confirm pattern for a scoring action (SCORE ▸ then GOAL),
+  the drawer set (Teams ▸, Corrections ▸, Setup ▸, Field Assistant,
+  Cutscenes, Shortcut Help, Advanced ▸, Game ▸), the danger-confirmed
+  Game ▸ triad (Reset Game Clock…/End Game…/New Game…), the shared
+  `teams.json` library and soft "not chosen yet" prompt, the
+  eight-second auto-disarm and blur/Escape/drawer/dialog disarm rule for
+  an armed panel, and UNDO…'s confirmed, reversal-naming behaviour.
+- The crowd bar's CLEAR-only-while-raised and countdown-only-while-active
+  show/hide rules from the September 14, 2026 control-screen pass
+  (section 8 above).
+
+### What differs
+
+- **Cards arm a block, not a one-shot button.** YELLOW/RED arm a
+  player-number entry (heading suffix "· CARD") with a CONFIRM button,
+  the same two-step shape scoring uses, rather than applying immediately.
+  There is no automatic second-yellow-to-red escalation; a
+  **2ND YELLOW → RED** shortcut lives in Corrections ▸ instead.
+- **STOP is the stoppage.** There is no play clock and no separate
+  stoppage control the way football's play-clock panel provides one:
+  pressing STOP on the single game clock is the only stoppage action, by
+  the owner's explicit decision against an earlier combined "STOPPAGE"
+  button design.
+- **The shootout panel.** While `period == "SHOOTOUT"`, the centre panel's
+  clock block is replaced in place by a shootout control block (round,
+  next kicker, per-side dot tally, MADE/MISSED buttons, and
+  **FINISH SHOOTOUT…**) rather than appearing as a separate drawer or
+  window.
+- **Crowd vocabulary.** INJURY/DELAY/WEATHER replace football's
+  TIMEOUT/officials wording; WEATHER is the one that starts a countdown
+  (default 30:00, the NCHSAA lightning-delay length).
+- **Stats replace down/distance/ball-on.** The nudge rows under each
+  team's score are SHOTS/SAVES/CORNERS/FOULS `−`/`+` pairs, not the
+  football nudge panel's down/to-go/ball-on controls; there is no
+  possession or field-position concept in soccer mode at all.
+- **A different keyboard table entirely** (`views/soccer_operator/
+  keyboard.js`), not football's `keyboard.js` reused — see
+  [docs/SOCCER.md](SOCCER.md) section 5 for the full binding list.

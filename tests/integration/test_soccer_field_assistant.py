@@ -145,13 +145,13 @@ class DescribeAssistPreviewTests(unittest.TestCase):
     def test_stat_preview_reports_the_resulting_count(self) -> None:
         snapshot = {"soccer": {"home": {"shots": 8}}}
         described = describe_assist_preview(snapshot, "stat", {"team": "home", "stat": "shots", "step": 1})
-        self.assertEqual(described["resulting"], "HOME SHOT #9")
-        self.assertEqual(described["label"], "CONFIRM → HOME SHOT #9")
+        self.assertEqual(described["resulting"], "HOME SHOT 9")
+        self.assertEqual(described["label"], "CONFIRM → HOME SHOT 9")
 
     def test_stat_preview_clamps_a_decrement_at_zero(self) -> None:
         snapshot = {"soccer": {"home": {"shots": 0}}}
         described = describe_assist_preview(snapshot, "stat", {"team": "home", "stat": "shots", "step": -1})
-        self.assertEqual(described["resulting"], "HOME SHOT #0")
+        self.assertEqual(described["resulting"], "HOME SHOT 0")
 
     def test_card_preview_includes_player_number_when_given(self) -> None:
         described = describe_assist_preview({}, "card", {"team": "away", "kind": "yellow", "player": 10})
@@ -254,7 +254,7 @@ class SoccerFieldAssistantBridgeTests(unittest.TestCase):
         before = self.operator.revision
         result = self.bridge.preview_assist({"kind": "stat", "team": "home", "stat": "shots", "step": 1})
         self.assertTrue(result["ok"])
-        self.assertEqual(result["label"], "CONFIRM → HOME SHOT #5")
+        self.assertEqual(result["label"], "CONFIRM → HOME SHOT 5")
         self.assertEqual(self.operator.revision, before)
         self.assertEqual(self.operator.commands, [])
 

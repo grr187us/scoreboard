@@ -54,7 +54,7 @@
     // built-in cutscene (GOAL, spec section 7); the number row keeps the
     // letters above free of a collision (design draft section 3).
     {key: '1', label: '1', action: 'Replay GOAL cutscene (home)', host: 'trigger_cutscene', args: ['goal', 'home']},
-    {key: '1', shift: true, label: 'Shift+1', action: 'Replay GOAL cutscene (away)', host: 'trigger_cutscene', args: ['goal', 'away']},
+    {key: '2', label: '2', action: 'Replay GOAL cutscene (away)', host: 'trigger_cutscene', args: ['goal', 'away']},
     {key: 'c', shift: true, label: 'Shift+C', action: 'Cancel cutscene', host: 'cancel_cutscene'}
   ];
 
