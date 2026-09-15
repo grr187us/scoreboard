@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Soccer Cutscenes</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="soccer_cutscenes.css">
+</head>
+<body>
+  <!--
+    Soccer's own persistent trigger panel, mirroring
+    views/cutscenes/index.html (football; frozen). There is exactly one
+    event so far, GOAL, but -- unlike every football cutscene -- a goal is
+    never nobody's: it is always HOME's or AWAY's, so this window has two
+    trigger buttons for the one event (spec section 7,
+    design_draft.md section 6, owner choice F) instead of football's one
+    button per event.
+
+    The bridge is SoccerCutscenesBridge (get_snapshot/state/trigger(event,
+    team)/cancel/rescan/select_pack/set_auto_trigger/open_folder). There is
+    no `command` here and no CommandType value: triggering and cancelling
+    are host actions, exactly like football's Cutscenes window.
+  -->
+  <header class="topbar">
+    <strong>CUTSCENES</strong>
+    <span id="status" class="status">Ready</span>
+    <button type="button" id="cancel" class="cancel" disabled>CANCEL</button>
+  </header>
+
+  <p id="notice" class="notice" role="status" aria-live="polite"></p>
+
+  <main class="triggers">
+    <button type="button" id="trigger-goal-home" class="trigger trigger-goal trigger-goal-home" data-event="goal" data-team="home">GOAL HOME</button>
+    <button type="button" id="trigger-goal-away" class="trigger trigger-goal trigger-goal-away" data-event="goal" data-team="away">GOAL AWAY</button>
+  </main>
+
+  <label class="auto-row">
+    <input type="checkbox" id="auto-goal" checked>
+    Play GOAL automatically
+  </label>
+
+  <details class="packs" id="packs">
+    <summary>Packs</summary>
+    <label class="pack-row">Goal
+      <select data-pack-for="goal" aria-label="Goal pack"></select>
+    </label>
+    <div class="pack-actions">
+      <button type="button" id="rescan">Rescan</button>
+      <button type="button" id="open-folder">Open folder</button>
+    </div>
+    <ul id="issues" class="issues" hidden></ul>
+  </details>
+
+  <script src="soccer_cutscenes.js"></script>
+</body>
+</html>

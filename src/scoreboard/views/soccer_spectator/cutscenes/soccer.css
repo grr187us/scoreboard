@@ -1,0 +1,219 @@
+/* The `goal` scene -- from soccer.js.
+ *
+ * Same two custom-property contracts as ../cutscene.css:
+ *
+ * - `--stage-w` / `--stage-h` are the stage's size in px, published by
+ *   cutscene.js and re-published on resize. Every length below is a
+ *   fraction of one of them; nothing here is sized from the viewport or a
+ *   bare px.
+ * - `--cs-home-primary` / `--cs-away-primary` (plus the shared `--cs-navy`,
+ *   `--cs-white`, `--cs-gold`, `--cs-ink` names) are the program's theme,
+ *   copied onto the stage by the player. No brand hex is written in this
+ *   file: the scoring side's colour comes from Python
+ *   (`scoreboard.presentation.soccer_cutscenes.build_program`, with the
+ *   fixed navy/red fallback only ever living there, never here).
+ *
+ * `.cs-goal-home`/`.cs-goal-away` (set by soccer.js from `program.team`)
+ * pick which of the two primaries paints the ground and the ripple; nothing
+ * else about the scene differs between the two sides.
+ */
+
+.cs-goal {
+  --cs-goal-color: var(--cs-home-primary, #08439A);
+  background: var(--cs-ink, #030711);
+  contain: paint;
+  overflow: hidden;
+}
+
+.cs-goal.cs-goal-away {
+  --cs-goal-color: var(--cs-away-primary, #A50021);
+}
+
+.cs-goal * {
+  box-sizing: border-box;
+}
+
+.cs-goal-ground {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 120%, color-mix(in srgb, var(--cs-goal-color) 55%, transparent) 0%, transparent 62%),
+    var(--cs-ink, #030711);
+}
+
+.cs-goal-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(0, 0, 0, .55) 100%);
+  pointer-events: none;
+}
+
+/* The net-ripple sweep: a mesh wash plus three expanding rings, all one
+ * forwards-filled one-shot -- it must not hold its 0% state before playback
+ * starts, so `forwards` (never `both`) is the rule this file keeps for
+ * every delayed one-shot animation. */
+.cs-goal-ripple {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 60%;
+  height: 100%;
+  opacity: 0;
+  animation: cs-goal-ripple-in 600ms cubic-bezier(.2, .7, .2, 1) forwards;
+}
+
+.cs-goal-net-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.cs-goal-mesh-line {
+  stroke: color-mix(in srgb, var(--cs-white, #FFFFFF) 30%, transparent);
+  stroke-width: .6;
+}
+
+.cs-goal-mesh-fill {
+  opacity: .35;
+}
+
+.cs-goal-ring {
+  fill: none;
+  stroke: var(--cs-white, #FFFFFF);
+  stroke-width: 1.4;
+  opacity: 0;
+  transform-origin: 20px 45px;
+  animation: cs-goal-ring-expand 900ms ease-out forwards;
+}
+
+.cs-goal-ring-b { animation-delay: 120ms; }
+.cs-goal-ring-c { animation-delay: 240ms; }
+
+@keyframes cs-goal-ripple-in {
+  0% { opacity: 0; transform: translateX(-8%); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(4%); }
+}
+
+@keyframes cs-goal-ring-expand {
+  0% { opacity: .9; transform: scale(.2); }
+  100% { opacity: 0; transform: scale(9); }
+}
+
+/* The word: falls in once, holds for the rest of the scene. A delayed
+ * one-shot, `forwards` only. */
+.cs-goal-headline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30%;
+  text-align: center;
+  font-family: 'Bahnschrift', Impact, 'Arial Black', Arial, sans-serif;
+  font-weight: 700;
+  font-stretch: 85%;
+  color: var(--cs-white, #FFFFFF);
+  font-size: min(calc(var(--stage-h, 720px) * .26), calc(var(--stage-w, 1280px) * .16));
+  letter-spacing: .04em;
+  text-shadow: 0 .1em .3em rgba(0, 0, 0, .55);
+  opacity: 0;
+  transform: translateY(30%) scale(.85);
+  animation: cs-goal-headline-slam 500ms 400ms cubic-bezier(.16, .8, .2, 1) forwards;
+}
+
+@keyframes cs-goal-headline-slam {
+  0% { opacity: 0; transform: translateY(30%) scale(.85); }
+  70% { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* The scoring team's name -- set with `textContent` in soccer.js, never
+ * concatenated into markup. */
+.cs-goal-subline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(30% + calc(var(--stage-h, 720px) * .22));
+  text-align: center;
+  font-family: 'Bahnschrift', Impact, 'Arial Black', Arial, sans-serif;
+  font-weight: 700;
+  font-stretch: 75%;
+  letter-spacing: .12em;
+  color: var(--cs-goal-color);
+  background: color-mix(in srgb, var(--cs-white, #FFFFFF) 92%, transparent);
+  padding: .25em .6em;
+  border-radius: .15em;
+  display: inline-block;
+  width: max-content;
+  margin: 0 auto;
+  font-size: min(calc(var(--stage-h, 720px) * .07), calc(var(--stage-w, 1280px) * .045));
+  opacity: 0;
+  transform: translateY(20%);
+  animation: cs-goal-subline-in 420ms 1000ms cubic-bezier(.2, .8, .3, 1) forwards;
+}
+
+@keyframes cs-goal-subline-in {
+  from { opacity: 0; transform: translateY(20%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.cs-goal-subline > span {
+  display: block;
+}
+
+/* The ember hold: gold motes rising from the bottom edge for the rest of
+ * the scene, looping so the six-second hold never runs dry. */
+.cs-goal-embers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cs-goal-ember {
+  position: absolute;
+  bottom: 0;
+  width: calc(var(--stage-w, 1280px) * var(--cs-es, .01));
+  height: calc(var(--stage-w, 1280px) * var(--cs-es, .01) * 2.4);
+  border-radius: 50%;
+  background: var(--cs-gold, #FFB703);
+  opacity: 0;
+  animation: cs-goal-ember-rise linear infinite;
+}
+
+@keyframes cs-goal-ember-rise {
+  0% { opacity: 0; transform: translate(0, 0); }
+  10% { opacity: .9; }
+  90% { opacity: .5; }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--stage-w, 1280px) * var(--cs-ed, 0)), calc(var(--stage-h, 720px) * var(--cs-eh, -0.6)));
+  }
+}
+
+/* Late join: skip every entrance, show the settled hold immediately. Ember
+ * animations keep running (the loop reads fine mid-cycle); the one-shot
+ * entrances do not. */
+.cs-goal-resumed .cs-goal-ripple,
+.cs-goal-resumed .cs-goal-ring {
+  display: none;
+}
+
+.cs-goal-resumed .cs-goal-headline,
+.cs-goal-resumed .cs-goal-subline {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-goal-ripple,
+  .cs-goal-ring,
+  .cs-goal-ember {
+    animation: none;
+    opacity: 0;
+  }
+  .cs-goal-headline,
+  .cs-goal-subline {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

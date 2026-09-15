@@ -1,0 +1,891 @@
+/* Soccer operator layout.
+ *
+ * Mirrors src/scoreboard/views/operator/operator.css's shape (spec section 4):
+ * a fixed vertical stack sized to the viewport -- health strip, alert line,
+ * live board, crowd bar, period bar, tool bar. Only the board flexes.
+ * Nothing scrolls at 1093x614, 1180x720, or 1366x768 (U-001).
+ *
+ * Every score/card control clamps instead of using a literal pixel size, so
+ * the team panel's fixed rows (two stat rows plus one card row, spec 4.1)
+ * fit inside the same 356px board row football measured, per the design
+ * draft's budget in section 1.1.
+ */
+
+body {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  gap: var(--gap);
+  padding: var(--gap);
+}
+
+.health { grid-row: 1; }
+.alert { grid-row: 2; }
+.board { grid-row: 3; }
+.crowd-bar { grid-row: 4; }
+.period-bar { grid-row: 5; }
+.tools { grid-row: 6; }
+
+/* --- Health strip --------------------------------------------------------- */
+
+.health {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  flex-wrap: nowrap;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-right: auto;
+}
+
+.chip {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1150px) {
+  .brand {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+  }
+
+  .chip {
+    padding: 2px 6px;
+  }
+}
+
+.chip.bad {
+  background: #40201f;
+  border-color: var(--danger);
+  color: #ffd7d7;
+  font-weight: 700;
+}
+
+.chip.good {
+  border-color: var(--ok);
+}
+
+.chip-button {
+  min-height: var(--touch);
+  min-width: 168px;
+  font-weight: 700;
+  font-size: 15px;
+  padding: 0 10px;
+  border-color: var(--warn);
+}
+
+.chip-button.secondary {
+  min-width: 120px;
+  font-weight: 400;
+  font-size: 14px;
+  border-color: var(--edge);
+}
+
+.cutscene-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#display-drawer .row button {
+  min-height: var(--touch);
+}
+
+/* --- Rejections and failures ---------------------------------------------- */
+
+.alert {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: #40201f;
+  border: 1px solid var(--danger);
+  color: #ffe1e1;
+  font-weight: 600;
+}
+
+/* --- Live board ------------------------------------------------------------ */
+
+.board {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: var(--gap);
+  min-height: 0;
+}
+
+.team,
+.clocks {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 10px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team h2,
+.clock-block h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+}
+
+.team-name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The score competes with two stat rows and a card row (design draft 1.1),
+ * so its clamp is shallower than football's clamp(48px, 9vh, 84px). */
+.score {
+  margin: 0;
+  font-size: clamp(30px, 4.5vh, 56px);
+  line-height: 1;
+  font-weight: 700;
+  text-align: center;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.team-pending {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  text-align: center;
+  color: var(--warn);
+}
+
+/* --- Armed scoring / card entry (spec 4.2) --------------------------------- */
+
+/* One fixed-height block holds idle, armed-goal, and armed-card: arming a
+ * team or a card swaps the buttons in place and the panel never grows
+ * (U-001). 44px, not football's 52px, to fit the extra rows below it. */
+.score-controls {
+  min-height: var(--touch);
+}
+
+.score-idle,
+.score-goal,
+.score-card {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.score-card {
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+}
+
+.score-idle button,
+.score-goal button,
+.score-card button {
+  min-height: var(--touch);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.stat-readout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+.card-heading {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  white-space: nowrap;
+}
+
+.score-card input {
+  min-height: var(--touch);
+  width: 100%;
+}
+
+.team.is-armed {
+  border-color: var(--accent);
+}
+
+.armed-flag {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* --- Per-team stat rows (spec 4.1) ------------------------------------------ */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.stat-cell {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.stat-cell button.nudge {
+  min-height: var(--touch);
+  min-width: 34px;
+  padding: 0 4px;
+  font-weight: 700;
+}
+
+.stat-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  min-width: 0;
+}
+
+.stat-caption {
+  color: var(--ink-dim);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* --- Card row (spec 4.1) ---------------------------------------------------- */
+
+.card-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.card-row button {
+  min-height: var(--touch);
+  font-weight: 700;
+}
+
+#home-yellow, #away-yellow {
+  background: #40350f;
+  border-color: #ffc845;
+}
+
+#home-red, #away-red {
+  background: #40201f;
+  border-color: var(--danger);
+}
+
+.card-tally {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* --- Centre panel: clock + period (spec 4.1/4.4) --------------------------- */
+
+.clocks {
+  flex-direction: row;
+  gap: var(--gap);
+}
+
+.clock-block {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.clock.big {
+  margin: 0;
+  font-size: clamp(30px, 6.2vh, 52px);
+  line-height: 1.05;
+  font-weight: 700;
+  text-align: center;
+}
+
+.state {
+  margin: 0;
+  text-align: center;
+  letter-spacing: 0.1em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-dim);
+}
+
+.clock.big.running-game,
+.state.running-game {
+  color: var(--ok);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.pair button {
+  min-height: var(--touch);
+  font-weight: 700;
+}
+
+button.is-active {
+  border-color: var(--accent);
+  background: #1d3550;
+}
+
+button.is-current {
+  opacity: 0.5;
+}
+
+.period-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 3px;
+  border-top: 1px solid var(--edge);
+}
+
+.period-row button {
+  min-height: var(--touch);
+  min-width: 36px;
+}
+
+.period-row .period-value {
+  flex: 1 1 auto;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.period-next {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+/* --- SHOOTOUT panel (spec 4.3) ---------------------------------------------- */
+
+.shootout-block {
+  overflow: auto;
+}
+
+.shootout-heading {
+  margin: 0;
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.shootout-tally {
+  margin: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.shootout-kicker input {
+  min-height: var(--touch);
+  width: 88px;
+}
+
+#finish-shootout {
+  min-height: var(--touch);
+  font-weight: 700;
+}
+
+/* --- Crowd message bar (spec 4.1) ------------------------------------------- */
+
+.crowd-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.crowd-bar .label {
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  font-size: 12px;
+}
+
+.crowd-bar button {
+  min-height: 36px;
+  min-width: 48px;
+  font-weight: 700;
+}
+
+.crowd-chip {
+  min-width: 92px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.crowd-chip.active {
+  background: #40350f;
+  border-color: #ffc845;
+  color: #ffe6a8;
+}
+
+.crowd-clock {
+  min-width: 60px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.crowd-clock.running-status {
+  color: var(--danger);
+}
+
+.crowd-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 8px;
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  box-shadow: 0 0 0 3px var(--panel-raised), 0 0 0 4px var(--edge);
+}
+
+.crowd-countdown-label {
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.crowd-bar button.crowd-clear {
+  background: #ffc845;
+  border-color: #ffc845;
+  color: #1a1400;
+}
+
+.crowd-bar button.crowd-go {
+  background: #2e9e6a;
+  border-color: #35c48a;
+  color: #ffffff;
+}
+
+.crowd-bar button.crowd-halt {
+  background: #c43d3d;
+  border-color: #ff6b6b;
+  color: #ffffff;
+}
+
+.crowd-bar button.crowd-clear:hover:not(:disabled),
+.crowd-bar button.crowd-go:hover:not(:disabled),
+.crowd-bar button.crowd-halt:hover:not(:disabled) {
+  border-color: #ffffff;
+}
+
+@media (max-width: 1150px) {
+  .crowd-bar {
+    gap: 6px;
+  }
+
+  .crowd-bar button {
+    min-width: 44px;
+    padding: 0 6px;
+  }
+
+  .crowd-chip {
+    min-width: 76px;
+  }
+}
+
+/* --- Period bar -------------------------------------------------------------- */
+
+.period-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+}
+
+.period-bar .label,
+.tools .label {
+  color: var(--ink-dim);
+  letter-spacing: 0.1em;
+  font-size: 12px;
+}
+
+.period-bar button {
+  min-height: 36px;
+  min-width: 48px;
+}
+
+.period {
+  font-size: 20px;
+  font-weight: 700;
+  min-width: 64px;
+  text-align: center;
+}
+
+.last-action {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-dim);
+  background: none;
+  border: 1px solid transparent;
+  text-align: left;
+  font: inherit;
+  padding: 4px 6px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.last-action:hover,
+.last-action:focus-visible {
+  border-color: var(--edge);
+}
+
+.last-action #last-action {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.undo-depth {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.history-list li {
+  padding: 3px 0;
+}
+
+.history-list li.next {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.history-list li .next-mark {
+  color: var(--ink-dim);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+.history-list li.empty {
+  list-style: none;
+  margin-left: -22px;
+  color: var(--ink-dim);
+}
+
+#undo {
+  min-height: 36px;
+  min-width: 96px;
+  font-weight: 700;
+}
+
+/* --- Tool bar ----------------------------------------------------------------- */
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+}
+
+.tools .spacer {
+  flex: 1 1 auto;
+}
+
+.tools button.is-attention {
+  border-color: var(--warn);
+}
+
+.hint.attention {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+button.danger {
+  border-color: var(--danger-edge);
+  background: #2a1b1e;
+}
+
+button.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+
+/* --- Drawers ------------------------------------------------------------------ */
+
+.drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 13, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.drawer-panel {
+  width: min(1040px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.drawer-panel h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.hint {
+  margin: 0 0 10px;
+  color: var(--ink-dim);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.row.end {
+  justify-content: flex-end;
+}
+
+.row.section {
+  margin-top: 14px;
+  border-top: 2px solid var(--edge);
+}
+
+.folder-path {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-label {
+  min-width: 190px;
+  color: var(--ink-dim);
+}
+
+.row input {
+  width: 88px;
+}
+
+.row input[type="text"] {
+  width: 170px;
+}
+
+.row button {
+  min-height: 38px;
+}
+
+.period-choices {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card-list,
+.shootout-kick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+/* --- Confirmation and prompt dialogs -------------------------------------------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 13, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog {
+  width: min(560px, 92%);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.dialog p {
+  margin: 0 0 8px;
+}
+
+.change {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--gap);
+  margin-top: 12px;
+}
+
+.dialog-buttons button {
+  min-width: 128px;
+}
+
+.period-buttons {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+#confirm-cancel {
+  border-color: var(--accent);
+}
+
+#shortcut-help table { width: 100%; border-collapse: collapse; margin-block: 1rem; }
+#shortcut-help th, #shortcut-help td { text-align: left; padding: .4rem; border-bottom: 1px solid var(--edge); }
+
+/* --- Teams drawer ---------------------------------------------------------------- */
+
+.team-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 20px;
+  font-weight: 600;
+}
+
+.swatch {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 10px;
+}
+
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--edge);
+}
+
+.team-name-cell {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-name-cell small {
+  color: var(--ink-dim);
+  margin-left: 4px;
+}
+
+/* --- Identity stripe --------------------------------------------------------------- */
+
+.identity-stripe {
+  display: block;
+  height: 26px;
+  line-height: 26px;
+  margin: 2px 0 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  color: #12161c;
+  border-bottom-width: 3px;
+  border-bottom-style: solid;
+  overflow: hidden;
+  border-radius: 2px 2px 0 0;
+}
+
+/* Corrections: one card or kick per line with its own confirmed control. */
+.card-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

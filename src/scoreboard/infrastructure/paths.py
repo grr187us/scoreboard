@@ -233,6 +233,18 @@ class ScoreboardPaths:
             "cutscenes": str(self.cutscenes),
         }
 
+    def for_sport(self, sport: str) -> "ScoreboardPaths":
+        """A :class:`ScoreboardPaths` rooted at ``<root>/<sport>`` (soccer mode,
+        spec section 2.3/2.6). Football never calls this; ``self`` -- the
+        root paths -- is untouched. The returned object's own ``.teams``
+        property still points at ``<root>/<sport>/teams.json``, which is *not*
+        the shared ``teams.json``; callers that need the shared team presets
+        (spec F4) keep a reference to the root ``ScoreboardPaths`` for that one
+        property, exactly as :mod:`scoreboard.host.soccer_app` does.
+        """
+
+        return ScoreboardPaths(self.root / sport)
+
 
 def default_root() -> Path:
     """The platform-reported location, ignoring any operator choice.

@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from types import ModuleType
 from typing import Any, Final
 
 from scoreboard.infrastructure.paths import ScoreboardPaths
@@ -40,6 +41,20 @@ from scoreboard.presentation.layout import (
     validate_layout,
     validate_layout_name,
 )
+
+#: Every function below accepts an optional ``schema`` -- a module exposing
+#: ``default_layout()``/``validate_layout(raw)``/``validate_layout_name(name)``
+#: -- so a sibling module (soccer's ``presentation.soccer_layout``) can share
+#: this same storage/library code for a completely different widget registry
+#: and document shape (``spec`` section 2.3). ``None`` (the default) means
+#: "today's football schema", so every existing football call site keeps its
+#: exact behaviour with zero changes.
+
+
+def _schema_functions(schema: ModuleType | None) -> tuple[Any, Any, Any]:
+    if schema is None:
+        return default_layout, validate_layout, validate_layout_name
+    return schema.default_layout, schema.validate_layout, schema.validate_layout_name
 
 LAYOUT_LIBRARY_SCHEMA_VERSION: Final[int] = 1
 MAX_LAYOUT_NAME_LENGTH: Final[int] = 40
@@ -81,14 +96,15 @@ class LayoutLibrary:
         }
 
 
-def default_library() -> LayoutLibrary:
+def default_library(*, schema: ModuleType | None = None) -> LayoutLibrary:
     """The library containing only the built-in default layout."""
 
-    return LayoutLibrary(active=DEFAULT_LAYOUT_NAME, layouts={DEFAULT_LAYOUT_NAME: default_layout()})
+    make_default_layout, _validate_layout, _validate_layout_name = _schema_functions(schema)
+    return LayoutLibrary(active=DEFAULT_LAYOUT_NAME, layouts={DEFAULT_LAYOUT_NAME: make_default_layout()})
 
 
-def _fall_back(issues: tuple[LayoutIssue, ...]) -> LayoutLibrary:
-    fresh = default_library()
+def _fall_back(issues: tuple[LayoutIssue, ...], *, schema: ModuleType | None = None) -> LayoutLibrary:
+    fresh = default_library(schema=schema)
     return LayoutLibrary(active=fresh.active, layouts=fresh.layouts, issues=issues, fell_back=True)
 
 
@@ -107,7 +123,7 @@ def _is_newer_on_disk(paths: ScoreboardPaths) -> bool:
     return version > LAYOUT_LIBRARY_SCHEMA_VERSION
 
 
-def read_library(paths: ScoreboardPaths) -> LayoutLibrary:
+def read_library(paths: ScoreboardPaths, *, schema: ModuleType | None = None) -> LayoutLibrary:
     """Return the stored layout library, or the built-in default.
 
     Every failure short-circuits to the same answer: the caller's response is
@@ -116,40 +132,48 @@ def read_library(paths: ScoreboardPaths) -> LayoutLibrary:
     issue text.
     """
 
+    make_default_layout, run_validate_layout, run_validate_layout_name = _schema_functions(schema)
+
     try:
         raw_text = paths.layouts.read_text(encoding="utf-8")
     except OSError:
-        return _fall_back(())
+        return _fall_back((), schema=schema)
     try:
         payload = json.loads(raw_text)
     except ValueError:
         return _fall_back(
-            (LayoutIssue("NOT_AN_OBJECT", "The layout library file is not valid JSON."),)
+            (LayoutIssue("NOT_AN_OBJECT", "The layout library file is not valid JSON."),), schema=schema
         )
     if not isinstance(payload, dict):
-        return _fall_back((LayoutIssue("NOT_AN_OBJECT", "The layout library must be an object."),))
+        return _fall_back(
+            (LayoutIssue("NOT_AN_OBJECT", "The layout library must be an object."),), schema=schema
+        )
 
     version = payload.get("schema_version")
     if isinstance(version, bool) or not isinstance(version, int):
         return _fall_back(
-            (LayoutIssue("SCHEMA_VERSION", "The layout library's schema_version is missing or invalid."),)
+            (LayoutIssue("SCHEMA_VERSION", "The layout library's schema_version is missing or invalid."),),
+            schema=schema,
         )
     if version != LAYOUT_LIBRARY_SCHEMA_VERSION:
         # Covers both an older/unsupported version and a newer one. Either
         # way this build must not guess at what the sections mean, and a
         # newer file is left completely alone -- see the module docstring.
         return _fall_back(
-            (LayoutIssue("SCHEMA_VERSION", f"Unsupported layout library schema_version {version!r}."),)
+            (LayoutIssue("SCHEMA_VERSION", f"Unsupported layout library schema_version {version!r}."),),
+            schema=schema,
         )
 
     raw_layouts = payload.get("layouts")
     if not isinstance(raw_layouts, dict):
-        return _fall_back((LayoutIssue("WIDGETS", "The layout library's layouts must be an object."),))
+        return _fall_back(
+            (LayoutIssue("WIDGETS", "The layout library's layouts must be an object."),), schema=schema
+        )
 
     issues: list[LayoutIssue] = []
     layouts: dict[str, dict[str, Any]] = {}
     for name, raw_layout in raw_layouts.items():
-        name_issue = validate_layout_name(name)
+        name_issue = run_validate_layout_name(name)
         if name_issue is not None:
             issues.append(
                 LayoutIssue(
@@ -158,7 +182,7 @@ def read_library(paths: ScoreboardPaths) -> LayoutLibrary:
                 )
             )
             continue
-        result = validate_layout(raw_layout)
+        result = run_validate_layout(raw_layout)
         if not result.ok:
             issues.append(
                 LayoutIssue(
@@ -175,7 +199,9 @@ def read_library(paths: ScoreboardPaths) -> LayoutLibrary:
     if not layouts:
         # Every stored layout was invalid (or there were none) -- there is
         # nothing left to serve, so fall back completely.
-        return _fall_back(tuple(issues) or (LayoutIssue("WIDGETS", "No stored layout was usable."),))
+        return _fall_back(
+            tuple(issues) or (LayoutIssue("WIDGETS", "No stored layout was usable."),), schema=schema
+        )
 
     active = payload.get("active")
     if not isinstance(active, str) or active not in layouts:
@@ -184,13 +210,14 @@ def read_library(paths: ScoreboardPaths) -> LayoutLibrary:
         # guessing which layout the operator meant.
         return _fall_back(
             tuple(issues)
-            + (LayoutIssue("LAYOUT_NAME", f"The active layout {active!r} was not found."),)
+            + (LayoutIssue("LAYOUT_NAME", f"The active layout {active!r} was not found."),),
+            schema=schema,
         )
 
     if DEFAULT_LAYOUT_NAME not in layouts:
         # "Default" always exists in a library this module hands out, even
         # if a hand-edited file omitted it.
-        layouts[DEFAULT_LAYOUT_NAME] = default_layout()
+        layouts[DEFAULT_LAYOUT_NAME] = make_default_layout()
 
     return LayoutLibrary(active=active, layouts=layouts, issues=tuple(issues), fell_back=False)
 
@@ -223,7 +250,9 @@ def write_library(paths: ScoreboardPaths, library: LayoutLibrary) -> bool:
         return False
 
 
-def save_layout(paths: ScoreboardPaths, name: Any, payload: Any) -> tuple[LayoutLibrary, LayoutValidation]:
+def save_layout(
+    paths: ScoreboardPaths, name: Any, payload: Any, *, schema: ModuleType | None = None
+) -> tuple[LayoutLibrary, LayoutValidation]:
     """Validate and store ``payload`` under ``name``, making it active.
 
     On any failure -- an invalid name, an invalid layout, too many stored
@@ -233,13 +262,14 @@ def save_layout(paths: ScoreboardPaths, name: Any, payload: Any) -> tuple[Layout
     operator the layout that was already saved.
     """
 
-    current = read_library(paths)
-    name_issue = validate_layout_name(name)
+    _make_default_layout, run_validate_layout, run_validate_layout_name = _schema_functions(schema)
+    current = read_library(paths, schema=schema)
+    name_issue = run_validate_layout_name(name)
     if name_issue is not None:
         return current, LayoutValidation(None, (name_issue,))
     clean_name = name.strip()
 
-    result = validate_layout(payload)
+    result = run_validate_layout(payload)
     if not result.ok:
         return current, result
 
@@ -259,11 +289,14 @@ def save_layout(paths: ScoreboardPaths, name: Any, payload: Any) -> tuple[Layout
     return library, result
 
 
-def select_layout(paths: ScoreboardPaths, name: Any) -> tuple[LayoutLibrary, LayoutValidation]:
+def select_layout(
+    paths: ScoreboardPaths, name: Any, *, schema: ModuleType | None = None
+) -> tuple[LayoutLibrary, LayoutValidation]:
     """Make the stored layout named ``name`` active."""
 
-    current = read_library(paths)
-    name_issue = validate_layout_name(name)
+    _make_default_layout, _run_validate_layout, run_validate_layout_name = _schema_functions(schema)
+    current = read_library(paths, schema=schema)
+    name_issue = run_validate_layout_name(name)
     if name_issue is not None:
         return current, LayoutValidation(None, (name_issue,))
     clean_name = name.strip()
@@ -278,11 +311,14 @@ def select_layout(paths: ScoreboardPaths, name: Any) -> tuple[LayoutLibrary, Lay
     return library, LayoutValidation(library.active_layout(), ())
 
 
-def delete_layout(paths: ScoreboardPaths, name: Any) -> tuple[LayoutLibrary, LayoutValidation]:
+def delete_layout(
+    paths: ScoreboardPaths, name: Any, *, schema: ModuleType | None = None
+) -> tuple[LayoutLibrary, LayoutValidation]:
     """Remove the stored layout named ``name``. ``"Default"`` cannot be removed."""
 
-    current = read_library(paths)
-    name_issue = validate_layout_name(name)
+    _make_default_layout, _run_validate_layout, run_validate_layout_name = _schema_functions(schema)
+    current = read_library(paths, schema=schema)
+    name_issue = run_validate_layout_name(name)
     if name_issue is not None:
         return current, LayoutValidation(None, (name_issue,))
     clean_name = name.strip()
@@ -303,7 +339,9 @@ def delete_layout(paths: ScoreboardPaths, name: Any) -> tuple[LayoutLibrary, Lay
     return library, LayoutValidation(library.active_layout(), ())
 
 
-def rename_layout(paths: ScoreboardPaths, old: Any, new: Any) -> tuple[LayoutLibrary, LayoutValidation]:
+def rename_layout(
+    paths: ScoreboardPaths, old: Any, new: Any, *, schema: ModuleType | None = None
+) -> tuple[LayoutLibrary, LayoutValidation]:
     """Rename a stored layout. ``"Default"`` cannot be renamed.
 
     Renaming the active layout keeps it active under the new name. As with
@@ -312,8 +350,9 @@ def rename_layout(paths: ScoreboardPaths, old: Any, new: Any) -> tuple[LayoutLib
     **currently stored** library completely unchanged, and writes nothing.
     """
 
-    current = read_library(paths)
-    old_issue = validate_layout_name(old)
+    _make_default_layout, _run_validate_layout, run_validate_layout_name = _schema_functions(schema)
+    current = read_library(paths, schema=schema)
+    old_issue = run_validate_layout_name(old)
     if old_issue is not None:
         return current, LayoutValidation(None, (old_issue,))
     clean_old = old.strip()
@@ -324,7 +363,7 @@ def rename_layout(paths: ScoreboardPaths, old: Any, new: Any) -> tuple[LayoutLib
         issue = LayoutIssue("LAYOUT_NOT_FOUND", f"No stored layout is named {clean_old!r}.")
         return current, LayoutValidation(None, (issue,))
 
-    new_issue = validate_layout_name(new)
+    new_issue = run_validate_layout_name(new)
     if new_issue is not None:
         return current, LayoutValidation(None, (new_issue,))
     clean_new = new.strip()
@@ -344,7 +383,7 @@ def rename_layout(paths: ScoreboardPaths, old: Any, new: Any) -> tuple[LayoutLib
 
 
 def duplicate_layout(
-    paths: ScoreboardPaths, name: Any, new_name: Any
+    paths: ScoreboardPaths, name: Any, new_name: Any, *, schema: ModuleType | None = None
 ) -> tuple[LayoutLibrary, LayoutValidation]:
     """Copy a stored layout under a new name, making the copy active.
 
@@ -353,8 +392,9 @@ def duplicate_layout(
     unchanged, and writes nothing.
     """
 
-    current = read_library(paths)
-    name_issue = validate_layout_name(name)
+    _make_default_layout, _run_validate_layout, run_validate_layout_name = _schema_functions(schema)
+    current = read_library(paths, schema=schema)
+    name_issue = run_validate_layout_name(name)
     if name_issue is not None:
         return current, LayoutValidation(None, (name_issue,))
     clean_name = name.strip()
@@ -362,7 +402,7 @@ def duplicate_layout(
         issue = LayoutIssue("LAYOUT_NOT_FOUND", f"No stored layout is named {clean_name!r}.")
         return current, LayoutValidation(None, (issue,))
 
-    new_name_issue = validate_layout_name(new_name)
+    new_name_issue = run_validate_layout_name(new_name)
     if new_name_issue is not None:
         return current, LayoutValidation(None, (new_name_issue,))
     clean_new_name = new_name.strip()
@@ -386,10 +426,10 @@ def duplicate_layout(
     return library, LayoutValidation(library.active_layout(), ())
 
 
-def reset_library(paths: ScoreboardPaths) -> LayoutLibrary:
+def reset_library(paths: ScoreboardPaths, *, schema: ModuleType | None = None) -> LayoutLibrary:
     """Restore the built-in single-layout library, discarding every save."""
 
-    library = default_library()
+    library = default_library(schema=schema)
     write_library(paths, library)
     return library
 

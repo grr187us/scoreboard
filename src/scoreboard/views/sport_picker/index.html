@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Choose sport</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="sport_picker.css">
+</head>
+<body>
+  <h1>Choose sport</h1>
+  <div class="choices">
+    <button id="football" class="sport-choice" type="button">FOOTBALL</button>
+    <button id="soccer" class="sport-choice" type="button">SOCCER</button>
+  </div>
+  <p id="last-sport" aria-live="polite"></p>
+  <p id="error" role="alert"></p>
+  <script src="../shared/render.js"></script>
+  <script src="sport_picker.js"></script>
+</body>
+</html>

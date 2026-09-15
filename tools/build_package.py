@@ -79,6 +79,28 @@ REQUIRED_FILES: tuple[str, ...] = (
     "_internal/scoreboard/views/shared/fonts/Barlow-OFL.txt",
     # The bundled crest an image element may reference as asset:tigers-crest.
     "_internal/scoreboard/views/shared/img/tigers-crest.png",
+    # Soccer mode (September 15, 2026): every soccer and sport-picker view.
+    "_internal/scoreboard/views/soccer_cutscenes/index.html",
+    "_internal/scoreboard/views/soccer_cutscenes/soccer_cutscenes.css",
+    "_internal/scoreboard/views/soccer_cutscenes/soccer_cutscenes.js",
+    "_internal/scoreboard/views/soccer_layout/index.html",
+    "_internal/scoreboard/views/soccer_field_assistant/index.html",
+    "_internal/scoreboard/views/soccer_field_assistant/soccer_field_assistant.css",
+    "_internal/scoreboard/views/soccer_field_assistant/soccer_field_assistant.js",
+    "_internal/scoreboard/views/soccer_operator/index.html",
+    "_internal/scoreboard/views/soccer_operator/keyboard.js",
+    "_internal/scoreboard/views/soccer_operator/soccer_operator.css",
+    "_internal/scoreboard/views/soccer_operator/soccer_operator.js",
+    "_internal/scoreboard/views/soccer_spectator/cutscenes/soccer.css",
+    "_internal/scoreboard/views/soccer_spectator/cutscenes/soccer.js",
+    "_internal/scoreboard/views/soccer_spectator/index.html",
+    "_internal/scoreboard/views/soccer_spectator/soccer_spectator.css",
+    "_internal/scoreboard/views/soccer_spectator/soccer_spectator.js",
+    "_internal/scoreboard/views/soccer_startup/index.html",
+    "_internal/scoreboard/views/soccer_startup/startup.js",
+    "_internal/scoreboard/views/sport_picker/index.html",
+    "_internal/scoreboard/views/sport_picker/sport_picker.css",
+    "_internal/scoreboard/views/sport_picker/sport_picker.js",
 )
 
 

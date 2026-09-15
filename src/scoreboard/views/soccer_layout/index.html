@@ -1,0 +1,557 @@
+<!-- Soccer mode: football's layout editor (../layout/*) opened on the soccer registry.
+     The only difference from ../layout/index.html is data-game-kind="soccer" on the
+     board root and the relative paths. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Presentation layout</title>
+  <!-- The preview is the real spectator renderer: the same board.js widgets,
+       the same board.css rules, and the same layout document the spectator
+       window receives. Nothing about the board is reimplemented here. -->
+  <link rel="stylesheet" href="../shared/board.css">
+  <link rel="stylesheet" href="../layout/layout.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false">
+        <rect x="2" y="3.5" width="12" height="9" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.75"/>
+      </svg>
+      <h1>Layout designer</h1>
+    </div>
+
+    <div class="layout-menu">
+      <button type="button" class="menu-trigger" id="layout-menu-button" data-action="library_menu"
+              aria-haspopup="true" aria-expanded="false">
+        <span id="active-layout-name">Default</span>
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+          <path d="M4.5 6l3.5 4 3.5-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <span class="dirty-dot" id="dirty-dot" hidden title="Unsaved changes" aria-label="Unsaved changes"></span>
+
+      <div class="menu-panel" id="layout-menu-panel" hidden role="menu" aria-label="Stored layouts">
+        <div class="menu-list" id="layout-menu-list"></div>
+        <div class="menu-divider"></div>
+        <button type="button" role="menuitem" data-action="save">Save</button>
+        <button type="button" id="save-as-open" role="menuitem" data-action="save_as_open">Save as&hellip;</button>
+        <button type="button" role="menuitem" data-action="duplicate_layout_open">Duplicate&hellip;</button>
+        <button type="button" role="menuitem" id="menu-rename" data-action="rename_layout_open">Rename&hellip;</button>
+        <button type="button" role="menuitem" id="menu-delete" data-action="delete_layout_open">Delete&hellip;</button>
+        <button type="button" role="menuitem" id="menu-discard" data-action="discard">Discard changes</button>
+        <div class="menu-divider"></div>
+        <button type="button" role="menuitem" data-action="reset_layout_ask">Reset to built-in&hellip;</button>
+      </div>
+
+      <div class="popover" id="save-as-popover" hidden>
+        <label for="save-as-name">Save this layout as</label>
+        <input type="text" id="save-as-name" maxlength="40" autocomplete="off">
+        <div class="popover-buttons">
+          <button type="button" data-action="save_as_confirm">Save</button>
+          <button type="button" data-action="save_as_cancel">Cancel</button>
+        </div>
+        <p class="hint">1&ndash;40 characters. Saving over an existing name replaces it.</p>
+      </div>
+
+      <div class="popover" id="rename-layout-popover" hidden>
+        <label for="rename-layout-name">Rename this layout</label>
+        <input type="text" id="rename-layout-name" maxlength="40" autocomplete="off">
+        <div class="popover-buttons">
+          <button type="button" data-action="rename_layout_confirm">Rename</button>
+          <button type="button" data-action="rename_layout_cancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="popover" id="duplicate-layout-popover" hidden>
+        <label for="duplicate-layout-name">Duplicate as</label>
+        <input type="text" id="duplicate-layout-name" maxlength="40" autocomplete="off">
+        <div class="popover-buttons">
+          <button type="button" data-action="duplicate_layout_confirm">Duplicate</button>
+          <button type="button" data-action="duplicate_layout_cancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="popover" id="delete-layout-popover" hidden>
+        <p>Delete this stored layout? This cannot be reversed.</p>
+        <div class="popover-buttons">
+          <button type="button" class="danger" data-action="delete_layout_confirm">Delete</button>
+          <button type="button" data-action="delete_layout_cancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="popover" id="reset-layout-popover" hidden>
+        <p>Replace this layout with the built-in default?</p>
+        <div class="popover-buttons">
+          <button type="button" class="danger" data-action="reset_layout_confirm">Reset</button>
+          <button type="button" data-action="reset_layout_cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- One button per entry in state.screens; its label, order, and count
+         all come from Python, so no screen name is ever hard-coded here.
+         Ctrl+1/2/3 are the keyboard route to the same three tabs. -->
+    <div class="screen-switch" id="screen-switch" role="tablist" aria-label="Screen"></div>
+
+    <div class="history-group" role="group" aria-label="History">
+      <button type="button" data-action="history_back" title="Undo (Ctrl+Z)" aria-label="Undo">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <path d="M4 8.5H12.5M4 8.5L7 5.5M4 8.5L7 11.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button type="button" data-action="history_forward" title="Redo (Ctrl+Y)" aria-label="Redo">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <path d="M12 8.5H3.5M12 8.5L9 5.5M12 8.5L9 11.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- The motion switch is a host preference (config.json), not part of the
+         layout document and not game state. It pauses every animation on
+         the wall as well as in this preview. -->
+    <button type="button" id="motion-toggle" data-action="toggle_motion" aria-pressed="true"
+            title="Pauses every animation -- here and on the wall -- while off. A host preference; it is not saved with the layout.">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+        <path d="M2 8h2.2l1.6-4 2.4 8 1.6-4H14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span id="motion-label">Motion on</span>
+    </button>
+
+    <div class="add-group" role="group" aria-label="Add">
+      <button type="button" data-action="add_text" title="Add text">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <path d="M3 4h10M8 4v9" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        Text
+      </button>
+      <button type="button" data-action="add_image" title="Add image">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="2.5" y="3" width="11" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.75"/>
+          <circle cx="6" cy="7" r="1.1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M3.5 11.5l3-3 2.3 2.3 2-2 2.2 2.2" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Image
+      </button>
+      <button type="button" data-action="add_box" title="Add box">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="2.5" y="2.5" width="11" height="11" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.75"/>
+        </svg>
+        Box
+      </button>
+      <button type="button" data-action="add_ticker" title="Add ticker (scrolling or rotating announcement lines)">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <rect x="1.5" y="5" width="13" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.75"/>
+          <path d="M4 8h5M10.5 8h1.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+        Ticker
+      </button>
+      <input type="file" id="image-file-input" hidden accept="image/png,image/jpeg,image/gif,image/webp">
+    </div>
+
+    <span class="toolbar-spacer"></span>
+
+    <div class="presets-menu">
+      <button type="button" class="menu-trigger" data-action="presets_menu" aria-haspopup="true" aria-expanded="false">
+        Presets
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+          <path d="M4.5 6l3.5 4 3.5-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="menu-panel presets-panel" id="presets-menu-panel" hidden role="menu">
+        <div id="presets-gallery-menu" class="presets-gallery"></div>
+      </div>
+      <div class="popover" id="replace-draft-popover" hidden>
+        <p>Replace the current draft with this preset? Unsaved changes will be lost.</p>
+        <div class="popover-buttons">
+          <button type="button" class="danger" data-action="replace_draft_confirm">Replace</button>
+          <button type="button" data-action="replace_draft_cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="zoom-group" role="group" aria-label="Zoom">
+      <button type="button" data-action="zoom_out" title="Zoom out" aria-label="Zoom out">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M10.3 10.3l3.2 3.2M5 7h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <span id="zoom-readout">100%</span>
+      <button type="button" data-action="zoom_in" title="Zoom in" aria-label="Zoom in">
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M10.3 10.3l3.2 3.2M7 5v4M5 7h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button type="button" data-action="zoom_fit" title="Fit to panel">Fit</button>
+    </div>
+
+    <button type="button" id="save" class="primary" data-action="save">Save</button>
+  </header>
+
+  <p class="alert" id="alert" hidden role="alert" aria-live="assertive"></p>
+
+  <main class="workspace">
+    <aside class="layers-rail" aria-label="Layers">
+      <button type="button" class="rail-row is-board" id="rail-board-row" data-select-board>
+        <span class="rail-icon">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+            <rect x="2" y="3.5" width="12" height="9" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.75"/>
+          </svg>
+        </span>
+        <span class="rail-label">Board</span>
+      </button>
+      <!-- The operator's own additions come first: they are what this rail
+           exists to manage, and they must never scroll out of sight below the
+           fifteen fixed fields. -->
+      <div class="rail-group rail-group-elements">
+        <button type="button" class="rail-group-header" data-group-toggle="elements" aria-expanded="true">
+          <span class="rail-chevron">
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+              <path d="M4.5 6l3.5 4 3.5-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="rail-group-title">Elements</span>
+          <span class="rail-count" id="rail-elements-count">0</span>
+        </button>
+        <div class="rail-group-body" id="rail-elements-body"></div>
+      </div>
+      <div id="rail-groups"></div>
+    </aside>
+
+    <section class="canvas-panel" aria-label="Canvas">
+      <div class="canvas-scroll" id="canvas-scroll">
+        <div class="canvas-stage">
+          <div id="canvas">
+            <div id="safe-area" aria-hidden="true"><span class="safe-area-label">Safe area</span></div>
+            <div id="game-board" data-game-kind="soccer"></div>
+            <div id="guides" aria-hidden="true"></div>
+            <div id="marquee" aria-hidden="true" hidden></div>
+            <div id="handles" aria-hidden="true" hidden></div>
+            <div id="readout-chip" aria-hidden="true" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="context-menu" id="context-menu" hidden role="menu">
+        <button type="button" role="menuitem" data-context-for="any" data-action="to_front">Bring to front</button>
+        <button type="button" role="menuitem" data-context-for="any" data-action="raise">Bring forward</button>
+        <button type="button" role="menuitem" data-context-for="any" data-action="lower">Send backward</button>
+        <button type="button" role="menuitem" data-context-for="any" data-action="to_back">Send to back</button>
+        <div class="menu-divider"></div>
+        <button type="button" role="menuitem" data-context-for="element" data-action="duplicate">Duplicate</button>
+        <button type="button" role="menuitem" data-context-for="element" data-action="delete_element">Delete</button>
+        <button type="button" role="menuitem" data-context-for="any" data-action="toggle_visible">Hide/Show</button>
+        <button type="button" role="menuitem" data-context-for="widget" data-action="reset_widget">Reset</button>
+      </div>
+    </section>
+
+    <aside class="inspector" aria-label="Inspector">
+      <div class="inspector-header"><h2 id="inspector-title">Nothing selected</h2></div>
+      <p class="hint" id="inspector-empty">Choose a widget, an element, or the board from the list on the left,
+        or click something on the canvas.</p>
+
+      <div class="inspector-body" id="inspector-body">
+        <section class="insp-section" id="sec-position">
+          <h3>Position &amp; size</h3>
+          <div class="prop-grid-2x2">
+            <label for="prop-x">X</label>
+            <input type="number" id="prop-x" data-prop="x" step="0.1">
+            <label for="prop-y">Y</label>
+            <input type="number" id="prop-y" data-prop="y" step="0.1">
+            <label for="prop-width">W</label>
+            <input type="number" id="prop-width" data-prop="width" step="0.1">
+            <label for="prop-height">H</label>
+            <input type="number" id="prop-height" data-prop="height" step="0.1">
+          </div>
+          <div class="arrange-strip" role="group" aria-label="Align">
+            <button type="button" data-action="align_left" title="Align left" aria-label="Align left">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M2.5 2v12M5 5h8M5 11h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" data-action="align_center" title="Align centre" aria-label="Align centre">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 2v12M4.5 5.5h7M5.5 11.5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" data-action="align_right" title="Align right" aria-label="Align right">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M13.5 2v12M3 5h8M6 11h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" data-action="align_top" title="Align top" aria-label="Align top">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M2 2.5h12M5 5v8M11 5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" data-action="align_middle" title="Align middle" aria-label="Align middle">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M2 8h12M5.5 4.5v7M11.5 5.5v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" data-action="align_bottom" title="Align bottom" aria-label="Align bottom">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M2 13.5h12M5 11V3M11 11V6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="arrange-strip" id="align-distribute" role="group" aria-label="Distribute">
+            <button type="button" id="distribute_h" data-action="distribute_h" title="Distribute horizontally" aria-label="Distribute horizontally">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M2.5 2v12M13.5 2v12M5.5 8h2M8.5 8h2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" id="distribute_v" data-action="distribute_v" title="Distribute vertically" aria-label="Distribute vertically">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M2 2.5h12M2 13.5h12M8 5.5v2M8 8.5v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="nudge" role="group" aria-label="Move">
+            <button type="button" class="nudge-up" data-action="nudge_up" aria-label="Move up">&#9650;</button>
+            <button type="button" class="nudge-left" data-action="nudge_left" aria-label="Move left">&#9664;</button>
+            <button type="button" class="nudge-right" data-action="nudge_right" aria-label="Move right">&#9654;</button>
+            <button type="button" class="nudge-down" data-action="nudge_down" aria-label="Move down">&#9660;</button>
+          </div>
+        </section>
+
+        <section class="insp-section" id="sec-layer">
+          <h3>Layer</h3>
+          <div class="layer-strip" role="group" aria-label="Stacking">
+            <button type="button" data-action="to_front" title="Bring to front" aria-label="Bring to front">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><rect x="6" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="2" y="6" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            </button>
+            <button type="button" data-action="raise" title="Bring forward" aria-label="Bring forward">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 12V4M4.5 7.5L8 4l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" data-action="lower" title="Send backward" aria-label="Send backward">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 4v8M4.5 8.5L8 12l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" data-action="to_back" title="Send to back" aria-label="Send to back">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><rect x="2" y="2" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="6" y="6" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            </button>
+            <input type="number" id="prop-z_index" data-prop="z_index" step="1" title="Stacking order">
+          </div>
+          <div class="prop-row">
+            <label for="prop-visible">Visible</label>
+            <input type="checkbox" id="prop-visible" data-prop="visible">
+          </div>
+        </section>
+
+        <section class="insp-section" id="sec-text">
+          <h3>Text</h3>
+          <label class="prop-row" id="field-fit_text">
+            <input type="checkbox" id="prop-fit_text" data-prop="fit_text">
+            Shrink to fit on one line
+          </label>
+          <div class="prop-row" id="field-display_format" hidden>
+            <label for="prop-display_format">Format</label>
+            <select id="prop-display_format" data-prop="display_format"></select>
+          </div>
+          <div class="prop-row" id="field-text">
+            <textarea id="prop-text" data-prop="text" rows="2"></textarea>
+          </div>
+          <div class="prop-row">
+            <select id="prop-font_family" data-prop="font_family"></select>
+            <select id="prop-font_weight" data-prop="font_weight"></select>
+          </div>
+          <div class="prop-row pair">
+            <label for="prop-font_scale">Size</label>
+            <input type="number" id="prop-font_scale" data-prop="font_scale" step="0.1">
+            <label for="prop-letter_spacing">Tracking</label>
+            <input type="number" id="prop-letter_spacing" data-prop="letter_spacing" step="0.01">
+          </div>
+          <div class="prop-row">
+            <span class="choices" id="prop-text_transform" data-prop="text_transform" role="group" aria-label="Case"></span>
+            <span class="choices" id="prop-text_effect" data-prop="text_effect" role="group" aria-label="Effect"></span>
+          </div>
+          <div class="prop-row">
+            <input type="color" id="prop-color-swatch" aria-label="Text colour swatch">
+            <input type="text" id="prop-color" data-prop="color" maxlength="7" size="8">
+          </div>
+          <div class="prop-row">
+            <span class="choices" id="prop-text_align" data-prop="text_align" role="group" aria-label="Horizontal align"></span>
+            <span class="choices" id="prop-vertical_align" data-prop="vertical_align" role="group" aria-label="Vertical align"></span>
+          </div>
+          <div class="prop-row labelled" id="field-orientation">
+            <label id="orientation-label">Direction</label>
+            <span class="choices" id="prop-orientation" data-prop="orientation" role="group" aria-labelledby="orientation-label"></span>
+          </div>
+          <p class="hint" id="static-note" hidden>This is a fixed label. You can move, restyle, or hide it;
+            its wording is set by the application.</p>
+        </section>
+
+        <section class="insp-section" id="sec-fill">
+          <h3>Fill &amp; border</h3>
+          <div class="prop-row labelled">
+            <label for="prop-background-toggle">Fill</label>
+            <input type="checkbox" id="prop-background-toggle" aria-label="Fill on">
+            <input type="color" id="prop-background-swatch" aria-label="Fill colour swatch">
+            <input type="text" id="prop-background" data-prop="background" maxlength="7" size="8">
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-background_opacity">Fill opacity</label>
+            <input type="number" id="prop-background_opacity" data-prop="background_opacity" step="1" title="Fill opacity, percent">
+            <span class="unit">%</span>
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-border_color">Border</label>
+            <input type="color" id="prop-border_color-swatch" aria-label="Border colour swatch">
+            <input type="text" id="prop-border_color" data-prop="border_color" maxlength="7" size="8">
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-border_width">Border width</label>
+            <input type="number" id="prop-border_width" data-prop="border_width" step="0.1" title="Border width, percent of board width">
+            <span class="unit">%</span>
+            <select id="prop-border_style" data-prop="border_style" aria-label="Border style"></select>
+          </div>
+          <label class="prop-row" id="field-bleed">
+            <input type="checkbox" id="prop-bleed" data-prop="bleed">
+            May overhang the board edge (bleed)
+          </label>
+          <div id="field-fill-effect">
+            <div class="prop-row labelled">
+              <label for="prop-fill_kind">Fill effect</label>
+              <select id="prop-fill_kind" data-prop="fill_kind"></select>
+            </div>
+            <div class="prop-row labelled" id="field-fill_angle">
+              <label for="prop-fill_angle">Angle</label>
+              <input type="number" id="prop-fill_angle" data-prop="fill_angle" step="1" min="0" max="360">
+              <span class="unit">&deg;</span>
+            </div>
+            <div class="prop-row labelled" id="field-fill_color_a">
+              <label for="prop-fill_color_a" id="fill-color-a-label">Colour A</label>
+              <input type="color" id="prop-fill_color_a-swatch" aria-label="Fill colour A swatch">
+              <input type="text" id="prop-fill_color_a" data-prop="fill_color_a" maxlength="7" size="8">
+              <input type="number" id="prop-fill_opacity_a" data-prop="fill_opacity_a" step="1" min="0" max="100" title="Opacity of colour A, percent" aria-label="Opacity of colour A, percent">
+              <span class="unit">%</span>
+            </div>
+            <div class="prop-row labelled" id="field-fill_color_b">
+              <label for="prop-fill_color_b">Colour B</label>
+              <input type="color" id="prop-fill_color_b-swatch" aria-label="Fill colour B swatch">
+              <input type="text" id="prop-fill_color_b" data-prop="fill_color_b" maxlength="7" size="8">
+              <input type="number" id="prop-fill_opacity_b" data-prop="fill_opacity_b" step="1" min="0" max="100" title="Opacity of colour B, percent" aria-label="Opacity of colour B, percent">
+              <span class="unit">%</span>
+            </div>
+            <div class="prop-row labelled" id="field-fill_stripes">
+              <label for="prop-fill_on">Stripe on / off</label>
+              <input type="number" id="prop-fill_on" data-prop="fill_on" step="0.1" min="0.1" max="50" title="Stripe width, percent of board width" aria-label="Stripe width, percent of board width">
+              <input type="number" id="prop-fill_off" data-prop="fill_off" step="0.1" min="0" max="100" title="Gap width, percent of board width" aria-label="Gap width, percent of board width">
+              <span class="unit">%</span>
+            </div>
+          </div>
+          <div class="prop-row labelled" id="field-rotate">
+            <label for="prop-rotate_degrees">Rotation</label>
+            <input type="number" id="prop-rotate_degrees" data-prop="rotate_degrees" step="1">
+            <span class="unit">&deg;</span>
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-corner_radius">Corner radius</label>
+            <input type="number" id="prop-corner_radius" data-prop="corner_radius" step="0.1">
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-corner_cut">Corner cut</label>
+            <input type="number" id="prop-corner_cut" data-prop="corner_cut" step="0.1" title="Chamfer size, percent of board width">
+            <select id="prop-cut_corners" data-prop="cut_corners" aria-label="Which corners are cut"></select>
+          </div>
+          <div class="prop-row labelled" id="field-padding">
+            <label for="prop-padding">Padding</label>
+            <input type="number" id="prop-padding" data-prop="padding" step="0.1">
+          </div>
+          <div class="prop-row labelled" id="field-opacity">
+            <label for="prop-opacity">Opacity</label>
+            <input type="number" id="prop-opacity" data-prop="opacity" step="1">
+          </div>
+        </section>
+
+        <section class="insp-section" id="sec-motion">
+          <h3>Motion</h3>
+          <div class="prop-row labelled">
+            <label for="prop-animation_preset">Animation</label>
+            <select id="prop-animation_preset" data-prop="animation_preset"></select>
+          </div>
+          <div class="prop-row labelled" id="field-animation_seconds">
+            <label for="prop-animation_seconds">Duration</label>
+            <input type="number" id="prop-animation_seconds" data-prop="animation_seconds" step="0.5">
+            <span class="unit">s</span>
+          </div>
+          <p class="hint" id="animation-note"></p>
+        </section>
+
+        <section class="insp-section" id="sec-ticker">
+          <h3>Ticker</h3>
+          <div class="prop-row">
+            <textarea id="prop-lines" data-prop="lines" rows="4" aria-label="Announcement lines, one per row" placeholder="One announcement per line"></textarea>
+          </div>
+          <p class="hint" id="lines-note"></p>
+          <div class="prop-row labelled">
+            <label id="mode-label">Mode</label>
+            <span class="choices" id="prop-mode" data-prop="mode" role="group" aria-labelledby="mode-label"></span>
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-speed_seconds" id="speed-label">Seconds per loop</label>
+            <input type="number" id="prop-speed_seconds" data-prop="speed_seconds" step="1">
+            <span class="unit">s</span>
+          </div>
+        </section>
+
+        <section class="insp-section" id="sec-image">
+          <h3>Image</h3>
+          <div class="prop-row">
+            <img id="prop-image-thumb" alt="" class="image-thumb">
+            <span class="hint" id="prop-image-size"></span>
+          </div>
+          <div class="prop-row labelled">
+            <label for="prop-asset">Picture</label>
+            <select id="prop-asset" data-prop="asset" aria-label="Bundled picture or an uploaded image"></select>
+          </div>
+          <div class="prop-row">
+            <button type="button" data-action="replace_image">Replace image&hellip;</button>
+            <select id="prop-fit" data-prop="fit"></select>
+          </div>
+        </section>
+
+        <section class="insp-section" id="sec-actions">
+          <h3>Actions</h3>
+          <div class="prop-row">
+            <button type="button" id="action-reset_widget" data-action="reset_widget">Reset this widget</button>
+            <button type="button" id="action-duplicate" data-action="duplicate">Duplicate</button>
+            <button type="button" id="action-delete_element" data-action="delete_element">Delete</button>
+            <button type="button" data-action="clamp">Fit to safe area</button>
+          </div>
+        </section>
+
+        <section class="insp-section" id="sec-board">
+          <h3>Board</h3>
+          <div class="prop-row">
+            <label for="board-background_color">Background</label>
+            <input type="color" id="board-background_color-swatch" aria-label="Board background swatch">
+            <input type="text" id="board-background_color" data-board-prop="background_color" maxlength="7" size="8">
+          </div>
+          <div class="prop-grid-2x2">
+            <label for="board-safe_top">Top</label>
+            <input type="number" id="board-safe_top" data-board-prop="safe_top" step="0.1">
+            <label for="board-safe_right">Right</label>
+            <input type="number" id="board-safe_right" data-board-prop="safe_right" step="0.1">
+            <label for="board-safe_bottom">Bottom</label>
+            <input type="number" id="board-safe_bottom" data-board-prop="safe_bottom" step="0.1">
+            <label for="board-safe_left">Left</label>
+            <input type="number" id="board-safe_left" data-board-prop="safe_left" step="0.1">
+          </div>
+          <div class="prop-row">
+            <button type="button" data-action="clamp">Fit to safe area</button>
+          </div>
+          <h3>Presets</h3>
+          <div id="presets-gallery" class="presets-gallery"></div>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="status-bar">
+    <button type="button" class="status-summary is-ok" id="status-summary" data-action="toggle_issues">No problems</button>
+    <div class="issues-drawer" id="issues-drawer" hidden>
+      <ul id="issue-list"></ul>
+      <p class="hint" id="issue-empty">No problems. This layout can be saved.</p>
+    </div>
+    <!-- The whole safety story for this window, in the one place an operator
+         cannot miss it: this changes how the board looks; it never changes
+         scores, clocks, or any other game value. -->
+    <p class="scope-note">Changes how the board looks. It never changes scores, clocks, or any other game value.</p>
+  </footer>
+
+  <script src="../shared/render.js"></script>
+  <script src="../shared/board.js"></script>
+  <script src="../layout/editor-state.js"></script>
+  <script src="../layout/editor-canvas.js"></script>
+  <script src="../layout/editor-panels.js"></script>
+  <script src="../layout/layout.js"></script>
+</body>
+</html>

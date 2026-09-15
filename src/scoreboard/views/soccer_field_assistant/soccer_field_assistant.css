@@ -1,0 +1,53 @@
+/* Soccer Field Assistant (spec section 6). Mirrors the layout rhythm of
+ * views/field_assistant/field_assistant.css: a flex column so the conflict
+ * toast and notice (often hidden) never eat into the fixed-height panels
+ * below them, and every live control is at least 44px tall (spec section 4,
+ * "44 px live controls" -- carried into this window too). */
+body { display:flex; flex-direction:column; gap:8px; padding:10px; overflow:hidden; }
+main { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:8px; overflow:auto; }
+
+.topbar { display:flex; align-items:center; gap:10px; padding:7px 10px; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); }
+.topbar strong { letter-spacing:.08em; margin-right:auto; }
+.topbar span { font-variant-numeric:tabular-nums; color:var(--ink-dim); }
+
+.notice,.conflict { margin:0; padding:7px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:18px; }
+.notice:empty { display:none; }
+.conflict { color:#fff3d6; border-color:#e0a323; background:#4a3712; font-weight:700; }
+
+.team-columns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.team-column { background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); padding:10px; display:flex; flex-direction:column; gap:8px; }
+.team-heading { margin:0; font-size:16px; letter-spacing:.05em; }
+.button-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+button.big { min-height:56px; font-size:15px; font-weight:800; letter-spacing:.03em; }
+button.big.card.yellow { border-color:#e0a323; color:#fff3d6; }
+button.big.card.red { border-color:var(--danger-edge); color:#ffd6d6; }
+button.big[aria-pressed="true"] { border-width:2px; box-shadow:inset 0 0 0 1px var(--accent); }
+
+.pad-panel { background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); padding:10px; }
+.pad-panel .group-heading { margin:0 0 8px; font-size:12px; color:var(--ink-dim); font-weight:700; }
+.pad { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; max-width:320px; }
+.pad-key { min-height:44px; font-size:16px; font-weight:800; }
+.pad-key.wide { grid-column:1/-1; }
+.pad-readout { margin-top:8px; font-size:16px; font-weight:800; font-variant-numeric:tabular-nums; }
+
+.scoreboard-now { margin:0; padding:8px 10px; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); font-variant-numeric:tabular-nums; }
+
+.shootout-panel { background:var(--panel-raised); border:1px solid var(--accent); border-radius:var(--radius); padding:10px; display:flex; flex-direction:column; gap:8px; }
+.shootout-panel h2 { margin:0; font-size:14px; letter-spacing:.08em; }
+.shootout-status { margin:0; font-weight:700; }
+.shootout-dots { display:grid; grid-template-columns:auto 1fr; gap:4px 10px; align-items:center; }
+.shootout-team-label { font-size:12px; font-weight:800; color:var(--ink-dim); }
+.dots { font-size:18px; letter-spacing:4px; }
+.shootout-buttons { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.shootout-buttons button { min-height:48px; font-weight:800; }
+.shootout-buttons button:disabled { opacity:.35; }
+.row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.row2 button { min-height:44px; font-weight:700; }
+
+.actions { display:grid; grid-template-columns:auto 1fr; gap:8px; }
+.actions button { min-height:56px; font-weight:800; }
+#cancel { padding-inline:14px; }
+.confirm { border-color:var(--ok); background:#213f30; font-size:15px; text-align:left; padding-inline:14px; line-height:1.25; }
+.confirm:disabled { opacity:.5; }
+
+@media (max-width: 900px) { .team-columns { grid-template-columns:1fr; } }

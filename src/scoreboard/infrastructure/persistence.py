@@ -62,7 +62,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Final, Iterator, Sequence
+from typing import Any, Callable, Final, Iterator, Mapping, Sequence
 
 from scoreboard.application.snapshots import snapshot_to_state, state_to_snapshot
 from scoreboard.domain.commands import Command, CommandResult, CommandType
@@ -241,10 +241,15 @@ class PersistenceStatus:
 
 @dataclass(frozen=True, slots=True)
 class StoredGame:
-    """One game's recoverable state as it was last committed."""
+    """One game's recoverable state as it was last committed.
+
+    ``state`` is typed ``Any`` (loosened from ``GameState``) so a non-football sport's decoded
+    state -- see :func:`read_stored_game`'s ``decode`` keyword -- can be stored here too, without
+    changing football's own behaviour at all (soccer-mode additive seam).
+    """
 
     game_id: int
-    state: GameState
+    state: Any
     state_revision: int
     checkpoint_at: str
     checkpoint_kind: str
@@ -417,8 +422,17 @@ def validate_database(path: Path) -> str | None:
     return None
 
 
-def read_stored_game(path: Path) -> StoredGame | None:
-    """Read the active game's committed state, or ``None`` when there is none."""
+def read_stored_game(
+    path: Path,
+    *,
+    decode: Callable[[Mapping[str, Any]], Any] = snapshot_to_state,
+) -> StoredGame | None:
+    """Read the active game's committed state, or ``None`` when there is none.
+
+    ``decode`` is keyword-only, defaulting to football's own ``snapshot_to_state`` so every
+    existing call site is unchanged. A non-football sport passes its own decoder (soccer-mode
+    additive seam; see ``.scratch/soccer-mode/api_domain.md``).
+    """
 
     reason = validate_database(path)
     if reason is not None:
@@ -441,8 +455,8 @@ def read_stored_game(path: Path) -> StoredGame | None:
         if row is None:
             return None
         try:
-            state = snapshot_to_state(json.loads(row["snapshot_json"]))
-        except (json.JSONDecodeError, StateValidationError) as exc:
+            state = decode(json.loads(row["snapshot_json"]))
+        except (json.JSONDecodeError, StateValidationError, ValueError) as exc:
             raise DatabaseInvalid(f"stored snapshot is not usable: {exc}") from exc
         return StoredGame(
             game_id=int(row["game_id"]),

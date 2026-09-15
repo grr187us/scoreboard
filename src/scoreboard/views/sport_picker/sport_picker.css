@@ -1,0 +1,50 @@
+/* Sport picker window (520x360): a plain choice, styled with the shared
+ * tokens from views/shared/base.css so it reads as one application with the
+ * operator/spectator/startup windows before any game has even started. */
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap);
+  padding: 24px;
+  text-align: center;
+  overflow: hidden;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.choices {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.sport-choice {
+  flex: 1 1 0;
+  min-height: 44px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.sport-choice:focus-visible {
+  outline: 0.2rem solid var(--accent);
+  outline-offset: 0.2rem;
+}
+
+#last-sport {
+  margin-top: 8px;
+  color: var(--ink-dim);
+  min-height: 1.3em;
+}
+
+#error {
+  color: var(--danger);
+  min-height: 1.3em;
+}

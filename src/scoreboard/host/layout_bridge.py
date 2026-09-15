@@ -41,6 +41,7 @@ propagates.
 
 from __future__ import annotations
 
+from types import ModuleType
 from typing import Any, Callable
 
 from scoreboard.infrastructure import config
@@ -48,6 +49,11 @@ from scoreboard.infrastructure import layouts as layouts_infra
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
 from scoreboard.infrastructure.paths import ScoreboardPaths
 from scoreboard.presentation import layout as layout_module
+
+#: Named separately from the ``layout_module`` constructor parameter below
+#: (same name, spec section 2.3), which would otherwise shadow this import
+#: inside ``__init__``.
+_layout_module_default = layout_module
 
 
 class LayoutLink:
@@ -94,11 +100,17 @@ class PresentationLayouts:
         *,
         diagnostics: Diagnostics | None = None,
         link: LayoutLink | None = None,
+        layout_module: ModuleType | None = None,
     ) -> None:
         self._paths = paths
         self._diagnostics = NullDiagnostics() if diagnostics is None else diagnostics
         self._link = LayoutLink() if link is None else link
-        self._library = layouts_infra.read_library(paths)
+        # A sibling presentation module (soccer's) supplying its own widget
+        # registry and document shape (spec section 2.3). ``None`` -- every
+        # existing football caller -- keeps today's fixed
+        # ``scoreboard.presentation.layout`` import, byte-identical.
+        self._schema = _layout_module_default if layout_module is None else layout_module
+        self._library = layouts_infra.read_library(paths, schema=self._schema)
         self._saved = True
         if self._library.fell_back and self._library.issues:
             # Something was stored and could not be used. Say so, and say what
@@ -136,15 +148,15 @@ class PresentationLayouts:
             "active": library.active,
             "names": library.names(),
             "layout": library.active_layout(),
-            "widgets": layout_module.widget_descriptors(),
-            "limits": layout_module.limits(),
+            "widgets": self._schema.widget_descriptors(),
+            "limits": self._schema.limits(),
             # Built-in starting points the editor offers as a gallery. Each is
             # a complete, validated layout document (spec section 1.7).
-            "presets": layout_module.preset_descriptors(),
+            "presets": self._schema.preset_descriptors(),
             # Per-screen descriptors and presets for the pre-game/halftime
             # event screens (presentation-screens spec section 4).
-            "screens": layout_module.screen_descriptors(),
-            "screen_presets": layout_module.screen_preset_descriptors(),
+            "screens": self._schema.screen_descriptors(),
+            "screen_presets": self._schema.screen_preset_descriptors(),
             "issues": [issue.to_dict() for issue in library.issues],
             "fell_back": library.fell_back,
             "saved": self._saved,
@@ -187,13 +199,13 @@ class PresentationLayouts:
     def preview(self, payload: Any) -> dict[str, Any]:
         """Validate a draft without writing or publishing anything."""
 
-        return layout_module.validate_layout(payload).to_dict()
+        return self._schema.validate_layout(payload).to_dict()
 
     def clamp(self, payload: Any) -> dict[str, Any]:
         """Best-effort "Fit to safe area" repair. Returns a draft, writes nothing."""
 
-        normalized, clamp_issues = layout_module.clamp_layout(payload)
-        result = layout_module.validate_layout(normalized).to_dict()
+        normalized, clamp_issues = self._schema.clamp_layout(payload)
+        result = self._schema.validate_layout(normalized).to_dict()
         result["warnings"] = [issue.to_dict() for issue in clamp_issues] + result["warnings"]
         return result
 
@@ -209,9 +221,9 @@ class PresentationLayouts:
         game widget exactly as before.
         """
 
-        normalized, _clamp_issues = layout_module.clamp_layout(payload)
-        updated = layout_module.reset_widget(normalized, widget_id, screen)
-        return layout_module.validate_layout(updated).to_dict()
+        normalized, _clamp_issues = self._schema.clamp_layout(payload)
+        updated = self._schema.reset_widget(normalized, widget_id, screen)
+        return self._schema.validate_layout(updated).to_dict()
 
     def save(self, name: Any, payload: Any) -> dict[str, Any]:
         """Validate and store one named layout.
@@ -220,13 +232,13 @@ class PresentationLayouts:
         nothing is written -- the "preserve the last valid layout" guarantee.
         """
 
-        library, validation = layouts_infra.save_layout(self._paths, name, payload)
+        library, validation = layouts_infra.save_layout(self._paths, name, payload, schema=self._schema)
         self._library = library
         if validation.ok:
             self._saved = True
             self._message = f"Saved the {library.active!r} layout."
             self._diagnostics.note(
-                "LAYOUT_SAVED", name=library.active, widgets=len(layout_module.WIDGET_IDS)
+                "LAYOUT_SAVED", name=library.active, widgets=len(self._schema.WIDGET_IDS)
             )
             self._publish()
         else:
@@ -240,7 +252,7 @@ class PresentationLayouts:
     def select(self, name: Any) -> dict[str, Any]:
         """Make a stored layout active. Never edits any layout's own contents."""
 
-        library, validation = layouts_infra.select_layout(self._paths, name)
+        library, validation = layouts_infra.select_layout(self._paths, name, schema=self._schema)
         self._library = library
         if validation.ok:
             self._saved = True
@@ -255,7 +267,7 @@ class PresentationLayouts:
     def delete(self, name: Any) -> dict[str, Any]:
         """Remove a stored layout. ``"Default"`` can never be removed."""
 
-        library, validation = layouts_infra.delete_layout(self._paths, name)
+        library, validation = layouts_infra.delete_layout(self._paths, name, schema=self._schema)
         self._library = library
         if validation.ok:
             self._saved = True
@@ -273,7 +285,7 @@ class PresentationLayouts:
         Renaming the active layout keeps it active under the new name.
         """
 
-        library, validation = layouts_infra.rename_layout(self._paths, old, new)
+        library, validation = layouts_infra.rename_layout(self._paths, old, new, schema=self._schema)
         self._library = library
         if validation.ok:
             self._saved = True
@@ -288,7 +300,7 @@ class PresentationLayouts:
     def duplicate(self, name: Any, new_name: Any) -> dict[str, Any]:
         """Copy a stored layout under a new name. The copy becomes active."""
 
-        library, validation = layouts_infra.duplicate_layout(self._paths, name, new_name)
+        library, validation = layouts_infra.duplicate_layout(self._paths, name, new_name, schema=self._schema)
         self._library = library
         if validation.ok:
             self._saved = True
@@ -303,7 +315,7 @@ class PresentationLayouts:
     def reset(self) -> dict[str, Any]:
         """Restore the built-in default layout library."""
 
-        self._library = layouts_infra.reset_library(self._paths)
+        self._library = layouts_infra.reset_library(self._paths, schema=self._schema)
         self._saved = True
         self._message = "The presentation layout was reset to the built-in default."
         self._diagnostics.note("LAYOUT_RESET")

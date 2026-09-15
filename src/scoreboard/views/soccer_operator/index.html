@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Scoreboard control · Soccer</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="soccer_operator.css">
+</head>
+<body>
+  <!--
+    Soccer operator page. Mirrors src/scoreboard/views/operator/index.html's
+    structure (same six fixed grid rows, same drawer/dialog/health machinery,
+    same bridge call pattern: window.pywebview.api.command(name, args,
+    expectedRevision)) per .scratch/soccer-mode/spec.md section 4. Football's
+    files are frozen and untouched; this is a wholly separate page.
+
+    Every control carries data-command, so the mouse can reach every command,
+    and a source-contract test can prove it without driving a browser.
+    Controls that read a text field name it in data-arg-source; the field is
+    read at click time only, so typing changes nothing before Apply (F-016).
+
+    Spec 4.1's decision D: no combined STOPPAGE button. STOP alone is the
+    stoppage; the crowd words are INJURY, DELAY, WEATHER only (no GOAL/FLAG/
+    TIMEOUT/OFFICIALS' T.O. -- those are football-only words).
+  -->
+  <header class="health" id="health">
+    <span class="brand">SCOREBOARD CONTROL &middot; SOCCER</span>
+    <span class="chip" id="chip-game">GAME 40:00 STOPPED</span>
+    <span class="chip" id="chip-button-box" hidden title="Button box: F21 starts and F22 stops the game clock, whichever window is in front">BOX &mdash;</span>
+    <span class="chip" id="chip-display">DISPLAY CLOSED</span>
+    <button type="button" id="reopen-display" class="chip-button" data-action="reopen_display">Reopen Display</button>
+    <button type="button" id="open-display" class="chip-button secondary" data-action="open_display">Display&hellip;</button>
+    <span class="chip" id="chip-save">SAVED</span>
+    <span class="chip" id="chip-revision">Rev 0</span>
+    <span id="cutscene-badge" class="cutscene-badge" hidden></span>
+  </header>
+
+  <p class="alert" id="alert" hidden role="alert" aria-live="assertive"></p>
+
+  <main class="board">
+    <!--
+      Scoring and card entry are both two steps on the main screen, and share
+      one fixed-height .score-controls block per team (spec 4.1/4.2): idle
+      shows SCORE and a compact stat readout; arming shows either GOAL/cross
+      or a card number field/NO #/CONFIRM/cross. Swapped with `hidden`, never
+      style.display, so arming never changes the panel's height (U-001).
+    -->
+    <section class="team" id="home-panel" aria-labelledby="home-heading">
+      <h2 id="home-heading">HOME<span class="armed-flag" id="home-armed-flag" hidden></span></h2>
+      <p class="team-name" data-field="teams.home.name">HOME</p>
+      <span class="identity-stripe" id="home-identity-stripe" hidden></span>
+      <p class="team-pending" id="home-pending" hidden>NOT CHOSEN</p>
+      <p class="score numeric" data-field="teams.home.score">0</p>
+      <div class="score-controls" id="home-score-controls" data-armed="idle">
+        <div class="score-idle" id="home-idle">
+          <button type="button" id="home-arm" data-action="arm_score" data-team="home">SCORE &#9656;</button>
+          <span class="stat-readout" data-field="soccer.home.shots_saves_display">S 0&middot;SV 0</span>
+        </div>
+        <div class="score-goal" id="home-goal-armed" hidden>
+          <button type="button" data-command="add_goal" data-team="home">GOAL</button>
+          <button type="button" data-action="disarm_score" aria-label="Cancel scoring">&#10005;</button>
+        </div>
+        <div class="score-card" id="home-card-armed" hidden>
+          <span class="card-heading" id="home-card-heading">CARD #</span>
+          <input type="number" id="home-card-number" min="0" max="99" step="1" data-draft="true"
+                 aria-label="HOME card player number">
+          <button type="button" data-action="clear_card_number" data-target="#home-card-number">NO #</button>
+          <button type="button" id="home-card-confirm-yellow" hidden data-command="add_card" data-team="home"
+                  data-kind="yellow" data-arg-source="#home-card-number" data-arg-name="player">CONFIRM</button>
+          <button type="button" id="home-card-confirm-red" hidden data-command="add_card" data-team="home"
+                  data-kind="red" data-arg-source="#home-card-number" data-arg-name="player">CONFIRM</button>
+          <button type="button" data-action="disarm_score" aria-label="Cancel card entry">&#10005;</button>
+        </div>
+      </div>
+      <div class="stat-row" role="group" aria-label="Home shots and saves">
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="shots" data-step="-1" aria-label="Home shots minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">SHOTS</span><span data-field="soccer.home.shots_display">S 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="shots" data-step="1" aria-label="Home shots plus one">+</button>
+        </div>
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="saves" data-step="-1" aria-label="Home saves minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">SAVES</span><span data-field="soccer.home.saves_display">SV 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="saves" data-step="1" aria-label="Home saves plus one">+</button>
+        </div>
+      </div>
+      <div class="stat-row" role="group" aria-label="Home corners and fouls">
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="corners" data-step="-1" aria-label="Home corners minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">CORNERS</span><span data-field="soccer.home.corners_display">COR 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="corners" data-step="1" aria-label="Home corners plus one">+</button>
+        </div>
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="fouls" data-step="-1" aria-label="Home fouls minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">FOULS</span><span data-field="soccer.home.fouls_display">F 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="home" data-stat="fouls" data-step="1" aria-label="Home fouls plus one">+</button>
+        </div>
+      </div>
+      <div class="card-row" role="group" aria-label="Home cards">
+        <button type="button" id="home-yellow" data-action="arm_card" data-team="home" data-kind="yellow">YELLOW</button>
+        <button type="button" id="home-red" data-action="arm_card" data-team="home" data-kind="red">RED</button>
+        <span class="card-tally" data-field="soccer.home.cards.display">&nbsp;</span>
+      </div>
+    </section>
+
+    <section class="clocks" aria-label="Clock and period">
+      <div class="clock-block" id="clock-block">
+        <h2 data-field="clocks.game.label">GAME CLOCK</h2>
+        <p class="clock big" id="game-display" data-field="clocks.game.display">40:00</p>
+        <p class="state" id="game-state" data-field="clocks.game.status">STOPPED</p>
+        <div class="pair">
+          <button type="button" id="game-start" data-command="game_clock_start">START</button>
+          <button type="button" id="game-stop" data-command="game_clock_stop">STOP</button>
+        </div>
+        <div class="period-row">
+          <span class="label">PERIOD</span>
+          <button type="button" data-command="period_back" aria-label="Previous period">&#9664;</button>
+          <span class="period-value" data-field="period_display">1ST HALF</span>
+          <button type="button" data-command="period_forward" aria-label="Next period">&#9654;</button>
+        </div>
+      </div>
+
+      <!--
+        SHOOTOUT panel. Nothing floats when unused (spec 4.3): this swaps in
+        for the clock block, inside the same fixed-height centre panel, only
+        while period === SHOOTOUT. Only the side named by next_team has its
+        MADE/MISSED enabled.
+      -->
+      <div class="clock-block shootout-block" id="shootout-block" hidden>
+        <h2>SHOOTOUT</h2>
+        <!-- round and next_team are raw fields (spec 3.3); the two literal
+             words around them are static vocabulary, composed the same way
+             operator.js already builds 'GAME ' + display + ' ' + status. -->
+        <p class="shootout-heading">
+          <span id="shootout-round">ROUND 1</span>
+          <span id="shootout-next-team">&middot; HOME TO KICK</span>
+        </p>
+        <p class="shootout-tally">
+          HOME <span data-field="soccer.shootout.home_display">&nbsp;</span>
+          &nbsp;&middot;&nbsp;
+          AWAY <span data-field="soccer.shootout.away_display">&nbsp;</span>
+        </p>
+        <div class="row shootout-kicker">
+          <span class="row-label">Kicker #</span>
+          <input type="number" id="shootout-kicker-number" min="0" max="99" step="1" data-draft="true"
+                 aria-label="Kicker number">
+        </div>
+        <div class="pair">
+          <button type="button" id="shootout-home-made" data-command="shootout_kick" data-team="home"
+                  data-made="true" data-arg-source="#shootout-kicker-number" data-arg-name="player">HOME MADE</button>
+          <button type="button" id="shootout-home-missed" data-command="shootout_kick" data-team="home"
+                  data-made="false" data-arg-source="#shootout-kicker-number" data-arg-name="player">HOME MISSED</button>
+        </div>
+        <div class="pair">
+          <button type="button" id="shootout-away-made" data-command="shootout_kick" data-team="away"
+                  data-made="true" data-arg-source="#shootout-kicker-number" data-arg-name="player">AWAY MADE</button>
+          <button type="button" id="shootout-away-missed" data-command="shootout_kick" data-team="away"
+                  data-made="false" data-arg-source="#shootout-kicker-number" data-arg-name="player">AWAY MISSED</button>
+        </div>
+        <div class="row" id="shootout-first-kicker-row" hidden>
+          <span class="row-label">FIRST KICKER</span>
+          <button type="button" data-command="set_shootout_first_kicker" data-team="home">HOME</button>
+          <button type="button" data-command="set_shootout_first_kicker" data-team="away">AWAY</button>
+        </div>
+        <!-- Enabled only when the view model says the kicks are decided. -->
+        <button type="button" id="finish-shootout" data-command="finish_shootout" data-confirm="local"
+                data-confirm-title="Finish the shootout?">FINISH SHOOTOUT&hellip;</button>
+      </div>
+    </section>
+
+    <section class="team" id="away-panel" aria-labelledby="away-heading">
+      <h2 id="away-heading">AWAY<span class="armed-flag" id="away-armed-flag" hidden></span></h2>
+      <p class="team-name" data-field="teams.away.name">AWAY</p>
+      <span class="identity-stripe" id="away-identity-stripe" hidden></span>
+      <p class="team-pending" id="away-pending" hidden>NOT CHOSEN</p>
+      <p class="score numeric" data-field="teams.away.score">0</p>
+      <div class="score-controls" id="away-score-controls" data-armed="idle">
+        <div class="score-idle" id="away-idle">
+          <button type="button" id="away-arm" data-action="arm_score" data-team="away">SCORE &#9656;</button>
+          <span class="stat-readout" data-field="soccer.away.shots_saves_display">S 0&middot;SV 0</span>
+        </div>
+        <div class="score-goal" id="away-goal-armed" hidden>
+          <button type="button" data-command="add_goal" data-team="away">GOAL</button>
+          <button type="button" data-action="disarm_score" aria-label="Cancel scoring">&#10005;</button>
+        </div>
+        <div class="score-card" id="away-card-armed" hidden>
+          <span class="card-heading" id="away-card-heading">CARD #</span>
+          <input type="number" id="away-card-number" min="0" max="99" step="1" data-draft="true"
+                 aria-label="AWAY card player number">
+          <button type="button" data-action="clear_card_number" data-target="#away-card-number">NO #</button>
+          <button type="button" id="away-card-confirm-yellow" hidden data-command="add_card" data-team="away"
+                  data-kind="yellow" data-arg-source="#away-card-number" data-arg-name="player">CONFIRM</button>
+          <button type="button" id="away-card-confirm-red" hidden data-command="add_card" data-team="away"
+                  data-kind="red" data-arg-source="#away-card-number" data-arg-name="player">CONFIRM</button>
+          <button type="button" data-action="disarm_score" aria-label="Cancel card entry">&#10005;</button>
+        </div>
+      </div>
+      <div class="stat-row" role="group" aria-label="Away shots and saves">
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="shots" data-step="-1" aria-label="Away shots minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">SHOTS</span><span data-field="soccer.away.shots_display">S 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="shots" data-step="1" aria-label="Away shots plus one">+</button>
+        </div>
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="saves" data-step="-1" aria-label="Away saves minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">SAVES</span><span data-field="soccer.away.saves_display">SV 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="saves" data-step="1" aria-label="Away saves plus one">+</button>
+        </div>
+      </div>
+      <div class="stat-row" role="group" aria-label="Away corners and fouls">
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="corners" data-step="-1" aria-label="Away corners minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">CORNERS</span><span data-field="soccer.away.corners_display">COR 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="corners" data-step="1" aria-label="Away corners plus one">+</button>
+        </div>
+        <div class="stat-cell">
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="fouls" data-step="-1" aria-label="Away fouls minus one">&minus;</button>
+          <span class="stat-value"><span class="stat-caption">FOULS</span><span data-field="soccer.away.fouls_display">F 0</span></span>
+          <button type="button" class="nudge" data-command="add_stat" data-team="away" data-stat="fouls" data-step="1" aria-label="Away fouls plus one">+</button>
+        </div>
+      </div>
+      <div class="card-row" role="group" aria-label="Away cards">
+        <button type="button" id="away-yellow" data-action="arm_card" data-team="away" data-kind="yellow">YELLOW</button>
+        <button type="button" id="away-red" data-action="arm_card" data-team="away" data-kind="red">RED</button>
+        <span class="card-tally" data-field="soccer.away.cards.display">&nbsp;</span>
+      </div>
+    </section>
+  </main>
+
+  <!--
+    Crowd-facing game status. Spec 4.1's decision D: only three words --
+    INJURY, DELAY, WEATHER. STOP alone stops the clock; there is no combined
+    stoppage/flag button and no GOAL/TIMEOUT/OFFICIALS' T.O. words here.
+  -->
+  <section class="crowd-bar" aria-label="Crowd message">
+    <span class="label">CROWD</span>
+    <span class="crowd-chip" id="crowd-status">&mdash;</span>
+    <button type="button" id="crowd-injury" data-command="set_game_status" data-label="INJURY">INJURY</button>
+    <button type="button" id="crowd-delay" data-command="set_game_status" data-label="DELAY">DELAY</button>
+    <button type="button" id="crowd-weather" data-command="set_game_status" data-label="WEATHER" data-seconds="1800">WEATHER</button>
+    <button type="button" id="crowd-clear" class="crowd-clear" data-command="clear_game_status" hidden>CLEAR</button>
+    <span class="crowd-countdown" id="crowd-countdown" role="group" aria-label="Weather countdown" hidden>
+      <span class="crowd-countdown-label">WEATHER</span>
+      <span class="crowd-clock numeric" id="crowd-clock" data-field="status.clock_display">&nbsp;</span>
+      <button type="button" id="crowd-start" class="crowd-go" data-command="status_clock_start">START</button>
+      <button type="button" id="crowd-stop" class="crowd-halt" data-command="status_clock_stop">STOP</button>
+    </span>
+  </section>
+
+  <section class="period-bar" aria-label="Period and undo">
+    <span class="label">PERIOD</span>
+    <button type="button" data-command="period_back" aria-label="Previous period">&#9664;</button>
+    <span class="period" data-field="period">1st</span>
+    <button type="button" data-command="period_forward" aria-label="Next period">&#9654;</button>
+    <button type="button" class="last-action" id="last-action-button" data-action="open_history">LAST: <span
+        id="last-action">nothing yet</span><span class="undo-depth" id="undo-depth" hidden></span></button>
+    <button type="button" id="undo" data-command="undo" data-confirm="local"
+            data-confirm-title="Undo the last action?">UNDO&hellip;</button>
+  </section>
+
+  <footer class="tools">
+    <button type="button" id="open-teams" data-action="open_teams">Teams &#9656;</button>
+    <button type="button" id="open-corrections" data-action="open_corrections">Corrections &#9656;</button>
+    <button type="button" id="open-setup" data-action="open_setup">Setup &#9656;</button>
+    <button type="button" id="open-field-assistant" data-action="open_field_assistant">Field Assistant</button>
+    <button type="button" id="open-cutscenes" data-action="open_cutscenes">Cutscenes</button>
+    <button type="button" id="open-help" data-action="open_help">Shortcut Help</button>
+    <button type="button" id="open-advanced" data-action="open_advanced">Advanced &#9656;</button>
+    <span class="spacer"></span>
+    <button type="button" id="open-game" class="danger" data-action="open_game">Game &#9656;</button>
+  </footer>
+
+  <!-- Corrective controls (spec 4.4). May scroll inside itself; the board never does. -->
+  <div class="drawer" id="corrections" hidden aria-label="Corrections">
+    <div class="drawer-panel">
+      <h2>CORRECTIONS</h2>
+      <p class="hint">Typing changes nothing. Each Apply asks you to confirm the old and new value.</p>
+
+      <div class="row">
+        <span class="row-label">HOME score <span class="numeric" data-field="teams.home.score">0</span></span>
+        <button type="button" data-command="set_score" data-team="home" data-arg-source="#home-score-input"
+                data-arg-name="value" data-arg-relative="1">+1</button>
+        <button type="button" data-command="set_score" data-team="home" data-arg-source="#home-score-input"
+                data-arg-name="value" data-arg-relative="-1">&minus;1</button>
+        <input type="number" id="home-score-input" min="0" max="99" step="1" data-draft="true"
+               aria-label="Set home score">
+        <button type="button" data-command="set_score" data-team="home" data-arg-source="#home-score-input"
+                data-arg-name="value" data-confirm="local" data-confirm-title="Change the HOME score?">Apply&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">AWAY score <span class="numeric" data-field="teams.away.score">0</span></span>
+        <button type="button" data-command="set_score" data-team="away" data-arg-source="#away-score-input"
+                data-arg-name="value" data-arg-relative="1">+1</button>
+        <button type="button" data-command="set_score" data-team="away" data-arg-source="#away-score-input"
+                data-arg-name="value" data-arg-relative="-1">&minus;1</button>
+        <input type="number" id="away-score-input" min="0" max="99" step="1" data-draft="true"
+               aria-label="Set away score">
+        <button type="button" data-command="set_score" data-team="away" data-arg-source="#away-score-input"
+                data-arg-name="value" data-confirm="local" data-confirm-title="Change the AWAY score?">Apply&hellip;</button>
+      </div>
+
+      <div class="row" id="corrections-stats-row">
+        <span class="row-label">HOME stats</span>
+        <span>shots <span data-field="soccer.home.shots">0</span></span>
+        <input type="number" id="home-shots-input" min="0" max="99" step="1" data-draft="true" aria-label="Set home shots">
+        <button type="button" data-command="set_stat" data-team="home" data-stat="shots" data-arg-source="#home-shots-input" data-arg-name="value">Set</button>
+        <span>saves <span data-field="soccer.home.saves">0</span></span>
+        <input type="number" id="home-saves-input" min="0" max="99" step="1" data-draft="true" aria-label="Set home saves">
+        <button type="button" data-command="set_stat" data-team="home" data-stat="saves" data-arg-source="#home-saves-input" data-arg-name="value">Set</button>
+        <span>corners <span data-field="soccer.home.corners">0</span></span>
+        <input type="number" id="home-corners-input" min="0" max="99" step="1" data-draft="true" aria-label="Set home corners">
+        <button type="button" data-command="set_stat" data-team="home" data-stat="corners" data-arg-source="#home-corners-input" data-arg-name="value">Set</button>
+        <span>fouls <span data-field="soccer.home.fouls">0</span></span>
+        <input type="number" id="home-fouls-input" min="0" max="99" step="1" data-draft="true" aria-label="Set home fouls">
+        <button type="button" data-command="set_stat" data-team="home" data-stat="fouls" data-arg-source="#home-fouls-input" data-arg-name="value">Set</button>
+      </div>
+
+      <div class="row" id="corrections-away-stats-row">
+        <span class="row-label">AWAY stats</span>
+        <span>shots <span data-field="soccer.away.shots">0</span></span>
+        <input type="number" id="away-shots-input" min="0" max="99" step="1" data-draft="true" aria-label="Set away shots">
+        <button type="button" data-command="set_stat" data-team="away" data-stat="shots" data-arg-source="#away-shots-input" data-arg-name="value">Set</button>
+        <span>saves <span data-field="soccer.away.saves">0</span></span>
+        <input type="number" id="away-saves-input" min="0" max="99" step="1" data-draft="true" aria-label="Set away saves">
+        <button type="button" data-command="set_stat" data-team="away" data-stat="saves" data-arg-source="#away-saves-input" data-arg-name="value">Set</button>
+        <span>corners <span data-field="soccer.away.corners">0</span></span>
+        <input type="number" id="away-corners-input" min="0" max="99" step="1" data-draft="true" aria-label="Set away corners">
+        <button type="button" data-command="set_stat" data-team="away" data-stat="corners" data-arg-source="#away-corners-input" data-arg-name="value">Set</button>
+        <span>fouls <span data-field="soccer.away.fouls">0</span></span>
+        <input type="number" id="away-fouls-input" min="0" max="99" step="1" data-draft="true" aria-label="Set away fouls">
+        <button type="button" data-command="set_stat" data-team="away" data-stat="fouls" data-arg-source="#away-fouls-input" data-arg-name="value">Set</button>
+      </div>
+
+      <!-- Each row carries the view model's card index, so Remove… sends
+           remove_card for exactly that card (confirmed). -->
+      <div class="row" id="corrections-cards-row">
+        <span class="row-label">Cards</span>
+        <div id="home-card-list" class="card-list" aria-label="HOME cards"></div>
+        <div id="away-card-list" class="card-list" aria-label="AWAY cards"></div>
+        <button type="button" data-action="second_yellow_to_red" data-team="home">HOME 2ND YELLOW &#8594; RED</button>
+        <button type="button" data-action="second_yellow_to_red" data-team="away">AWAY 2ND YELLOW &#8594; RED</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Game clock <span class="clock" data-field="clocks.game.display">40:00</span></span>
+        <input type="number" id="game-minutes" min="0" max="60" step="1" value="40" data-draft="true"
+               aria-label="Game clock minutes">
+        <span>:</span>
+        <input type="number" id="game-seconds" min="0" max="59" step="1" value="0" data-draft="true"
+               aria-label="Game clock seconds">
+        <button type="button" data-command="game_clock_correct" data-arg-minutes="#game-minutes"
+                data-arg-seconds="#game-seconds" data-arg-name="seconds" data-confirm="local"
+                data-confirm-title="Set the game clock?"
+                data-confirm-detail="Editing stops the game clock. Use START when you are ready.">Apply&hellip;</button>
+      </div>
+
+      <div class="row" id="period-row">
+        <span class="row-label">Period <span data-field="period">1st</span></span>
+        <span class="period-choices" id="period-choices"></span>
+      </div>
+
+      <div class="row" id="shootout-corrections-row">
+        <span class="row-label">Shootout kicks</span>
+        <span data-field="soccer.shootout.tally_display">&nbsp;</span>
+        <button type="button" data-command="shootout_remove_last" data-confirm="local"
+                data-confirm-title="Remove the last shootout kick?">Remove last&hellip;</button>
+      </div>
+      <div class="row" id="shootout-kicks-row">
+        <span class="row-label">Correct a kick</span>
+        <div id="kick-list" class="card-list" aria-label="Shootout kicks"></div>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Team names</span>
+        <input type="text" id="home-name-input" maxlength="24" data-draft="true" aria-label="Home team name">
+        <button type="button" data-command="set_team_name" data-team="home" data-arg-source="#home-name-input"
+                data-arg-name="name" data-confirm="local" data-confirm-title="Change the HOME team name?">Apply&hellip;</button>
+        <input type="text" id="away-name-input" maxlength="24" data-draft="true" aria-label="Away team name">
+        <button type="button" data-command="set_team_name" data-team="away" data-arg-source="#away-name-input"
+                data-arg-name="name" data-confirm="local" data-confirm-title="Change the AWAY team name?">Apply&hellip;</button>
+      </div>
+
+      <div class="row section" id="data-folder-row">
+        <span class="row-label">Saved to</span>
+        <span class="folder-path" id="data-folder-path">&hellip;</span>
+        <button type="button" data-action="choose_data_folder">Choose folder&hellip;</button>
+        <button type="button" data-action="use_default_folder">Use standard folder</button>
+      </div>
+      <p class="hint" id="data-folder-note">The game running now keeps saving where it is. A new
+        folder is used the next time the scoreboard starts.</p>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="display-drawer" hidden aria-label="Spectator display">
+    <div class="drawer-panel">
+      <h2>SPECTATOR DISPLAY</h2>
+      <p class="hint">Where the board is shown. Nothing here changes scores, clocks, or the game.</p>
+
+      <div class="row" id="display-status-row">
+        <span class="row-label">Status</span>
+        <span class="chip" id="drawer-display-chip">DISPLAY CLOSED</span>
+        <span class="folder-path" id="display-detail">&hellip;</span>
+        <button type="button" id="drawer-reopen-display" class="chip-button" data-action="reopen_display">Reopen Display</button>
+        <button type="button" id="close-display" data-action="close_display" hidden>Close Display</button>
+      </div>
+
+      <div class="row" id="display-row">
+        <span class="row-label">Saved display</span>
+        <span class="folder-path" id="display-summary">&hellip;</span>
+        <button type="button" data-action="forget_display">Forget saved display</button>
+      </div>
+      <p class="hint" id="display-note">Choosing a display moves the board immediately and
+        remembers it for next time. A display that is not connected is never chosen for you.</p>
+      <div class="row" id="display-choices-row">
+        <span class="row-label">Available now</span>
+        <span class="period-choices" id="display-choices"></span>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="teams-drawer" hidden aria-label="Teams">
+    <div class="drawer-panel">
+      <h2>TEAMS</h2>
+      <p class="hint attention" id="teams-prompt" hidden></p>
+      <p class="hint">Pick a saved team for each side. Team names can change only
+        before kickoff, and each change asks you to confirm. Colours and short
+        names are saved for the board; they never change scores or clocks.</p>
+
+      <div class="row" id="teams-now-row">
+        <span class="row-label">Now</span>
+        <span class="team-now">
+          <span class="swatch" id="home-identity-swatch" hidden></span>
+          <span data-field="teams.home.name">HOME</span>
+          <span id="home-identity-short"></span>
+        </span>
+        <span class="team-now">
+          <span class="swatch" id="away-identity-swatch" hidden></span>
+          <span data-field="teams.away.name">AWAY</span>
+          <span id="away-identity-short"></span>
+        </span>
+      </div>
+
+      <div id="team-list" class="team-list" aria-label="Saved teams"></div>
+
+      <div class="row" id="team-form">
+        <span class="row-label">Save a team</span>
+        <input type="text" id="team-name-input" maxlength="24" data-draft="true"
+               aria-label="Team name">
+        <input type="text" id="team-short-input" maxlength="6" data-draft="true"
+               aria-label="Short name (up to 6)">
+        <input type="color" id="team-primary-input" value="#FFFFFF" data-draft="true"
+               aria-label="Primary colour">
+        <input type="color" id="team-secondary-input" value="#111111" data-draft="true"
+               aria-label="Secondary colour">
+        <button type="button" data-action="save_team">Save team</button>
+        <button type="button" data-action="prefill_team" data-team="home">Use HOME name</button>
+        <button type="button" data-action="prefill_team" data-team="away">Use AWAY name</button>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    Setup drawer -- SoccerRules (spec section 8). Saving is a host action
+    (api.save_rules), not a command: it advances no revision and writes no
+    history row. Typing changes nothing until Save (F-016). Two field kinds
+    beyond football's plain number/minutes:seconds pairs: `toggle`
+    (checkbox) and `choice` (select).
+  -->
+  <div class="drawer" id="setup-drawer" hidden aria-label="Setup">
+    <div class="drawer-panel">
+      <h2>SETUP</h2>
+      <p class="hint">Period and countdown lengths, overtime, shootout, and the mercy rule.
+        Saving changes nothing already on the clock: each length is used the next time that
+        period, a new game, or a countdown is loaded.</p>
+
+      <div class="row">
+        <span class="row-label">Half length</span>
+        <input type="number" id="rule-half-minutes" min="5" max="60" step="1" value="40" data-draft="true" aria-label="Half length minutes">
+        <span>:</span>
+        <input type="number" id="rule-half-seconds" min="0" max="59" step="1" value="0" data-draft="true" aria-label="Half length seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Halftime countdown</span>
+        <input type="number" id="rule-halftime-minutes" min="1" max="60" step="1" value="10" data-draft="true" aria-label="Halftime countdown minutes">
+        <span>:</span>
+        <input type="number" id="rule-halftime-seconds" min="0" max="59" step="1" value="0" data-draft="true" aria-label="Halftime countdown seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Warmup label at</span>
+        <input type="number" id="rule-warmup-minutes" min="0" max="60" step="1" value="3" data-draft="true" aria-label="Warmup label minutes">
+        <span>:</span>
+        <input type="number" id="rule-warmup-seconds" min="0" max="59" step="1" value="0" data-draft="true" aria-label="Warmup label seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Pregame countdown</span>
+        <input type="number" id="rule-pregame-minutes" min="1" max="60" step="1" value="30" data-draft="true" aria-label="Pregame countdown minutes">
+        <span>:</span>
+        <input type="number" id="rule-pregame-seconds" min="0" max="59" step="1" value="0" data-draft="true" aria-label="Pregame countdown seconds">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Overtime periods</span>
+        <input type="number" id="rule-overtime-periods" min="0" max="2" step="1" value="2" data-draft="true" aria-label="Overtime periods">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Overtime period length</span>
+        <input type="number" id="rule-overtime-minutes" min="1" max="20" step="1" value="10" data-draft="true" aria-label="Overtime period length minutes">
+        <span>:</span>
+        <input type="number" id="rule-overtime-seconds" min="0" max="59" step="1" value="0" data-draft="true" aria-label="Overtime period length seconds">
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="rule-golden-goal">Golden goal ends overtime</label>
+        <input type="checkbox" id="rule-golden-goal" data-draft="true">
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="rule-shootout-enabled">Kicks from the mark after overtime</label>
+        <input type="checkbox" id="rule-shootout-enabled" data-draft="true">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Kickers per team</span>
+        <input type="number" id="rule-shootout-kickers" min="1" max="11" step="1" value="5" data-draft="true" aria-label="Shootout kickers per team">
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="rule-shootout-credit-goal">Add one goal to the shootout winner</label>
+        <input type="checkbox" id="rule-shootout-credit-goal" data-draft="true">
+      </div>
+
+      <div class="row">
+        <span class="row-label">Mercy-rule goal differential</span>
+        <input type="number" id="rule-mercy-differential" min="0" max="20" step="1" value="9" data-draft="true" aria-label="Mercy rule goal differential">
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="rule-mercy-applies">Mercy rule applies</label>
+        <select id="rule-mercy-applies" data-draft="true">
+          <option value="halftime_and_second_half">Halftime and second half</option>
+          <option value="any_time">Any time</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="rule-stop-clock-on-goal">Stop the clock on a goal</label>
+        <input type="checkbox" id="rule-stop-clock-on-goal" data-draft="true">
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="rule-clock-direction">Game clock counts</label>
+        <select id="rule-clock-direction" data-draft="true">
+          <option value="down">Down</option>
+          <option value="up">Up</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <span class="row-label">WEATHER countdown</span>
+        <input type="number" id="rule-weather-minutes" min="0" max="30" step="1" value="30" data-draft="true" aria-label="Weather countdown minutes">
+        <span>:</span>
+        <input type="number" id="rule-weather-seconds" min="0" max="59" step="1" value="0" data-draft="true" aria-label="Weather countdown seconds">
+      </div>
+
+      <p class="hint">Stop the clock for a leading team's substitution in the last 5:00 (NFHS 7-4-3).</p>
+
+      <p class="hint" id="rules-note" hidden></p>
+
+      <div class="row end">
+        <button type="button" data-action="restore_default_rules">Restore defaults</button>
+        <button type="button" data-action="save_rules">Save rules</button>
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    The game's lifecycle, out of the always-visible footer, exactly as
+    football's Game drawer (spec 4.4): Reset Game Clock, End Game, New Game.
+  -->
+  <div class="drawer" id="game-drawer" hidden aria-label="Game">
+    <div class="drawer-panel">
+      <h2>GAME</h2>
+      <p class="hint">Nothing here happens without a confirmation. Scores and clocks stay on
+        the main screen.</p>
+
+      <div class="row">
+        <span class="row-label">Game clock <span class="clock" data-field="clocks.game.display">40:00</span></span>
+        <button type="button" class="danger" data-command="game_clock_reset" data-confirm="local"
+                data-confirm-title="Reset the game clock?"
+                data-confirm-detail="The game clock returns to its current period's length and stays stopped.">Reset Game Clock&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">This game</span>
+        <button type="button" class="danger" data-command="end_game" data-confirm="local"
+                data-confirm-title="End the game?"
+                data-confirm-detail="The game clock stops and the game is marked FINAL. Scores and names are kept.">End Game&hellip;</button>
+      </div>
+
+      <div class="row">
+        <span class="row-label">Next game</span>
+        <button type="button" class="danger" data-command="new_game">New Game&hellip;</button>
+      </div>
+
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="history-drawer" hidden aria-label="Undo history">
+    <div class="drawer-panel">
+      <h2>UNDO HISTORY</h2>
+      <p class="hint">Undo reverses these in order, newest first. An action that cannot be
+        undone &mdash; New Game, End Game, or a period change that moved a clock &mdash;
+        clears this list rather than letting Undo skip past it.</p>
+      <ol class="history-list" id="history-list"></ol>
+      <div class="row">
+        <button type="button" data-command="undo" data-confirm="local"
+                data-confirm-title="Undo the last action?">UNDO&hellip;</button>
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="shortcut-help" hidden aria-label="Keyboard shortcuts">
+    <div class="drawer-panel">
+      <h2>SHORTCUT HELP</h2>
+      <p>Shortcuts work in this control window. Release each key before pressing again.
+        All editable fields and confirmation dialogs suppress live shortcuts.</p>
+      <table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody id="shortcut-list"></tbody></table>
+      <button type="button" data-action="close_drawer">Close</button>
+    </div>
+  </div>
+
+  <div class="drawer" id="advanced-drawer" hidden aria-label="Advanced">
+    <div class="drawer-panel">
+      <h2>ADVANCED</h2>
+      <p class="hint">Open a small side-by-side spectator preview to test layout changes or practice at home. It never changes the production display.</p>
+      <div class="row">
+        <span class="row-label">Spectator preview</span>
+        <button type="button" id="open-test-window" data-action="open_test_window">Open test window</button>
+      </div>
+      <p class="hint" id="layout-editor-note">Changes how the spectator board looks. It never changes
+        scores, clocks, or any game value.</p>
+      <div class="row">
+        <span class="row-label">Presentation layout</span>
+        <button type="button" id="open-layout-editor" data-action="open_layout_editor">Presentation layout&hellip;</button>
+      </div>
+      <p class="hint" id="logs-note">If something went wrong during a game, this folder holds the
+        diagnostics log to send along with your report. Opening it changes nothing.</p>
+      <div class="row">
+        <span class="row-label">Diagnostics</span>
+        <button type="button" id="open-logs-folder" data-action="open_logs_folder">Open logs folder</button>
+      </div>
+      <div class="row end">
+        <button type="button" data-action="close_drawer">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dialog-backdrop" id="confirm-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-detail"></p>
+      <p class="change" id="confirm-change" hidden></p>
+      <div class="dialog-buttons">
+        <button type="button" id="confirm-cancel" autofocus>Cancel</button>
+        <button type="button" id="confirm-accept" class="danger">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    Spec 3.2's period_decision: raised by natural expiry in 2nd/OT1/OT2.
+    Choices arrive from Python (period_decision.choices), so the page picks
+    no wording of its own; each choice sends the ordinary set_period command
+    the Corrections drawer already sends. Keep is always offered and is what
+    Escape and autofocus land on, exactly like football's PL-5 prompt.
+  -->
+  <div class="dialog-backdrop" id="period-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="period-title">
+      <h2 id="period-title">Time has run out. What comes next?</h2>
+      <p id="period-detail">The game clock is at 0:00 in <span id="period-quarter">2nd Half</span>.
+        Choose what happens next.</p>
+      <div class="dialog-buttons period-buttons" id="period-choices-buttons">
+        <button type="button" data-action="period_keep" id="period-keep" autofocus>Keep <span id="period-keep-quarter">2nd Half</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    Spec 3.2's mercy_reached: a derived flag, never automatic. Its only two
+    actions are End Game (through the Game drawer, same as every other
+    lifecycle-ending control) and Keep playing (dismisses, sends nothing).
+  -->
+  <div class="dialog-backdrop" id="mercy-dialog" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mercy-title">
+      <h2 id="mercy-title">The mercy rule differential has been reached.</h2>
+      <p id="mercy-detail">Choose End Game to close out the game, or keep playing.</p>
+      <div class="dialog-buttons">
+        <button type="button" id="mercy-keep" data-action="mercy_keep" autofocus>Keep playing</button>
+        <button type="button" id="mercy-end" class="danger" data-action="mercy_end">End Game&hellip;</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../shared/render.js"></script>
+  <script src="keyboard.js"></script>
+  <script src="soccer_operator.js"></script>
+</body>
+</html>

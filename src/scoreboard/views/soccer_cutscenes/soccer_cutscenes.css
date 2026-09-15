@@ -1,0 +1,31 @@
+/* Soccer Cutscenes window: mirrors views/cutscenes/cutscenes.css (football;
+ * frozen) in layout. There are two trigger buttons for the one event since
+ * a GOAL is always HOME's or AWAY's, never nobody's -- spec section 7. */
+body { display:flex; flex-direction:column; gap:10px; padding:12px; overflow:hidden; }
+
+.topbar { display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); }
+.topbar strong { letter-spacing:.08em; }
+.status { margin-left:auto; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ink-dim); white-space:nowrap; }
+.cancel { min-height:44px; padding-inline:16px; font-weight:800; border-color:var(--danger); }
+.cancel:disabled { opacity:.4; }
+
+.notice { margin:0; padding:6px 10px; border:1px solid var(--edge); border-radius:var(--radius); min-height:14px; font-size:12px; }
+.notice:empty { display:none; }
+
+.triggers { display:flex; flex-direction:column; gap:10px; flex:1 1 auto; min-height:0; }
+.trigger { min-height:64px; font-size:22px; font-weight:900; letter-spacing:.04em; border-radius:10px; flex:1 1 auto; }
+.trigger-goal-home { background:#08439A; border-color:#2C62AB; color:#FFFFFF; }
+.trigger-goal-away { background:#A50021; border-color:#FFB703; color:#FFFFFF; }
+.trigger:hover:not(:disabled) { filter:brightness(1.12); }
+.trigger:active { filter:brightness(0.92); }
+
+.auto-row { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-dim); padding:2px 2px; flex:0 0 auto; }
+.auto-row input { width:18px; height:18px; }
+
+.packs { background:var(--panel); border:1px solid var(--edge); border-radius:var(--radius); padding:8px 10px; overflow:auto; max-height:200px; flex:0 0 auto; }
+.packs summary { cursor:pointer; font-weight:700; letter-spacing:.06em; font-size:12px; color:var(--ink-dim); }
+.pack-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; color:var(--ink-dim); margin-top:8px; }
+.pack-row select { flex:1; min-height:36px; margin-left:8px; }
+.pack-actions { display:flex; gap:8px; margin-top:8px; }
+.pack-actions button { flex:1; min-height:36px; font-size:12px; }
+.issues { margin:8px 0 0; padding-left:18px; font-size:12px; color:var(--warn); }

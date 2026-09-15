@@ -11,6 +11,7 @@ twenty minutes before kickoff.
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 from scoreboard.domain.state import APP_VERSION
 from scoreboard.host import preflight
@@ -35,6 +36,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Force a zero-based Windows display index for the spectator window. "
             "The default is to use the display saved in config.json, and to open "
             "nothing rather than cover the operator's screen when it is missing."
+        ),
+    )
+    parser.add_argument(
+        "--sport",
+        choices=("football", "soccer"),
+        default=None,
+        help=(
+            "Skip the sport picker and go straight to Football or Soccer. With "
+            "neither this nor --resume/--new-game, the picker is shown; a bare "
+            "--resume/--new-game (no --sport) behaves exactly as today: Football."
         ),
     )
     choice = parser.add_mutually_exclusive_group()
@@ -146,6 +157,50 @@ def main(argv: list[str] | None = None) -> int:
     if not webview2.satisfied:
         preflight.report("Scoreboard cannot start", webview2.message())
         return 4
+
+    # Soccer mode (spec section 2.3): no --sport and no bare --resume/--new-game
+    # shows the sport picker; --sport football or a bare --resume/--new-game
+    # is today's exact football path (unchanged below); --sport soccer builds
+    # SoccerApplication instead. Neither new branch touches the football path.
+    if args.sport is None and args.startup_choice is None:
+        from scoreboard.host.sport_picker import SportPickerHost
+        from scoreboard.infrastructure.paths import resolve_paths
+
+        SportPickerHost(
+            resolve_paths(),
+            display_index=args.display_index,
+            auto_close_after_seconds=args.auto_close_after_seconds,
+        ).run()
+        return 0
+
+    if args.sport == "soccer":
+        from scoreboard.host.soccer_app import SoccerApplication
+
+        try:
+            application: Any = SoccerApplication()
+        except InstanceAlreadyRunning as exc:
+            preflight.report("Scoreboard is already running", str(exc))
+            return 2
+        host = WindowHost(
+            application,
+            initial_display_index=args.display_index,
+            auto_close_after_seconds=args.auto_close_after_seconds,
+        )
+        try:
+            host.run(startup_choice=args.startup_choice, interactive=True)
+        except RecoveryChoiceRequired as exc:
+            report = exc.report
+            lines = [report.message]
+            if report.checkpoint_at:
+                lines.append(f"Last saved: {report.checkpoint_at_local or report.checkpoint_at}")
+            lines.append(
+                "Start again with --resume to continue that game, "
+                "or --new-game to replace it."
+            )
+            preflight.report("Scoreboard needs a recovery choice", "\n\n".join(lines))
+            application.shutdown(reason="recovery choice required")
+            return 3
+        return 0
 
     try:
         application = ScoreboardApplication()

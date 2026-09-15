@@ -2368,7 +2368,10 @@ def _clamp_element(raw: Any, safe_area: Mapping[str, float]) -> dict[str, Any] |
 
 
 def _validate_screen(
-    raw: Any, screen_id: str
+    raw: Any, screen_id: str,
+    *, registry: "WidgetRegistry | None" = None,
+    defaults: Mapping[str, dict[str, Any]] | None = None,
+    label: str | None = None,
 ) -> tuple[dict[str, Any] | None, list[LayoutIssue], list[LayoutIssue]]:
     """Validate one screen's mini-document: safe area, background, widgets
     (against the registry for this screen's kind), overlaps, and elements.
@@ -2379,14 +2382,25 @@ def _validate_screen(
     keep passing untouched. An event screen's issues get their label as a
     message prefix (``"Pre-game: "`` / ``"Halftime: "``) and every issue
     raised in here -- game included -- carries ``screen_id``.
+
+    ``registry``/``defaults``/``label`` let a sibling presentation module
+    (soccer's) validate a screen against its *own* widget registry without
+    duplicating this function's overlap/element/safe-area logic. Omitted
+    (the football default), they are looked up exactly as before, so every
+    football call site is byte-identical.
     """
 
-    kind = SCREEN_KINDS[screen_id]
-    registry = WIDGET_REGISTRIES[kind]
-    # The widget defaults only -- not default_screen(), whose event screens
-    # are themselves normalized through this very function.
-    defaults = _default_screen_widgets(screen_id)
-    prefix = "" if screen_id == "game" else f"{SCREEN_LABELS[screen_id]}: "
+    if registry is None:
+        kind = SCREEN_KINDS[screen_id]
+        registry = WIDGET_REGISTRIES[kind]
+    if defaults is None:
+        # The widget defaults only -- not default_screen(), whose event
+        # screens are themselves normalized through this very function.
+        defaults = _default_screen_widgets(screen_id)
+    if label is None:
+        prefix = "" if screen_id == "game" else f"{SCREEN_LABELS[screen_id]}: "
+    else:
+        prefix = f"{label}: " if label else ""
 
     def tag(issue: LayoutIssue) -> LayoutIssue:
         message = f"{prefix}{issue.message}" if prefix else issue.message

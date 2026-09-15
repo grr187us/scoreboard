@@ -60,7 +60,13 @@ from scoreboard.host.bridge import (
     spectator_view_model,
 )
 from scoreboard.host.cutscenes import CutsceneDirector, CutscenesBridge
-from scoreboard.host.hotkeys import BUTTON_BOX_SOURCE, ButtonBoxHook, HookStatus, HotkeyBinding
+from scoreboard.host.hotkeys import (
+    BUTTON_BOX_SOURCE,
+    HOTKEY_TABLE,
+    ButtonBoxHook,
+    HookStatus,
+    HotkeyBinding,
+)
 from scoreboard.host.layout_bridge import LayoutEditorBridge, PresentationLayouts
 from scoreboard.host.publisher import WindowPublisher
 from scoreboard.host.startup import StartupBridge
@@ -131,6 +137,44 @@ CLOSED_BY_OPERATOR_DETAIL: Final[str] = (
 DISPLAY_WATCH_INTERVAL_SECONDS: float = 2.0
 
 
+class SportProfile(NamedTuple):
+    """Which views and tables an application's windows use (soccer mode, spec
+    section 2.3). This is the one seam ``WindowHost`` reads instead of a
+    literal view name or ``HOTKEY_TABLE``, so a second sport is a second
+    profile object, never a branch inside any method below. Every football
+    call site keeps its exact literal as this NamedTuple's default, so
+    ``ScoreboardApplication.profile`` reproduces today's behaviour exactly.
+    """
+
+    sport: str
+    operator_view: str
+    startup_view: str
+    spectator_view: str
+    field_assistant_view: str
+    cutscenes_view: str
+    field_assistant_bridge: Callable[[Any], Any]
+    cutscenes_bridge: Callable[..., Any]
+    hotkey_table: tuple[HotkeyBinding, ...]
+    #: The layout editor page; football's ``layout`` unless a sport ships
+    #: its own bootstrap page (soccer: ``soccer_layout``).
+    layout_view: str = "layout"
+
+
+#: Football's own profile -- every attribute is today's literal. Nothing in
+#: football's path changes: ``ScoreboardApplication.profile`` is this object.
+FOOTBALL_PROFILE: Final[SportProfile] = SportProfile(
+    sport="football",
+    operator_view="operator",
+    startup_view="startup",
+    spectator_view="spectator",
+    field_assistant_view="field_assistant",
+    cutscenes_view="cutscenes",
+    field_assistant_bridge=FieldAssistantBridge,
+    cutscenes_bridge=CutscenesBridge,
+    hotkey_table=HOTKEY_TABLE,
+)
+
+
 class _PublishBatch(NamedTuple):
     """One immutable snapshot built under the command lock, delivered without it.
 
@@ -196,6 +240,10 @@ class ScoreboardApplication:
         acquire_lock: bool = True,
     ) -> None:
         self.paths = (resolve_paths() if paths is None else paths).ensure()
+        #: Which views/bridges/hotkey table this application's windows use
+        #: (soccer mode, spec section 2.3). Football's own profile -- every
+        #: attribute is today's literal, so nothing below changes behaviour.
+        self.profile: SportProfile = FOOTBALL_PROFILE
         self.diagnostics = (
             Diagnostics(self.paths) if diagnostics is None else diagnostics
         )
@@ -647,19 +695,36 @@ class WindowHost:
 
     # --- Lifecycle ----------------------------------------------------------
 
-    def run(self, startup_choice: str | None = None, *, interactive: bool = False) -> None:
-        """Offer recovery in interactive launches; retain the headless guard."""
+    def begin(self, startup_choice: str | None = None, *, interactive: bool = False) -> None:
+        """Everything ``run()`` used to do before ``webview.start()``.
+
+        Split out for soccer mode (spec section 2.5): a
+        :class:`~scoreboard.host.sport_picker.SportPickerHost` builds the
+        chosen application's :class:`WindowHost` *from inside* a callback that
+        already runs on the sport picker's own pywebview window -- meaning
+        ``webview.start()`` has already been called for that process -- so it
+        can call ``begin`` (which only ever creates windows) without calling
+        ``webview.start()`` a second time. ``run()`` below is exactly
+        ``begin()`` followed by ``webview.start()`` and shutdown, so every
+        existing football call site (``__main__.py``, every test) is
+        unaffected: its observable behaviour is unchanged.
+        """
+
         needs_choice = self.application.report.source is not RecoverySource.NONE
         if needs_choice and startup_choice is None:
             if not interactive:
                 raise RecoveryChoiceRequired(self.application.report)
             self.startup_window = webview.create_window(
-                "Recover scoreboard", url=view_url("startup"),
+                "Recover scoreboard", url=view_url(self.application.profile.startup_view),
                 js_api=StartupBridge(self.application.recovery_payload, self._choose_startup),
                 width=800, height=650, min_size=(600, 500),
             )
         else:
             self._choose_startup(startup_choice or "new")
+
+    def run(self, startup_choice: str | None = None, *, interactive: bool = False) -> None:
+        """Offer recovery in interactive launches; retain the headless guard."""
+        self.begin(startup_choice, interactive=interactive)
         try:
             if self.auto_close_after_seconds is None:
                 webview.start()
@@ -678,7 +743,7 @@ class WindowHost:
             bridge.set_field_assistant_opener(self.open_field_assistant)
             bridge.set_cutscenes_opener(self.open_cutscenes)
             self.operator_window = webview.create_window(
-                "Scoreboard control", url=view_url("operator"), js_api=bridge,
+                "Scoreboard control", url=view_url(self.application.profile.operator_view), js_api=bridge,
                 width=1180, height=720, min_size=(1024, 600),
             )
             self.operator_window.events.loaded += self._operator_loaded
@@ -745,9 +810,20 @@ class WindowHost:
         def on_status(status: HookStatus) -> None:
             bridge.set_button_box_status(status.as_dict())
 
-        hook = ButtonBoxHook(
-            dispatch, diagnostics=self.application.diagnostics, on_status=on_status
-        )
+        # Soccer mode (spec 2.3): the one named sport branch in football's
+        # path. Football keeps today's exact call, so its hook wiring and the
+        # tests that fake ``ButtonBoxHook`` see no new keyword; a profile with
+        # its own table (soccer: F21/F22 only) passes it explicitly.
+        table = self.application.profile.hotkey_table
+        if table is HOTKEY_TABLE:
+            hook = ButtonBoxHook(
+                dispatch, diagnostics=self.application.diagnostics, on_status=on_status
+            )
+        else:
+            hook = ButtonBoxHook(
+                dispatch, diagnostics=self.application.diagnostics, on_status=on_status,
+                table=table,
+            )
         with self._lock:
             self._button_box = hook
         status = hook.start()
@@ -939,7 +1015,7 @@ class WindowHost:
 
         spectator = webview.create_window(
             "Scoreboard display",
-            url=view_url("spectator"),
+            url=view_url(self.application.profile.spectator_view),
             js_api=SpectatorBridge(
                 self._spectator_snapshot,
                 read_layout=self.application.layouts.current_layout,
@@ -1050,7 +1126,7 @@ class WindowHost:
 
         test_window = webview.create_window(
             "Scoreboard display (test)",
-            url=view_url("spectator"),
+            url=view_url(self.application.profile.spectator_view),
             js_api=SpectatorBridge(
                 self._spectator_snapshot,
                 read_layout=self.application.layouts.current_layout,
@@ -1089,7 +1165,7 @@ class WindowHost:
 
         layout_window = webview.create_window(
             "Presentation layout",
-            url=view_url("layout"),
+            url=view_url(self.application.profile.layout_view),
             js_api=LayoutEditorBridge(self.application.layouts, self._spectator_snapshot),
             width=1220,
             height=780,
@@ -1124,8 +1200,8 @@ class WindowHost:
                 )
         window = webview.create_window(
             "Field Assistant",
-            url=view_url("field_assistant"),
-            js_api=FieldAssistantBridge(bridge),
+            url=view_url(self.application.profile.field_assistant_view),
+            js_api=self.application.profile.field_assistant_bridge(bridge),
             width=1180,
             height=720,
             min_size=(1024, 600),
@@ -1167,8 +1243,8 @@ class WindowHost:
                 )
         window = webview.create_window(
             "Cutscenes",
-            url=view_url("cutscenes"),
-            js_api=CutscenesBridge(self.application.cutscenes, bridge),
+            url=view_url(self.application.profile.cutscenes_view),
+            js_api=self.application.profile.cutscenes_bridge(self.application.cutscenes, bridge),
             width=520,
             height=640,
             min_size=(420, 520),
@@ -1545,11 +1621,13 @@ def _json(payload: dict[str, Any]) -> str:
 
 __all__ = [
     "CLOSED_BY_OPERATOR_DETAIL",
+    "FOOTBALL_PROFILE",
     "REFRESH_INTERVAL_SECONDS",
     "TEST_SPECTATOR_HEIGHT",
     "TEST_SPECTATOR_WIDTH",
     "RecoveryChoiceRequired",
     "ScoreboardApplication",
+    "SportProfile",
     "WindowHost",
     "view_url",
 ]

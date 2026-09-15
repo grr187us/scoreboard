@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Field Assistant · Soccer</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="soccer_field_assistant.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong>FIELD ASSISTANT · SOCCER</strong>
+    <span id="revision">REV —</span>
+    <span id="clocks" aria-label="Read-only game clock and period">GAME — · —</span>
+    <button type="button" id="resync" title="Throw away what is pressed here: the assistant reads the scoreboard again. The scoreboard itself updates here on its own.">Discard draft &amp; reload</button>
+  </header>
+
+  <!-- Live sync (spec section 6): every push from the scoreboard is adopted
+       here, so there is no stale banner and Confirm is never disabled by a
+       change made elsewhere. This toast appears only when Python refuses a
+       Confirm that raced a control-panel change; one more Confirm finishes. -->
+  <p id="conflict" class="conflict" role="alert" hidden>THE SCOREBOARD CHANGED AS YOU CONFIRMED — CHECK THE RESULT AND PRESS CONFIRM AGAIN</p>
+  <p id="notice" class="notice" role="status" aria-live="polite"></p>
+
+  <main>
+    <section class="team-columns" aria-label="Team actions">
+      <div class="team-column" id="column-home" data-team="home">
+        <h2 class="team-heading"><span data-team-name="home">HOME</span></h2>
+        <div class="button-grid" role="group" aria-label="HOME actions">
+          <button type="button" class="big" data-action="stat" data-team="home" data-stat="shots">SHOT</button>
+          <button type="button" class="big" data-action="stat" data-team="home" data-stat="saves">SAVE</button>
+          <button type="button" class="big" data-action="stat" data-team="home" data-stat="corners">CORNER</button>
+          <button type="button" class="big" data-action="stat" data-team="home" data-stat="fouls">FOUL</button>
+          <button type="button" class="big card yellow" data-action="card" data-team="home" data-card="yellow">YELLOW</button>
+          <button type="button" class="big card red" data-action="card" data-team="home" data-card="red">RED</button>
+        </div>
+      </div>
+
+      <div class="team-column" id="column-away" data-team="away">
+        <h2 class="team-heading"><span data-team-name="away">AWAY</span></h2>
+        <div class="button-grid" role="group" aria-label="AWAY actions">
+          <button type="button" class="big" data-action="stat" data-team="away" data-stat="shots">SHOT</button>
+          <button type="button" class="big" data-action="stat" data-team="away" data-stat="saves">SAVE</button>
+          <button type="button" class="big" data-action="stat" data-team="away" data-stat="corners">CORNER</button>
+          <button type="button" class="big" data-action="stat" data-team="away" data-stat="fouls">FOUL</button>
+          <button type="button" class="big card yellow" data-action="card" data-team="away" data-card="yellow">YELLOW</button>
+          <button type="button" class="big card red" data-action="card" data-team="away" data-card="red">RED</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pad-panel" aria-label="Optional player number">
+      <p class="group-heading">Player # (optional) — used by the next YELLOW, RED, or shootout kick</p>
+      <div class="pad" role="group" aria-label="Player number pad">
+        <button type="button" class="pad-key" data-digit="7">7</button>
+        <button type="button" class="pad-key" data-digit="8">8</button>
+        <button type="button" class="pad-key" data-digit="9">9</button>
+        <button type="button" class="pad-key" data-digit="4">4</button>
+        <button type="button" class="pad-key" data-digit="5">5</button>
+        <button type="button" class="pad-key" data-digit="6">6</button>
+        <button type="button" class="pad-key" data-digit="1">1</button>
+        <button type="button" class="pad-key" data-digit="2">2</button>
+        <button type="button" class="pad-key" data-digit="3">3</button>
+        <button type="button" class="pad-key" data-digit="0">0</button>
+        <button type="button" id="pad-backspace" class="pad-key">⌫</button>
+        <button type="button" id="pad-no-number" class="pad-key wide">NO #</button>
+      </div>
+      <div class="pad-readout"># <span id="player-number-readout">—</span></div>
+    </section>
+
+    <p id="scoreboard-now" class="scoreboard-now">Scoreboard now: reading…</p>
+
+    <section class="shootout-panel" id="shootout-panel" hidden aria-label="Shootout">
+      <h2>SHOOTOUT</h2>
+      <p id="shootout-status" class="shootout-status">ROUND — · — TO KICK</p>
+      <div class="shootout-dots">
+        <span class="shootout-team-label" data-team-name="home">HOME</span>
+        <span id="shootout-dots-home" class="dots"></span>
+        <span class="shootout-team-label" data-team-name="away">AWAY</span>
+        <span id="shootout-dots-away" class="dots"></span>
+      </div>
+      <div class="shootout-buttons" role="group" aria-label="Shootout kick result">
+        <button type="button" class="big" data-action="shootout_kick" data-team="home" data-made="true">HOME MADE</button>
+        <button type="button" class="big" data-action="shootout_kick" data-team="home" data-made="false">HOME MISSED</button>
+        <button type="button" class="big" data-action="shootout_kick" data-team="away" data-made="true">AWAY MADE</button>
+        <button type="button" class="big" data-action="shootout_kick" data-team="away" data-made="false">AWAY MISSED</button>
+      </div>
+      <div class="shootout-first-kicker" id="shootout-first-kicker" hidden>
+        <p class="group-heading">FIRST KICKER</p>
+        <div class="row2" role="group" aria-label="First kicker">
+          <button type="button" data-action="first_kicker" data-team="home">HOME</button>
+          <button type="button" data-action="first_kicker" data-team="away">AWAY</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="actions">
+    <button type="button" id="cancel">Cancel</button>
+    <button type="button" id="confirm" class="confirm" disabled>CONFIRM</button>
+  </div>
+
+  <script src="soccer_field_assistant.js"></script>
+</body>
+</html>

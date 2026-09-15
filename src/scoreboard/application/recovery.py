@@ -17,12 +17,12 @@ This module returns models. It renders nothing: the operator view is Task 7.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from scoreboard.application.service import ScoreboardService, initial_state
-from scoreboard.application.snapshots import state_to_snapshot
+from scoreboard.application.snapshots import snapshot_to_state, state_to_snapshot
 from scoreboard.domain.rules import GameRules
 from scoreboard.domain.state import APP_VERSION, GameState
 from scoreboard.infrastructure.diagnostics import Diagnostics, NullDiagnostics
@@ -62,7 +62,10 @@ class RecoveryReport:
 
     source: RecoverySource
     message: str
-    state: GameState | None = None
+    #: ``Any`` (loosened from ``GameState``) so a non-football sport's decoded state -- see
+    #: ``inspect_recovery``'s ``decode``/``stop_clocks`` keywords -- fits here too, unchanged for
+    #: football (soccer-mode additive seam).
+    state: Any | None = None
     game_id: int | None = None
     checkpoint_at: str | None = None
     #: ``checkpoint_at`` rendered as human-readable Eastern time for an
@@ -78,6 +81,12 @@ class RecoveryReport:
     #: from the running build. Shown so the operator knows an update happened
     #: between the interruption and this launch; it never blocks recovery.
     written_by_app_version: str | None = None
+    #: How ``to_dict`` serialises ``state`` (soccer-mode additive seam):
+    #: football's ``state_to_snapshot`` by default, a sport's own encoder when
+    #: ``inspect_recovery`` was given one. Not part of equality or repr.
+    encode: Callable[[Any], dict[str, Any]] = field(
+        default=state_to_snapshot, compare=False, repr=False
+    )
 
     @property
     def can_resume(self) -> bool:
@@ -112,20 +121,26 @@ class RecoveryReport:
             "backup_error": self.backup_error,
             "preserved_paths": list(self.preserved_paths),
             "written_by_app_version": self.written_by_app_version,
-            "snapshot": None if self.state is None else state_to_snapshot(self.state),
+            "snapshot": None if self.state is None else self.encode(self.state),
         }
 
 
-def _restored(state: GameState) -> GameState:
+def _restored(
+    state: GameState, *, stop_clocks: Callable[[Any], Any] = stopped_state
+) -> GameState:
     """The offered state: every clock stopped, running under this build.
 
     ``app_version`` is stamped to the running build because that is the version
     now responsible for the game; the version that wrote it is reported
     separately on :class:`RecoveryReport` rather than being silently lost. The
     revision is untouched, so restoring still invents nothing (P-004).
+
+    ``stop_clocks`` is keyword-only, defaulting to football's own
+    ``stopped_state`` (soccer-mode additive seam: soccer has no play clock, so
+    it passes ``soccer_stopped_state`` instead).
     """
 
-    return replace(stopped_state(state), app_version=APP_VERSION)
+    return replace(stop_clocks(state), app_version=APP_VERSION)
 
 
 def _written_by(stored: StoredGame) -> str | None:
@@ -145,12 +160,20 @@ def _upgrade_note(stored: StoredGame) -> str:
     )
 
 
-def _offer(stored: StoredGame, source: RecoverySource, message: str) -> RecoveryReport:
+def _offer(
+    stored: StoredGame,
+    source: RecoverySource,
+    message: str,
+    *,
+    stop_clocks: Callable[[Any], Any] = stopped_state,
+    encode: Callable[[Any], dict[str, Any]] = state_to_snapshot,
+) -> RecoveryReport:
     return RecoveryReport(
+        encode=encode,
         source=source,
         message=message + _upgrade_note(stored),
         # Stopping the clocks happens here, once, so no caller can forget it.
-        state=_restored(stored.state),
+        state=_restored(stored.state, stop_clocks=stop_clocks),
         game_id=stored.game_id,
         checkpoint_at=stored.checkpoint_at,
         checkpoint_at_local=format_local_timestamp(stored.checkpoint_at),
@@ -164,6 +187,9 @@ def inspect_recovery(
     *,
     diagnostics: Diagnostics | None = None,
     stamp: str | None = None,
+    decode: Callable[[Mapping[str, Any]], Any] = snapshot_to_state,
+    stop_clocks: Callable[[Any], Any] = stopped_state,
+    encode: Callable[[Any], dict[str, Any]] = state_to_snapshot,
 ) -> RecoveryReport:
     """Decide what can be recovered, without resuming anything.
 
@@ -171,6 +197,11 @@ def inspect_recovery(
     promoted in its place, so the fallback is both usable and visible (P-006).
     If neither file can be trusted, both are left exactly as they are and the
     report says so: the application never invents a score or a clock value.
+
+    ``decode``/``stop_clocks`` are keyword-only, defaulting to football's own
+    ``snapshot_to_state``/``stopped_state`` so every existing call site is
+    unchanged (soccer-mode additive seam; see
+    ``.scratch/soccer-mode/api_domain.md``).
     """
 
     log = NullDiagnostics() if diagnostics is None else diagnostics
@@ -180,7 +211,7 @@ def inspect_recovery(
 
     if primary_error is None:
         try:
-            stored = read_stored_game(paths.database)
+            stored = read_stored_game(paths.database, decode=decode)
         except DatabaseInvalid as exc:
             primary_error = str(exc)
         else:
@@ -190,6 +221,8 @@ def inspect_recovery(
                     RecoverySource.PRIMARY,
                     "A saved game was found. Its clocks are stopped at the last "
                     f"checkpoint ({format_local_timestamp(stored.checkpoint_at)}).",
+                    stop_clocks=stop_clocks,
+                    encode=encode,
                 )
                 log.recovery(source=report.source.value, message=report.message)
                 return report
@@ -203,7 +236,7 @@ def inspect_recovery(
     backup_error = validate_database(paths.backup)
     if backup_error is None:
         try:
-            stored = read_stored_game(paths.backup)
+            stored = read_stored_game(paths.backup, decode=decode)
         except DatabaseInvalid as exc:
             backup_error = str(exc)
             stored = None
@@ -223,7 +256,8 @@ def inspect_recovery(
                     "Check the board against the real game before resuming."
                     + _upgrade_note(stored)
                 ),
-                state=_restored(stored.state),
+                encode=encode,
+                state=_restored(stored.state, stop_clocks=stop_clocks),
                 game_id=stored.game_id,
                 checkpoint_at=stored.checkpoint_at,
                 checkpoint_at_local=format_local_timestamp(stored.checkpoint_at),

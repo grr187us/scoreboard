@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GOAL cutscene preview (test-only harness)</title>
+<!--
+  Agent F (cutscenes) built this stand-in because views/soccer_spectator/
+  index.html (agent D's) does not exist yet at the time this test was
+  written. It is NOT part of the shipped application -- tools/build_package.py
+  never references anything under .scratch/ -- it exists only so
+  tests/ui/soccer_goal.cjs can exercise the real
+  views/soccer_spectator/cutscene.js player and cutscenes/soccer.js scene
+  against real Python-built programs before the real spectator page is
+  wired up. Once agent D's page exists, tests/ui/test_soccer_goal_browser.py
+  should be pointed at it instead and this file can be deleted.
+
+  Required script/link tags for the real spectator page (see this agent's
+  final report): the same four this file loads below, relative to
+  views/soccer_spectator/index.html itself.
+-->
+<link rel="stylesheet" href="../../../../src/scoreboard/views/spectator/cutscene.css">
+<link rel="stylesheet" href="../../../../src/scoreboard/views/soccer_spectator/cutscenes/soccer.css">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; }
+  #canvas { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+</style>
+</head>
+<body>
+  <div id="canvas" data-layout="" data-revision="0">
+    <div id="game-board"></div>
+    <div id="cutscene-stage" hidden aria-hidden="true"></div>
+  </div>
+  <script>
+    // A minimal stand-in for the real soccer_spectator.js's exported API
+    // (agent D's): cutscene.js only ever calls setOverrideLayout(layoutDoc).
+    window.ScoreboardSpectator = {
+      lastOverrideLayout: null,
+      setOverrideLayout: function (layoutDoc) {
+        window.ScoreboardSpectator.lastOverrideLayout = layoutDoc;
+        document.getElementById('canvas').setAttribute(
+          'data-layout', layoutDoc && layoutDoc.name ? layoutDoc.name : ''
+        );
+        return true;
+      }
+    };
+  </script>
+  <script src="../../../../src/scoreboard/views/soccer_spectator/cutscenes/soccer.js"></script>
+  <script src="../../../../src/scoreboard/views/spectator/cutscene.js"></script>
+</body>
+</html>
