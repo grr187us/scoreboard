@@ -1,0 +1,59 @@
+Football golden run
+====================
+
+01 new_game: revision=1 quarter=PRE lifecycle=PRE_GAME HOME=0 AWAY=0
+02 set_team_name_home_tigers: revision=2 quarter=PRE lifecycle=PRE_GAME HOME=0 AWAY=0
+03 set_team_name_away_eagles: revision=3 quarter=PRE lifecycle=PRE_GAME HOME=0 AWAY=0
+04 game_clock_start_pre: revision=4 quarter=PRE lifecycle=PRE_GAME HOME=0 AWAY=0
+05 advance_65s_pregame: revision=4 quarter=PRE lifecycle=PRE_GAME HOME=0 AWAY=0
+06 game_clock_stop_pre: revision=5 quarter=PRE lifecycle=PRE_GAME HOME=0 AWAY=0
+07 set_quarter_1st: revision=6 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+08 play_clock_preset_40: revision=7 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+09 play_clock_start: revision=8 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+10 advance_4s: revision=8 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+11 game_clock_start_1st: revision=9 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+12 advance_12_4s: revision=9 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+13 game_clock_stop_1st: revision=10 quarter=1st lifecycle=IN_PROGRESS HOME=0 AWAY=0
+14 add_score_home_6_touchdown: revision=11 quarter=1st lifecycle=IN_PROGRESS HOME=6 AWAY=0
+15 add_score_home_1_try: revision=12 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+16 set_down_1: revision=13 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+17 set_distance_10: revision=14 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+18 set_possession_away: revision=15 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+19 set_ball_on_away_25: revision=16 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+20 set_down_nudge_plus1: revision=17 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+21 set_distance_nudge_minus3: revision=18 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+22 set_ball_on_nudge_plus5: revision=19 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+23 set_ball_on_nudge_minus1: revision=20 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+24 timeout_used_home: revision=21 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+25 timeout_correct_away_minus1: revision=22 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+26 set_game_status_timeout_60: revision=23 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+27 advance_3s_timeout: revision=23 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+28 status_clock_stop: revision=24 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+29 clear_game_status_timeout: revision=25 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+30 set_game_status_flag: revision=26 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+31 clear_game_status_flag: revision=27 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+32 add_score_away_3: revision=28 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=3
+33 undo_away_3: revision=29 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+34 correct_score_home_1: revision=30 quarter=1st lifecycle=IN_PROGRESS HOME=6 AWAY=0
+35 undo_correct_score_home: revision=31 quarter=1st lifecycle=IN_PROGRESS HOME=7 AWAY=0
+36 set_quarter_2nd: revision=32 quarter=2nd lifecycle=IN_PROGRESS HOME=7 AWAY=0
+37 set_quarter_half: revision=33 quarter=HALF lifecycle=HALFTIME HOME=7 AWAY=0
+38 game_clock_start_half: revision=34 quarter=HALF lifecycle=HALFTIME HOME=7 AWAY=0
+39 advance_30s_half: revision=34 quarter=HALF lifecycle=HALFTIME HOME=7 AWAY=0
+40 game_clock_stop_half: revision=35 quarter=HALF lifecycle=HALFTIME HOME=7 AWAY=0
+41 set_quarter_3rd: revision=36 quarter=3rd lifecycle=IN_PROGRESS HOME=7 AWAY=0
+42 set_quarter_4th: revision=37 quarter=4th lifecycle=IN_PROGRESS HOME=7 AWAY=0
+43 game_clock_correct_45: revision=38 quarter=4th lifecycle=IN_PROGRESS HOME=7 AWAY=0
+44 game_clock_start_4th: revision=39 quarter=4th lifecycle=IN_PROGRESS HOME=7 AWAY=0
+45 advance_50s_expiry: revision=39 quarter=4th lifecycle=IN_PROGRESS HOME=7 AWAY=0
+46 set_quarter_ot: revision=40 quarter=OT lifecycle=IN_PROGRESS HOME=7 AWAY=0
+47 set_quarter_final: revision=41 quarter=FINAL lifecycle=FINAL HOME=7 AWAY=0
+48 end_game: revision=42 quarter=FINAL lifecycle=FINAL HOME=7 AWAY=0
+
+Total steps: 48
+Total history rows: 53
+Final quarter: FINAL
+Final lifecycle: FINAL
+Final HOME score: 7
+Final AWAY score: 0
+Final revision: 42

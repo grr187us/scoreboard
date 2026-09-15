@@ -1,0 +1,479 @@
+{
+  "index": 29,
+  "name": "clear_game_status_timeout",
+  "operator": {
+    "assistant": {
+      "ball_absolute": 79,
+      "first_quarter_home_direction": null,
+      "home_goal_side": null,
+      "line_to_gain": null,
+      "offense_direction": -1
+    },
+    "board": {
+      "hidden_element_prefixes": [],
+      "hidden_widgets": []
+    },
+    "button_box": null,
+    "can_undo": true,
+    "clocks": {
+      "event": {
+        "display": "0:00",
+        "phase": "WARMUP",
+        "running": false,
+        "seconds": 0.0,
+        "status": "STOPPED",
+        "title": "UNTIL SECOND HALF",
+        "warmup_display": null,
+        "warmup_follows": null
+      },
+      "game": {
+        "display": "11:47",
+        "full_display": "12:00",
+        "label": "GAME CLOCK",
+        "maximum_seconds": 720.0,
+        "running": false,
+        "seconds": 706.5999999999999,
+        "status": "STOPPED"
+      },
+      "play": {
+        "display": "—",
+        "running": false,
+        "seconds": 0.0,
+        "status": "STOPPED"
+      }
+    },
+    "cutscenes": {
+      "available": true,
+      "playing": null
+    },
+    "football": {
+      "away_timeouts_display": "TO 2",
+      "away_timeouts_dots": "● ● ○",
+      "ball_on": {
+        "team": "away",
+        "yard_line": 21
+      },
+      "ball_on_display": "Eagles 21",
+      "ball_on_value_display": "21",
+      "distance": 7,
+      "distance_display": "& 7",
+      "distance_value_display": "7",
+      "down": 2,
+      "down_display": "2nd",
+      "down_distance_display": "2nd & 7",
+      "home_timeouts_display": "TO 2",
+      "home_timeouts_dots": "● ● ○",
+      "possession": "away",
+      "possession_display": "BALL ▶",
+      "timeouts": {
+        "away": 2,
+        "home": 2
+      }
+    },
+    "health": {
+      "display": {
+        "can_reopen": true,
+        "detail": "Not opened yet.",
+        "label": "DISPLAY CLOSED",
+        "needs_selection": false,
+        "open": false,
+        "target": null
+      },
+      "persistence": {
+        "checkpoint_at": "2026-09-14T19:30:33+00:00",
+        "label": "SAVED",
+        "last_error": null,
+        "message": "Game state saved.",
+        "pending_history_rows": 0,
+        "revision": 25,
+        "saved": true,
+        "using_backup": false
+      },
+      "revision": 25
+    },
+    "last_action": {
+      "command": "timeout_correct",
+      "field": "away_timeouts",
+      "label": "AWAY timeouts 3 → 2",
+      "new_value": 2,
+      "old_value": 3,
+      "team": "away"
+    },
+    "lifecycle": "IN_PROGRESS",
+    "period_decision": {
+      "pending": false,
+      "quarter": "1st",
+      "token": 0
+    },
+    "play_clock_presets": [
+      25,
+      40
+    ],
+    "quarter": "1st",
+    "quarter_display": "1st Quarter",
+    "quarter_labels": [
+      "PRE",
+      "1st",
+      "2nd",
+      "HALF",
+      "3rd",
+      "4th",
+      "OT",
+      "FINAL"
+    ],
+    "revision": 25,
+    "rule_fields": [
+      {
+        "display": "12:00",
+        "kind": "clock",
+        "label": "Quarter length",
+        "minutes": 12,
+        "name": "quarter_seconds",
+        "seconds": 0,
+        "value": 720.0
+      },
+      {
+        "display": "12:00",
+        "kind": "clock",
+        "label": "Overtime length",
+        "minutes": 12,
+        "name": "overtime_seconds",
+        "seconds": 0,
+        "value": 720.0
+      },
+      {
+        "display": "30:00",
+        "kind": "clock",
+        "label": "Pregame countdown",
+        "minutes": 30,
+        "name": "pregame_seconds",
+        "seconds": 0,
+        "value": 1800.0
+      },
+      {
+        "display": "15:00",
+        "kind": "clock",
+        "label": "Halftime countdown",
+        "minutes": 15,
+        "name": "halftime_seconds",
+        "seconds": 0,
+        "value": 900.0
+      },
+      {
+        "display": "3:00",
+        "kind": "clock",
+        "label": "Warmup label at",
+        "minutes": 3,
+        "name": "warmup_seconds",
+        "seconds": 0,
+        "value": 180.0
+      },
+      {
+        "display": "60",
+        "kind": "seconds",
+        "label": "Timeout countdown",
+        "name": "timeout_seconds",
+        "value": 60.0
+      },
+      {
+        "display": "3",
+        "kind": "count",
+        "label": "Timeouts per half",
+        "name": "timeouts_per_half",
+        "value": 3
+      }
+    ],
+    "rules": {
+      "halftime_seconds": 900.0,
+      "overtime_seconds": 720.0,
+      "pregame_seconds": 1800.0,
+      "quarter_seconds": 720.0,
+      "timeout_seconds": 60.0,
+      "timeouts_per_half": 3,
+      "warmup_seconds": 180.0
+    },
+    "schema_version": 1,
+    "setup": {
+      "away_pending": false,
+      "detail": "",
+      "home_pending": false,
+      "teams_pending": false
+    },
+    "status": {
+      "active": false,
+      "clock": {
+        "display": "",
+        "running": false,
+        "seconds": 0.0,
+        "status": "STOPPED"
+      },
+      "clock_display": "",
+      "display": "",
+      "label": null
+    },
+    "status_clock_presets": [
+      30,
+      60,
+      90
+    ],
+    "status_labels": [
+      "FLAG",
+      "TIMEOUT",
+      "INJURY",
+      "DELAY"
+    ],
+    "teams": {
+      "away": {
+        "identity": null,
+        "name": "Eagles",
+        "score": 0
+      },
+      "home": {
+        "identity": null,
+        "name": "Tigers",
+        "score": 7
+      }
+    },
+    "try_pending": null,
+    "try_pending_display": "",
+    "undo_depth": 12,
+    "undo_history": [
+      {
+        "command": "timeout_correct",
+        "field": "away_timeouts",
+        "label": "AWAY timeouts 3 → 2",
+        "new_value": 2,
+        "old_value": 3,
+        "team": "away"
+      },
+      {
+        "command": "timeout_used",
+        "field": "home_timeouts",
+        "label": "HOME timeouts 3 → 2",
+        "new_value": 2,
+        "old_value": 3,
+        "team": "home"
+      },
+      {
+        "command": "set_ball_on",
+        "field": "ball_on",
+        "label": "Ball on away 20 → away 21",
+        "new_value": "away 21",
+        "old_value": "away 20",
+        "team": "away"
+      },
+      {
+        "command": "set_ball_on",
+        "field": "ball_on",
+        "label": "Ball on away 25 → away 20",
+        "new_value": "away 20",
+        "old_value": "away 25",
+        "team": "away"
+      },
+      {
+        "command": "set_distance",
+        "field": "distance",
+        "label": "Distance 10 → 7",
+        "new_value": 7,
+        "old_value": 10,
+        "team": null
+      },
+      {
+        "command": "set_down",
+        "field": "down",
+        "label": "Down 1 → 2",
+        "new_value": 2,
+        "old_value": 1,
+        "team": null
+      },
+      {
+        "command": "set_ball_on",
+        "field": "ball_on",
+        "label": "Ball on None → away 25",
+        "new_value": "away 25",
+        "old_value": null,
+        "team": "away"
+      },
+      {
+        "command": "set_possession",
+        "field": "possession",
+        "label": "Possession None → away",
+        "new_value": "away",
+        "old_value": null,
+        "team": null
+      },
+      {
+        "command": "set_distance",
+        "field": "distance",
+        "label": "Distance None → 10",
+        "new_value": 10,
+        "old_value": null,
+        "team": null
+      },
+      {
+        "command": "set_down",
+        "field": "down",
+        "label": "Down None → 1",
+        "new_value": 1,
+        "old_value": null,
+        "team": null
+      },
+      {
+        "command": "add_score",
+        "field": "home_score",
+        "label": "HOME score 6 → 7",
+        "new_value": 7,
+        "old_value": 6,
+        "team": "home"
+      },
+      {
+        "command": "add_score",
+        "field": "home_score",
+        "label": "HOME score 0 → 6",
+        "new_value": 6,
+        "old_value": 0,
+        "team": "home"
+      }
+    ]
+  },
+  "spectator": {
+    "board": {
+      "hidden_element_prefixes": [],
+      "hidden_widgets": []
+    },
+    "clocks": {
+      "event": {
+        "display": "0:00",
+        "phase": "WARMUP",
+        "running": false,
+        "seconds": 0.0,
+        "status": "STOPPED",
+        "title": "UNTIL SECOND HALF",
+        "warmup_display": null,
+        "warmup_follows": null
+      },
+      "game": {
+        "display": "11:47",
+        "full_display": "12:00",
+        "label": "GAME CLOCK",
+        "maximum_seconds": 720.0,
+        "running": false,
+        "seconds": 706.5999999999999,
+        "status": "STOPPED"
+      },
+      "play": {
+        "display": "—",
+        "running": false,
+        "seconds": 0.0,
+        "status": "STOPPED"
+      }
+    },
+    "football": {
+      "away_timeouts_display": "TO 2",
+      "away_timeouts_dots": "● ● ○",
+      "ball_on": {
+        "team": "away",
+        "yard_line": 21
+      },
+      "ball_on_display": "Eagles 21",
+      "ball_on_value_display": "21",
+      "distance": 7,
+      "distance_display": "& 7",
+      "distance_value_display": "7",
+      "down": 2,
+      "down_display": "2nd",
+      "down_distance_display": "2nd & 7",
+      "home_timeouts_display": "TO 2",
+      "home_timeouts_dots": "● ● ○",
+      "possession": "away",
+      "possession_display": "BALL ▶",
+      "timeouts": {
+        "away": 2,
+        "home": 2
+      }
+    },
+    "lifecycle": "IN_PROGRESS",
+    "quarter": "1st",
+    "quarter_display": "1st Quarter",
+    "revision": 25,
+    "schema_version": 1,
+    "status": {
+      "active": false,
+      "clock": {
+        "display": "",
+        "running": false,
+        "seconds": 0.0,
+        "status": "STOPPED"
+      },
+      "clock_display": "",
+      "display": "",
+      "label": null
+    },
+    "teams": {
+      "away": {
+        "identity": null,
+        "name": "Eagles",
+        "score": 0
+      },
+      "home": {
+        "identity": null,
+        "name": "Tigers",
+        "score": 7
+      }
+    }
+  },
+  "state_snapshot": {
+    "app_version": "0.1.0",
+    "assistant": {
+      "first_quarter_home_direction": null,
+      "line_to_gain": null
+    },
+    "clocks": {
+      "game": {
+        "maximum_seconds": 720.0,
+        "running": false,
+        "seconds": 706.5999999999999
+      },
+      "play": {
+        "running": false,
+        "seconds": 0.0
+      }
+    },
+    "football": {
+      "ball_on": {
+        "team": "away",
+        "yard_line": 21
+      },
+      "distance": 7,
+      "down": 2,
+      "possession": "away",
+      "timeouts": {
+        "away": 2,
+        "home": 2
+      }
+    },
+    "lifecycle": "IN_PROGRESS",
+    "play_clock_cleared": true,
+    "quarter": "1st",
+    "schema_version": 1,
+    "state_revision": 25,
+    "status": {
+      "clock": {
+        "running": false,
+        "seconds": 0.0
+      },
+      "clock_cleared": true,
+      "label": null
+    },
+    "teams": {
+      "away": {
+        "name": "Eagles",
+        "score": 0
+      },
+      "home": {
+        "name": "Tigers",
+        "score": 7
+      }
+    }
+  }
+}
