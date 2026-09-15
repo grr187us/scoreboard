@@ -93,6 +93,35 @@ class CrowdStatusRowTests(unittest.TestCase):
         rule = self.css.split(".crowd-bar button {", 1)[1].split("}", 1)[0]
         self.assertIn("min-height: 36px", rule)
 
+    def test_clear_and_the_countdown_start_hidden_and_follow_the_raised_status(self) -> None:
+        # September 14, 2026: no START/STOP or CLEAR with nothing to act on.
+        self.assertRegex(self.html, r'<button [^>]*id="crowd-clear"[^>]*\bhidden>')
+        countdown = re.search(r'<span class="crowd-countdown" id="crowd-countdown"([^>]*)>', self.html)
+        self.assertIsNotNone(countdown)
+        self.assertIn("hidden", countdown.group(1))
+        group = self.html.split('id="crowd-countdown"', 1)[1].split("</span>\n  </section>", 1)[0]
+        for control in ('id="crowd-clock"', 'id="crowd-start"', 'id="crowd-stop"'):
+            with self.subTest(control=control):
+                self.assertIn(control, group)
+        render = self.js.split("function renderCrowdStatus(", 1)[1].split("\n  function ", 1)[0]
+        self.assertIn("status.label === 'TIMEOUT'", render)
+        self.assertIn("R.show(document.getElementById('crowd-countdown'), hasCountdown)", render)
+        self.assertIn("R.show(document.getElementById('crowd-clear')", render)
+
+    def test_appearing_controls_come_after_every_message_button(self) -> None:
+        row = self.html.split('class="crowd-bar"', 1)[1].split("</section>", 1)[0]
+        last_message = max(row.index(f'data-label="{label}"') for label in GAME_STATUS_LABELS)
+        self.assertLess(last_message, row.index('id="crowd-clear"'))
+        self.assertLess(row.index('id="crowd-clear"'), row.index('id="crowd-countdown"'))
+
+    def test_clear_is_yellow_start_green_stop_red(self) -> None:
+        for selector, colour in ((".crowd-bar button.crowd-clear {", "#ffc845"),
+                                 (".crowd-bar button.crowd-go {", "#2e9e6a"),
+                                 (".crowd-bar button.crowd-halt {", "#c43d3d")):
+            with self.subTest(selector=selector):
+                rule = self.css.split(selector, 1)[1].split("}", 1)[0]
+                self.assertIn(f"background: {colour}", rule)
+
 
 class UndoHistoryUiTests(unittest.TestCase):
     """I4: the operator can see what a repeated Undo would give up (U-009)."""

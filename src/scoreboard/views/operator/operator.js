@@ -246,6 +246,25 @@
     R.setText(shortLabel, identity ? identity.short_name : '');
   }
 
+  /**
+   * Dark or white text, whichever reads better on a team colour. Python only
+   * accepts #RRGGBB for a saved team; anything else keeps the dark default.
+   * Presentation only: this picks an ink colour, never a game value.
+   */
+  function inkOn(hex) {
+    var match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+    if (!match) {
+      return '#12161c';
+    }
+    var channels = match.slice(1).map(function (part) {
+      var value = parseInt(part, 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+    });
+    var luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    // Contrast against white (L=1) vs. against the dark ink (L~0.008).
+    return (1.05 / (luminance + 0.05)) >= ((luminance + 0.05) / 0.058) ? '#ffffff' : '#12161c';
+  }
+
   function renderIdentityStripe(side, identity) {
     var stripe = document.getElementById(side + '-identity-stripe');
     if (!stripe) {
@@ -254,10 +273,12 @@
     if (identity) {
       stripe.style.background = identity.primary;
       stripe.style.borderBottomColor = identity.secondary;
+      stripe.style.color = inkOn(identity.primary);
       R.setText(stripe, identity.short_name);
     } else {
       stripe.style.background = '';
       stripe.style.borderBottomColor = '';
+      stripe.style.color = '';
       R.setText(stripe, '');
     }
     R.show(stripe, Boolean(identity));
@@ -416,6 +437,15 @@
         button.classList.toggle('is-active', status.label === label);
       }
     });
+
+    // CLEAR only appears when there is something to clear, and the countdown
+    // with its START/STOP only while TIMEOUT is raised (or a countdown is
+    // still showing), so no control floats on the bar with nothing to act on.
+    // Both sit to the right of the four message buttons, so appearing never
+    // moves a button the operator is about to press.
+    var hasCountdown = status.label === 'TIMEOUT' || Boolean(status.clock_display);
+    R.show(document.getElementById('crowd-clear'), !!status.active || hasCountdown);
+    R.show(document.getElementById('crowd-countdown'), hasCountdown);
 
     var running = !!(status.clock && status.clock.running);
     R.setFlag(document.getElementById('crowd-clock'), 'running-status', running);

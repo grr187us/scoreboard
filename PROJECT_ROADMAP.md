@@ -2034,6 +2034,16 @@ change or edit to that operator folder was needed. Transfer ZIP not refreshed.
 selected, then target-laptop and LED-wall rehearsal. No real WebView2 run
 was repeated for this change. Phase 0 HDMI evidence and Task 12 remain open.
 
+### Control screen UI pass — September 14, 2026 (implemented, untested by the owner)
+
+Three owner requests on `post-live-fixes`, after PL-1..PL-7:
+
+- **Nudges in the clocks panel.** The down / to-go / ball-on `−/+` buttons moved from the quarter bar into the clocks panel, under the game clock's START/STOP (three rows; ball on shows its value on a line above `−5 −1 +1 +5` because the value carries the team name). The quarter bar's `TO h/a` readout went (the team panels' `TIMEOUT · N` show it); `TRY PENDING` stays in the quarter bar.
+- **Crowd bar.** `CLEAR` shows only while a message is raised; the countdown and its `START`/`STOP` show only while `TIMEOUT` is raised (or a countdown is still on screen), framed together to the right of the four message buttons so nothing moves when they appear. `CLEAR` is yellow, `START` green, `STOP` red; the already-true one is still dimmed.
+- **Team short name legible.** The identity stripe is 26px with 17px text (was 14px / 10px), and the text is white or dark, whichever contrasts better with the team's primary colour.
+
+Verified: contract tests in `tests/integration/test_operator_refresh_ui.py`, `test_crowd_status_ui.py`, and `test_team_presets_ui.py`; the full suite; and a Playwright/Edge run against the real bridge seeded with the owner's two saved teams (Tigers `#2B07DF` / TMSA, Eagles `#28D425` / Grace) at 1093×614, 1180×720, 1366×768, and 1920×1080. Idle, FLAG, and TIMEOUT all showed no page scroll, no crowd-bar overflow, all nudges 44px tall, and no clipped values; the controls shown and hidden were correct in each state; a strip nudge reached Python. With an alert row showing at 1093×614, the game column ends no lower than the play column already did. See `docs/UX_AND_LAYOUT.md` section 8.
+
 ### Post-live fixes — September 14, 2026 (PL-1 to PL-7 implemented, untested by the owner)
 
 The owner's first-game debrief ([docs/POST_LIVE_FIXES.md](docs/POST_LIVE_FIXES.md)) was worked in the order PL-2, PL-3, PL-4, PL-5, PL-7, PL-6, PL-1, one commit each on `post-live-fixes`. Each ticket's **Resolution** paragraph in that file records the exact verification performed; in brief:

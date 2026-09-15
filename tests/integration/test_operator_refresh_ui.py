@@ -295,8 +295,11 @@ class OperatorRefreshUiTests(unittest.TestCase):
 
     # --- PL-3: one-tap +/- corrections ----------------------------------
 
+    def field_strip(self) -> str:
+        return self.html.split('id="field-status"', 1)[1].split("<!-- /field-status -->", 1)[0]
+
     def test_the_strip_offers_the_six_nudges_and_the_drawer_repeats_them(self) -> None:
-        strip = self.html.split('id="field-status"', 1)[1].split("</span>\n    <!--", 1)[0]
+        strip = self.field_strip()
         drawer = self.html.split('id="field-drawer"', 1)[1].split('<div class="row end">', 1)[0]
         expected = [
             ("set_down", "-1"), ("set_down", "1"),
@@ -316,16 +319,31 @@ class OperatorRefreshUiTests(unittest.TestCase):
         # No arithmetic on the current down, distance, or yard line in JS.
         self.assertNotRegex(self.js, r"football\.(down|distance|ball_on)[^;]*[-+]\s*\d")
 
-    def test_the_nudges_meet_the_touch_floor_inside_the_36px_quarter_bar(self) -> None:
-        rule = self.css.split(".quarter-bar button.nudge", 1)[1].split("}", 1)[0]
+    def test_the_nudges_meet_the_touch_floor(self) -> None:
+        rule = self.css.split(".clocks button.nudge,", 1)[1].split("}", 1)[0]
         self.assertIn("min-height: 44px", rule)
         self.assertIn(".drawer button.nudge", self.css)
 
+    def test_the_nudge_strip_lives_in_the_clocks_panel_not_the_quarter_bar(self) -> None:
+        # September 14, 2026 UI pass: down, to-go, and ball on sit under the
+        # game and play clocks.
+        clocks = self.html.split('<section class="clocks"', 1)[1].split("</section>", 1)[0]
+        quarter = self.html.split('<section class="quarter-bar"', 1)[1].split("</section>", 1)[0]
+        self.assertIn('id="field-status"', clocks)
+        self.assertNotIn("data-nudge", quarter)
+        for caption in ("DOWN", "TO GO", "BALL ON"):
+            with self.subTest(caption=caption):
+                self.assertIn(f'<span class="nudge-caption">{caption}</span>', clocks)
+
     # --- PL-6: a +6 also blanks the field status; the strip says TRY PENDING ---
 
-    def test_the_strip_carries_pythons_try_pending_hint(self) -> None:
-        strip = self.html.split('id="field-status"', 1)[1].split("</span>\n    <!--\n      The LAST strip", 1)[0]
-        self.assertIn('data-field="try_pending_display"', strip)
+    def test_the_quarter_bar_carries_pythons_try_pending_hint(self) -> None:
+        # The hint stayed in the quarter bar when the nudges moved under the
+        # game clock (September 14, 2026): it is text, not a nudge, and the
+        # bar has the width for "TRY PENDING · <team>".
+        quarter = self.html.split('<section class="quarter-bar"', 1)[1].split("</section>", 1)[0]
+        self.assertIn('data-field="try_pending_display"', quarter)
+        self.assertNotIn("try_pending_display", self.field_strip())
         # The page never decides a try is pending on its own.
         self.assertNotIn("try_pending", self.js)
         self.assertIn(".try-pending:empty", self.css)

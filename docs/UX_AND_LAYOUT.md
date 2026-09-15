@@ -82,19 +82,19 @@ Visual priorities are scores first, game clock second, team names third, then qu
 │ SCOREBOARD CONTROL   GAME: 1st 12:00 STOPPED   PLAY: 40 STOPPED              │
 │ Display: OPEN ✓  [Reopen Display] [Display…]   State: SAVED ✓   Rev 184     │
 ├──────────────────────────┬──────────────────────────┬────────────────────────┤
-│ HOME                     │ CLOCKS                   │ AWAY                   │
-│ EAGLES              14   │                          │ TIGERS              7  │
-│ (identity stripe)        │ GAME CLOCK               │ (identity stripe)      │
-│ NOT CHOSEN               │       12:00              │ NOT CHOSEN             │
-│ [SCORE▸][TIMEOUT · 3]    │ [ START ]    [ STOP ]     │ [SCORE▸][TIMEOUT · 2] │
-│  armed→[+1][+2][+3][+6][✕]│ STOPPED                  │                        │
-│                          │ PLAY CLOCK      40       │                        │
-│                          │ [ 25 LOAD ]   [40 LOAD]│                        │
-│                          │ [ START ]      [ STOP ]  │                        │
+│ HOME                     │ GAME CLOCK   PLAY CLOCK  │ AWAY                   │
+│ EAGLES                   │   12:00         40       │ TIGERS                 │
+│ [   EGL identity stripe ]│  STOPPED      STOPPED    │ [ TIG identity stripe ]│
+│ NOT CHOSEN          14   │ [START][STOP] [25] [40]  │ NOT CHOSEN          7  │
+│ [SCORE▸][TIMEOUT · 3]    │ ─────────────  [25+ST][40+ST]│ [SCORE▸][TIMEOUT · 2] │
+│  armed→[+1][+2][+3][+6][✕]│ [−] DOWN 3rd [+]  [START][STOP]│                   │
+│                          │ [−] TO GO 7  [+]  [CLEAR][RESET]│                  │
+│                          │ BALL ON EAGLES 35        │                        │
+│                          │ [−5][−1][+1][+5]         │                        │
 ├──────────────────────────┴──────────────────────────┴────────────────────────┤
-│ CROWD  [TIMEOUT]  [FLAG][TIMEOUT][INJURY][DELAY][CLEAR]  1:00 [START][STOP]  │
+│ CROWD  [TIMEOUT]  [FLAG][TIMEOUT][INJURY][DELAY] [CLEAR] ┆TIMEOUT 1:00 [START][STOP]┆│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│ QUARTER [◀] 1st [▶] 3rd & 7 · EAGLES 35 · TO 3/2 LAST: Away +6 (7) ×3 [UNDO…]│
+│ QUARTER [◀] 1st [▶]   TRY PENDING · EAGLES   LAST: Away +6 (7) ×3 [UNDO…]   │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ [Teams▸][Corrections▸][Setup▸][Field▸][Field Assistant][Cutscenes]          │
 │ [Shortcut Help][Advanced ▸]                                     [ Game ▸ ] │
@@ -125,8 +125,12 @@ bar lost its three danger buttons; it now ends in a spacer and `[ Game ▸ ]`
   named, and is hidden at 0 and 1 where it would say nothing new.
 - **Added September 6, 2026 (audit item F3).** The crowd row sits directly
   above the quarter bar and is always visible: a chip showing what the wall is
-  currently saying, one button per status message, `CLEAR`, and the status
-  countdown with its own Start/Stop. It is deliberately not a drawer — a
+  currently saying and one button per status message. Since September 14,
+  2026, `CLEAR` (yellow) appears only while a message is raised, and the
+  status countdown with its own `START` (green) / `STOP` (red) appears only
+  while `TIMEOUT` is raised (or a countdown is still on screen), framed as one
+  group. Both sit to the right of the four message buttons, so appearing never
+  moves a button the operator is reaching for. It is deliberately not a drawer — a
   message an operator must open a menu to raise is a message that does not get
   raised during a live game. `TIMEOUT` raises the word and starts 1:00 in one
   press; it does **not** charge the timeout, which stays with the separate,
@@ -296,10 +300,13 @@ scoreboard.
 - On the live board, each team name grows a thin **identity stripe**
   (primary-coloured background, secondary-coloured underline, the short name
   centred in it) directly under the team name, when the current name matches
-  a saved team; it is hidden otherwise. It is deliberately thin -- height plus
-  border stays under 18px -- because the board's height budget was already
-  spent meeting U-001, and this must never be the thing that pushes a live
-  control off screen. Measured against a real bridge-produced view model at
+  a saved team; it is hidden otherwise. It must never be the thing that
+  pushes a live control off screen (U-001); the score beneath it is the
+  panel's flexible item and gives up the height. **September 14, 2026:** the
+  stripe grew from 14px with 10px text (illegible, especially dark text on a
+  dark primary) to 26px with 17px text, and the text is white or dark,
+  whichever contrasts better with the primary (WCAG relative luminance,
+  picked at render time; Python still accepts only `#RRGGBB`). Measured against a real bridge-produced view model at
   1093×614 (the tightest U-001 viewport): `documentElement.scrollHeight`
   equalled `clientHeight` with the stripe visible on both sides, exactly as it
   did before this feature existed.
@@ -456,8 +463,12 @@ starts with an empty stack even though the durable action history remains.
 3. `START`/`STOP` control the countdown without changing the message. A
    countdown that runs out stops at `0:00` and stays there — the message does
    not clear itself, because only the operator knows when play has resumed.
-4. Press `CLEAR` when play resumes. The message and the countdown both go, and
-   the wall's two Status widgets hide rather than drawing empty boxes.
+   Since September 14, 2026 the countdown and its green `START` / red `STOP`
+   appear, framed together, only while `TIMEOUT` is raised (or a countdown is
+   still on screen).
+4. Press `CLEAR` (yellow, shown only while a message is raised) when play
+   resumes. The message and the countdown both go, and the wall's two Status
+   widgets hide rather than drawing empty boxes.
 
 None of these touch the score, the clocks, the quarter, or field status, and
 none of them consumes an Undo (F-081): a crowd toggle must never push a
@@ -641,6 +652,26 @@ drawer open and a team armed, it disarms scoring instead of doing nothing.
   681×1164 with a team armed, matching the stub-bridge result. This is one of
   the 45/45 checks in `.scratch/control-refresh/realrun_control_refresh.py`
   (see `PROJECT_ROADMAP.md`'s owner request 5 entry).
+- **U-001 re-measured for the September 14, 2026 UI pass** (nudges moved
+  under the game clock, crowd countdown shown only for TIMEOUT, larger
+  identity stripe). Playwright/Edge against the real bridge, both team stripes
+  showing the owner's saved teams, ball on `Tigers 35`, in the idle, FLAG, and
+  TIMEOUT crowd states:
+
+  | Viewport (CSS px) | Page scroll | `.crowd-bar` overflow | Board row (every crowd state) | Game / play column bottom | Nudge size (h × min w) |
+  |---|---|---|---|---|---|
+  | 1093×614 | none | none | 356px | 395 / 395 | 44 × 42px |
+  | 1180×720 | none | none | 462px | 402 / 402 | 44 × 46px |
+  | 1366×768 | none | none | 510px | 405 / 405 | 44 × 55px |
+  | 1920×1080 | none | none | 822px | 409 / 408 | 44 × 80px |
+
+  The strip fills room the game column already had (it ends level with the
+  play clock's last row), so the board lost no height. Nothing in the strip
+  clipped. The countdown group's frame is a `box-shadow`, so raising TIMEOUT
+  leaves the board height unchanged. With an alert row showing at 1093×614
+  (board 320px) the game column ends at 431px, level with the play column's
+  432px. That play column was already running 5px past the panel's padding
+  into the 8px gap before this pass.
 - Keyboard focus ring always visible; logical tab order; labels connected to inputs.
 - Contrast target of at least WCAG AA for operator text where practical.
 - Do not encode home/away or running/stopped solely by red/green.

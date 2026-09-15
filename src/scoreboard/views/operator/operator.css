@@ -377,6 +377,54 @@ button.is-current {
   color: var(--danger);
 }
 
+/* The timeout countdown group: only shown while TIMEOUT is raised, framed so
+ * its START/STOP read as belonging to the countdown beside them. The frame is
+ * a box-shadow, not padding or a border, so showing the group never makes
+ * the bar taller and the board above never jumps (U-001). */
+.crowd-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 8px;
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  box-shadow: 0 0 0 3px var(--panel-raised), 0 0 0 4px var(--edge);
+}
+
+.crowd-countdown-label {
+  color: var(--ink-dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* Solid colours: CLEAR yellow, START green, STOP red. The class-plus-element
+ * selectors outrank button.is-active; the already-true action is still
+ * dimmed by .is-current, so state is never colour alone. */
+.crowd-bar button.crowd-clear {
+  background: #ffc845;
+  border-color: #ffc845;
+  color: #1a1400;
+}
+
+.crowd-bar button.crowd-go {
+  background: #2e9e6a;
+  border-color: #35c48a;
+  color: #ffffff;
+}
+
+.crowd-bar button.crowd-halt {
+  background: #c43d3d;
+  border-color: #ff6b6b;
+  color: #ffffff;
+}
+
+.crowd-bar button.crowd-clear:hover:not(:disabled),
+.crowd-bar button.crowd-go:hover:not(:disabled),
+.crowd-bar button.crowd-halt:hover:not(:disabled) {
+  border-color: #ffffff;
+}
+
 /* The crowd row carries the most buttons of any fixed row, so it is the first
  * thing to give up padding at the narrowest supported width (U-001). */
 @media (max-width: 1150px) {
@@ -425,44 +473,85 @@ button.is-current {
   text-align: center;
 }
 
+/* Down / to-go / ball-on under the game clock's START/STOP (September 14,
+ * 2026). The play clock's four button rows make that column the taller one,
+ * so the strip fills the room the game column already had spare and the
+ * board needs no extra height (U-001). A thin rule sets it off from
+ * START/STOP. */
 .field-status {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 2px;
-  flex: 0 0 auto;
-  color: var(--ink-dim);
+  padding-top: 3px;
+  border-top: 1px solid var(--edge);
   font-variant-numeric: tabular-nums;
+}
+
+/* One-tap +/- corrections (PL-3). Every nudge meets the 44px touch floor. */
+.nudge-group {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  gap: 3px;
+  align-items: center;
+}
+
+.nudge-group-ball {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* Caption over value inside the 44px row, so the strip stays three rows. */
+.nudge-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+/* BALL ON carries the team name ("Tigers 35"), too wide to sit between four
+ * buttons in a narrow column, so its caption and value share a line above. */
+.nudge-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.nudge-caption {
+  color: var(--ink-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   white-space: nowrap;
 }
 
-.field-status .sep {
-  margin: 0 4px;
-}
-
-/* One-tap +/- corrections (PL-3). Every nudge meets the 44px touch floor,
- * including inside the quarter bar whose other buttons sit at 36px; the bar
- * is an auto-sized grid row, so it grows by the difference and the board
- * row above absorbs it (U-001: nothing scrolls). */
-.nudge-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
 .nudge-value {
-  min-width: 34px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: center;
   color: var(--ink);
-  font-weight: 600;
-  padding: 0 2px;
+  font-size: 16px;
+  font-weight: 700;
 }
 
-.quarter-bar button.nudge,
+.clocks button.nudge,
 .drawer button.nudge {
   min-height: 44px;
   min-width: 36px;
   padding: 0 6px;
   font-weight: 700;
+}
+
+.clocks button.nudge {
+  min-width: 0;
+  padding: 0 2px;
+  font-size: 16px;
 }
 
 .last-action {
@@ -797,17 +886,21 @@ button.danger:hover:not(:disabled) {
 }
 
 /* --- Identity stripe on the live board (F4) ------------------------------
- * Deliberately thin: the board's height budget is already spent (U-001), so
- * this must never push a live control off screen. Height + border stays
- * under 18px total. */
+ * The team's short name on its primary colour. It must never push a live
+ * control off screen (U-001): the score below it is the panel's flexible
+ * item and gives up the height. Sized to be read at a glance (September 14,
+ * 2026: the old 10px on a 14px stripe was illegible); the text colour is
+ * picked in operator.js for contrast with the primary. */
 .identity-stripe {
   display: block;
-  height: 14px;
-  line-height: 14px;
+  height: 26px;
+  line-height: 26px;
   margin: 2px 0 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   text-align: center;
   color: #12161c;
   border-bottom-width: 3px;

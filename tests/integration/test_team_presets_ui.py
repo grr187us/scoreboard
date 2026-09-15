@@ -64,6 +64,15 @@ class TeamsDrawerContractTests(unittest.TestCase):
         self.assertIn('id="home-identity-stripe"', self.html)
         self.assertIn('id="away-identity-stripe"', self.html)
 
+    def test_the_stripe_short_name_is_legible_on_any_team_colour(self) -> None:
+        # September 14, 2026: 10px dark text on a dark primary was unreadable.
+        css = (VIEWS / "operator" / "operator.css").read_text(encoding="utf-8")
+        js = (VIEWS / "operator" / "operator.js").read_text(encoding="utf-8")
+        rule = css.split(".identity-stripe {", 1)[1].split("}", 1)[0]
+        self.assertIn("font-size: 17px", rule)
+        render = js.split("function renderIdentityStripe(", 1)[1].split("\n  function ", 1)[0]
+        self.assertIn("stripe.style.color = inkOn(identity.primary)", render)
+
     def test_the_new_text_and_colour_inputs_are_drafts(self) -> None:
         """Every ``<input>`` in this drawer must carry ``data-draft="true"``.
 
